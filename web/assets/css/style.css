@@ -1,0 +1,450 @@
+@import url('https://fonts.googleapis.com/css2?family=Poppins:wght@400&display=swap');
+
+* {
+    margin: 0;
+    padding: 0;
+    box-sizing: border-box;
+    font-family: 'poppins', sans-serif;
+}
+
+html, body {
+    max-width: 100%;
+    overflow-x: hidden;
+}
+
+body {
+    min-height: 100vh;
+    background: #c8dbe360;
+}
+
+#myhead {
+    background: white;
+    top: 0;
+    left: 0;
+    width: 100%;
+    padding: 10px 50px;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+}
+
+.logo1 {
+    display: flex !important;
+    justify-content: center;
+    align-items: center;
+    user-select: none;
+    text-decoration: none;
+}
+
+.logo1 img {
+    height: 60px;
+    width: auto;
+}
+
+.logo {
+    font-size: 1.5em;
+    color: #1b9ed7;
+    user-select: none;
+    font-weight: 700;
+}
+
+.navigation a {
+    position: relative;
+    font-size: 1.1em;
+    color: #1b9ed7;
+    text-decoration: none;
+    font-weight: 500;
+    margin-left: 40px;
+}
+
+.navigation a:hover {
+    font-weight: 800;
+}
+
+.navigation a::after {
+    content: '';
+    position: absolute;
+    left: 0;
+    bottom: -6px;
+    width: 100%;
+    height: 3px;
+    background: #1b9ed7;
+    border-radius: 5px;
+    transform-origin: right;
+    transform: scaleX(0);
+    transition: transform .5s;
+}
+
+.navigation a:hover::after {
+    transform-origin: left;
+    transform: scaleX(1);
+}
+
+.navigation .btnLogin-popup {
+    width: 110px;
+    height: 40px;
+    background: transparent;
+    border: 2px solid #0e7baa;
+    outline: none;
+    border-radius: 6px;
+    cursor: pointer;
+    font-size: 1.1em;
+    color: #0e7baa;
+    font-weight: 500;
+    margin-left: 40px;
+    transition: .5s;
+}
+
+.navigation .btnLogin-popup:hover {
+    background: #0e7baa;
+    color: white;
+}
+
+/*About*/
+.about-area {
+    background-color: #f9f9f9;
+}
+
+.single-well>a {
+    display: block;
+}
+
+.single-well ul li {
+    color: #444;
+    display: block;
+    padding: 5px 0;
+}
+
+.single-well ul li i {
+    color: #3EC1D5;
+    margin-right: 5px;
+    font-size: 18px;
+}
+
+.single-well p {
+    color: #444;
+}
+
+.single-well>a>img{
+    max-width: 100%;
+    height: auto;
+}
+
+/*--------------------------------------------------------------
+# Contact
+--------------------------------------------------------------*/
+.contact-area {
+    height: auto;
+    width: 100%;
+  }
+  
+  .contact-content {
+    padding: 100px;
+    background: #000 none repeat scroll 0 0;
+  }
+  
+  .contact-content-right {
+    padding: 100px;
+  }
+  
+  .single-icon i {
+    font-size: 32px;
+    width: 50px;
+    height: 50px;
+    line-height: 56px;
+    border-radius: 50%;
+    margin-bottom: 30px;
+    color: #3ec1d5;
+  }
+  
+  .single-icon p {
+    font-size: 16px;
+    line-height: 30px;
+  }
+  
+  .contact-icon {
+    margin-bottom: 40px;
+  }
+  
+  #google-map {
+    height: 370px;
+    margin-bottom: 20px;
+  }
+  
+  .php-email-form .validate {
+    display: none;
+    color: red;
+    margin: 0;
+    font-weight: 400;
+    font-size: 13px;
+  }
+  
+  .php-email-form .error-message {
+    display: none;
+    color: #fff;
+    background: #ed3c0d;
+    text-align: center;
+    padding: 15px;
+    font-weight: 600;
+  }
+  
+  .php-email-form .sent-message {
+    display: none;
+    color: #fff;
+    background: #18d26e;
+    text-align: center;
+    padding: 15px;
+    font-weight: 600;
+  }
+  
+  .php-email-form .loading {
+    display: none;
+    background: #fff;
+    text-align: center;
+    padding: 15px;
+  }
+  
+  .php-email-form .loading:before {
+    content: "";
+    display: inline-block;
+    border-radius: 50%;
+    width: 24px;
+    height: 24px;
+    margin: 0 10px -6px 0;
+    border: 3px solid #18d26e;
+    border-top-color: #eee;
+    animation: animate-loading 1s linear infinite;
+  }
+  
+  .php-email-form input,
+  .php-email-form textarea {
+    border-radius: 0;
+    box-shadow: none;
+    font-size: 14px;
+  }
+  
+  .php-email-form input:focus,
+  .php-email-form textarea:focus {
+    border-color: #3ec1d5;
+  }
+  
+  .php-email-form input {
+    padding: 10px 15px;
+  }
+  
+  .php-email-form textarea {
+    padding: 12px 15px;
+  }
+  
+  .php-email-form button[type=submit] {
+    background: rgba(0, 0, 0, 0) none repeat scroll 0 0;
+    border: 1px solid #ccc;
+    color: #444;
+    font-size: 16px;
+    font-weight: 700;
+    margin-top: 8px;
+    padding: 12px 30px;
+    text-transform: uppercase;
+    transition: all 0.3s ease 0s;
+    border-radius: 30px;
+  }
+
+  /*--------------------------------------------------------------
+# Footer
+--------------------------------------------------------------*/
+.footer-area {
+    padding: 40px 0;
+    background: #f9f9f9;
+  }
+  
+  .footer-head p {
+    color: #444;
+  }
+  
+  .footer-head h4 {
+    color: #444;
+    font-size: 16px;
+    letter-spacing: 2px;
+    padding-bottom: 10px;
+    text-transform: uppercase;
+  }
+  
+  .footer-logo {
+    padding-bottom: 20px;
+  }
+  
+  .footer-logo h2 {
+    color: #222;
+    padding: 0;
+    margin: 0;
+    font-size: 36px;
+    font-weight: bold;
+    line-height: 1;
+  }
+  
+  .footer-logo h2 span {
+    color: #3ec1d5;
+  }
+  
+  .footer-icons ul li {
+    display: inline-block;
+  }
+  
+  .footer-icons ul li a {
+    border: 1px solid #444;
+    color: #444;
+    display: block;
+    font-size: 16px;
+    height: 40px;
+    line-height: 38px;
+    margin-right: 5px;
+    text-align: center;
+    width: 40px;
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    line-height: 0;
+  }
+  
+  .footer-icons ul li a i {
+    line-height: 0;
+  }
+  
+  .flicker-img>a {
+    float: left;
+    padding: 1px;
+    width: 33.33%;
+  }
+  
+  .footer-icons {
+    margin-top: 30px;
+  }
+  
+  .footer-contacts p span {
+    color: #3EC1D5;
+    font-weight: 700;
+  }
+  
+  .popular-tag ul li {
+    display: inline-block;
+  }
+  
+  .footer-content {
+    display: block;
+    overflow: hidden;
+  }
+  
+  .popular-tag ul li a:hover,
+  .footer-icons ul li a:hover {
+    background: #3EC1D5;
+    border: 1px solid #3EC1D5;
+    color: #fff;
+  }
+  
+  .popular-tag ul li a {
+    border: 1px solid #444;
+    border-radius: 30px;
+    color: #444;
+    font-size: 13px;
+    display: block;
+    font-weight: 600;
+    margin: 5px 3px;
+    position: relative;
+    text-decoration: none;
+    text-transform: capitalize;
+    transition: all 0.4s ease 0s;
+    width: 70px;
+  }
+  
+  .footer-area-bottom {
+    background: #f1f1f1 none repeat scroll 0 0;
+    padding: 15px 0;
+  }
+  
+  .copyright-text a:hover {
+    text-decoration: underline;
+    color: #3EC1D5;
+  }
+  
+  .copyright-text a {
+    color: #444;
+  }
+  
+  .copyright>p {
+    margin-bottom: 0;
+    color: #444;
+  }
+  
+  .copyright a,
+  .credits a {
+    color: #3EC1D5;
+  }
+  
+  .credits {
+    padding-top: 5px;
+    text-align: center;
+  }
+
+  .area-padding{
+    padding: 30px 0px 80px;
+  }
+  
+  /* @keyframes animate-loading {
+    0% {
+      transform: rotate(0deg);
+    }
+  
+    100% {
+      transform: rotate(360deg);
+    }
+  } */
+
+@media only screen and (max-width: 768px) {
+    body {
+        background: #000;
+    }
+
+    header {
+        display: none;
+    }
+
+    #slogan {
+        font-size: 32px;
+    }
+
+    .location_search {
+        width: 100%;
+        flex-direction: column-reverse;
+        margin: 0;
+    }
+
+    .location_search form {
+        width: 75%;
+        height: 42px;
+        align-items: center;
+        justify-content: center;
+        gap: 10px;
+    }
+
+    .location_search form span {
+        padding: 0;
+        margin: 0;
+        height: 25px;
+    }
+
+    .location_search input {
+        width: inherit;
+        font-size: 16px;
+    }
+
+    .category_1 {
+        width: 100%;
+        margin: 20px 0 0;
+        padding: 20px;
+        gap: 12px;
+        align-items: center;
+        justify-content: flex-start;
+        overflow-x: auto;
+    }
+}

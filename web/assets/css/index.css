@@ -1,0 +1,231 @@
+.first {
+    /* background: #1379a4; */
+    /* background: linear-gradient(#21b2f0, #033246); */
+    background: url("../images/electric.jpeg");
+    background-position: center;
+    background-size: cover;
+    padding: 10px;
+    height: 680px;
+}
+
+.shift {
+    transform: translateY(100px);
+}
+
+#slogan {
+    color: white;
+    font-size: 46px;
+    text-align: center;
+    margin: 50px 20px;
+    font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Oxygen, Ubuntu, Cantarell, "Open Sans", "Helvetica Neue", sans-serif;
+}
+
+.button {
+    display: flex;
+    height: 50px;
+    padding: 0px;
+    overflow: hidden;
+    font-size: 18px;
+    font-weight: 800;
+    width: 158px;
+    justify-content: center;
+    align-items: center;
+    border-radius: 10px;
+    border-color: white;
+}
+
+#button_text {
+    color: rgba(0, 0, 0, 0.6);
+}
+
+#button_icon {
+    color: rgba(0, 0, 0, 0.6);
+    font-size: 33px;
+    margin-top: 10px;
+}
+
+#button_text:hover,
+#button_icon:hover {
+    color: rgba(0, 0, 0, 1);
+}
+
+.button:hover {
+    cursor: pointer;
+}
+
+.location_search {
+    display: flex;
+    width: 80%;
+    margin: auto;
+    justify-content: center;
+    margin-top: -20px;
+    gap: 10px;
+}
+
+.location_search form {
+    display: flex;
+    align-items: center;
+    width: 560px;
+    height: 50px;
+    background-color: white;
+    border-radius: 10px;
+}
+
+.location_search form span {
+    font-size: 25px;
+    margin-top: 10px;
+    cursor: pointer;
+}
+
+.location_search input {
+    border: none;
+    outline: none;
+    flex: 0.9;
+    font-size: 18px;
+}
+
+.fa-search {
+    align-self: center;
+    padding: 10px 20px;
+    color: grey;
+}
+
+.category_1 {
+    display: grid;
+    grid-template-columns: repeat(5, 1fr);
+    height: 115px;
+    margin: auto;
+    width: 50%;
+    background-color: white;
+    box-shadow: rgba(100, 100, 111, 0.2) 0px 7px 29px 0px;
+    border-radius: 15px;
+    margin-bottom: 5%;
+    margin-top: 5%;
+}
+
+.button_1 {
+    height: 70%;
+    width: 80%;
+    margin: 10% 10%;
+    border: none;
+    background-color: white;
+    border-radius: 5px;
+}
+
+#point {
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    align-items: center;
+}
+
+.category_1>a {
+    text-decoration: none;
+    color: black;
+    transform: translateY(8px);
+}
+
+#point>img {
+    width: 54px;
+    height: auto;
+}
+
+.button_1 input {
+    padding: 3% 30%;
+}
+
+.button_1 p {
+    margin-top: 2%;
+    font-weight: 545;
+    text-align: center;
+    font-size: 14px;
+}
+
+.button_1:hover {
+    /* background-color: gainsboro; */
+    scale: 1.1;
+    transition: 10ms;
+}
+
+hr {
+    border: none;
+    outline: none;
+    height: 7px;
+    background: rgb(228, 231, 233);
+    width: 100%;
+    margin-bottom: 18px;
+}
+
+.section-headline{
+    margin: 28px;
+    color: #444;
+}
+
+.section-headline h2 {
+    display: inline-block;
+    font-size: 30px;
+    font-weight: 600;
+    margin-bottom: 70px;
+    position: relative;
+    text-transform: capitalize;
+}
+
+.section-headline h2::after {
+    border: 1px solid #333;
+    bottom: -20px;
+    content: "";
+    left: 0;
+    margin: 0 auto;
+    position: absolute;
+    right: 0;
+    width: 40%;
+}
+
+.section-headline.services-head>h2 {
+    margin-bottom: 25px;
+}
+
+#home_service_line {
+    text-align: center;
+    margin-top: 180px;
+    margin-bottom: 80px;
+    font-size: 50px;
+    font-weight: 600;
+}
+
+.category_launches_newCat>p {
+    text-align: center;
+    margin-bottom: 18px;
+    font-size: 32px;
+    font-weight: 800;
+    color: #0e7baa;
+}
+
+.category_launches_content {
+    display: flex;
+    justify-content: space-around;
+    margin-bottom: 50px;
+}
+
+.category_launches_content input {
+    margin: 10px 20px;
+    border-radius: 10px;
+}
+
+.category_launches_content p {
+    text-align: center;
+    font-weight: 500;
+}
+
+.category_launches_content .offers {
+    color: rgb(120, 118, 118);
+}
+
+.button_2 input{
+    transition: 10ms;
+}
+
+.button_2 input:hover {
+    cursor: pointer;
+    transform: scale(1.1, 1.1);
+}
