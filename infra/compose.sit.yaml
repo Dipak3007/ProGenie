@@ -1,0 +1,96 @@
+# ProGenie SIT (system integration testing) server: layered on top of compose.yaml.
+#
+#   cd ~/progenie/ProGenieV2/infra
+#   docker compose -f compose.yaml -f compose.sit.yaml --env-file .env.sit --profile app up -d --build
+#   (or simply ./scripts/sit-deploy.sh, which does the same plus health checks)
+#
+# What changes compared with the local stack:
+#   - Only Caddy is reachable from the internet (ports 80/443). It gets a Let's Encrypt certificate for
+#     SIT_DOMAIN automatically and forwards to the web container (Angular + /api proxy).
+#   - Postgres, Redis, Mailpit, the API and the web container publish no ports.
+#   - Mailpit's inbox (where testers read one-time codes) is at https://SIT_DOMAIN/mailpit behind a password.
+#   - The API runs with PROGENIE_ENVIRONMENT=sit, so it refuses to start while any secret is still a local default.
+#   - Memory limits sized for a 4 GB server, and log rotation so logs can't fill the disk.
+#
+# Secrets live in infra/.env.sit (git-ignored). Create it with ./scripts/sit-secrets.sh.
+
+x-logging: &logging
+  driver: json-file
+  options:
+    max-size: "20m"
+    max-file: "5"
+
+services:
+  postgres:
+    ports: !reset []
+    logging: *logging
+    mem_limit: 768m
+    command: ["postgres", "-c", "shared_buffers=192MB", "-c", "max_connections=40"]
+
+  # Not used by the API yet (planned for caching); kept running without a public port.
+  redis:
+    ports: !reset []
+    logging: *logging
+    mem_limit: 128m
+
+  mailpit:
+    ports: !reset []
+    logging: *logging
+    mem_limit: 128m
+    environment:
+      MP_WEBROOT: mailpit            # UI and API under /mailpit (Caddy adds the password)
+      MP_DATABASE: /data/mailpit.db  # keep messages across restarts
+      MP_MAX_MESSAGES: "5000"
+    volumes:
+      - mailpit:/data
+
+  api:
+    ports: !reset []
+    logging: *logging
+    mem_limit: 1536m                 # the JVM uses 75% of this for its heap (see api/Dockerfile)
+    environment:
+      PROGENIE_ENVIRONMENT: sit
+      PROGENIE_COOKIE_SECURE: "true"
+      PROGENIE_WEB_BASE_URL: https://${SIT_DOMAIN:?set SIT_DOMAIN in .env.sit}
+      PROGENIE_CORS_ALLOWED_ORIGINS: https://${SIT_DOMAIN}
+      PROGENIE_MAILPIT_URL: http://mailpit:8025/mailpit
+      PROGENIE_LOG_LEVEL: INFO
+      # No local fallbacks on a server: a missing value stops `docker compose up` with this message.
+      PROGENIE_OTP_PEPPER: ${PROGENIE_OTP_PEPPER:?run scripts/sit-secrets.sh}
+      PROGENIE_PAYMENT_WEBHOOK_SECRET: ${PROGENIE_PAYMENT_WEBHOOK_SECRET:?run scripts/sit-secrets.sh}
+      PROGENIE_JWT_PRIVATE_KEY: ${PROGENIE_JWT_PRIVATE_KEY:?run scripts/sit-secrets.sh}
+      PROGENIE_JWT_PUBLIC_KEY: ${PROGENIE_JWT_PUBLIC_KEY:?run scripts/sit-secrets.sh}
+      DB_PASSWORD: ${POSTGRES_PASSWORD:?run scripts/sit-secrets.sh}
+
+  web:
+    ports: !reset []
+    logging: *logging
+    mem_limit: 128m
+
+  caddy:
+    profiles: ["app"]
+    image: caddy:2-alpine
+    container_name: progenie-caddy
+    ports:
+      - "80:80"
+      - "443:443"
+      - "443:443/udp"
+    environment:
+      SIT_DOMAIN: ${SIT_DOMAIN}
+      ACME_EMAIL: ${ACME_EMAIL:?set ACME_EMAIL in .env.sit (Let's Encrypt expiry notices)}
+      MAILPIT_USER: ${MAILPIT_USER:?run scripts/sit-secrets.sh}
+      MAILPIT_PASSWORD_HASH: ${MAILPIT_PASSWORD_HASH:?run scripts/sit-secrets.sh}
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data             # certificates: keep this volume, or Let's Encrypt rate limits may bite
+      - caddy_config:/config
+    depends_on:
+      - web
+    logging: *logging
+    mem_limit: 128m
+    restart: unless-stopped
+
+volumes:
+  mailpit:
+  caddy_data:
+  caddy_config:

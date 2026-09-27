@@ -1,0 +1,28 @@
+# Caddy in front of the SIT stack: HTTPS (Let's Encrypt, renewed automatically) for SIT_DOMAIN.
+# Used by compose.sit.yaml; values come from infra/.env.sit.
+{
+	email {$ACME_EMAIL}
+}
+
+{$SIT_DOMAIN} {
+	encode zstd gzip
+
+	header {
+		Strict-Transport-Security "max-age=31536000"
+		-Server
+	}
+
+	# Mailpit inbox for testers (SMS / WhatsApp / email copies with one-time codes), password protected
+	@mailpit path /mailpit /mailpit/*
+	handle @mailpit {
+		basic_auth {
+			{$MAILPIT_USER} {$MAILPIT_PASSWORD_HASH}
+		}
+		reverse_proxy mailpit:8025
+	}
+
+	# Everything else: the web container (Angular app, and /api proxied to Spring Boot)
+	handle {
+		reverse_proxy web:80
+	}
+}

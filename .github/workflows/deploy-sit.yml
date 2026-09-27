@@ -1,0 +1,36 @@
+name: deploy-sit
+
+# Manual deploy to the SIT server: Actions → deploy-sit → Run workflow.
+# The server pulls both repositories and runs infra/scripts/sit-deploy.sh (see docs/DEPLOYMENT.md, "Deploy from GitHub").
+# Repository secrets needed: SIT_HOST, SIT_USER, SIT_SSH_KEY (private key of a key authorised on the server)
+# and SIT_HOST_KEY (output of: ssh-keyscan -t ed25519 <SIT_HOST>).
+on:
+  workflow_dispatch:
+
+concurrency:
+  group: deploy-sit
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    environment: sit
+    timeout-minutes: 30
+    steps:
+      - name: Deploy over SSH
+        env:
+          SIT_HOST: ${{ secrets.SIT_HOST }}
+          SIT_USER: ${{ secrets.SIT_USER }}
+          SIT_SSH_KEY: ${{ secrets.SIT_SSH_KEY }}
+          SIT_HOST_KEY: ${{ secrets.SIT_HOST_KEY }}
+          REF: ${{ github.ref_name }}
+        run: |
+          install -m 700 -d ~/.ssh
+          printf '%s\n' "$SIT_SSH_KEY" > ~/.ssh/id_ed25519 && chmod 600 ~/.ssh/id_ed25519
+          printf '%s\n' "$SIT_HOST_KEY" > ~/.ssh/known_hosts
+          ssh -o StrictHostKeyChecking=yes "$SIT_USER@$SIT_HOST" "REF='$REF' bash -s" <<'REMOTE'
+          set -euo pipefail
+          cd ~/progenie/ProGenieV2-Database && git pull --ff-only
+          cd ~/progenie/ProGenieV2 && git fetch --prune && git checkout "$REF" && git pull --ff-only
+          bash ./infra/scripts/sit-deploy.sh
+          REMOTE

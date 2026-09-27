@@ -1,0 +1,52 @@
+# Java / Maven
+api/target/
+*.class
+*.log
+
+# Node / Angular
+node_modules/
+web/dist/
+web/.angular/
+web/coverage/
+
+# IDEs and OS
+.idea/
+*.iml
+.vscode/*
+!.vscode/extensions.json
+.DS_Store
+Thumbs.db
+
+# Local files written by the API: KYC uploads, ticket photos, receipts, data exports
+# (never commit identity documents or personal data)
+api/data/
+/data/
+
+# Screenshots and caches from the test scripts (the scripts themselves are committed)
+scripts/ui-shots/
+__pycache__/
+
+# Local secrets: every .env file except the templates
+.env
+.env.*
+!.env.example
+!.env.*.example
+*.pem
+*.key
+*.p12
+*.pfx
+*.jks
+*.keystore
+id_rsa*
+id_ed25519*
+# Spring profile files with local overrides (e.g. application-local.yml)
+application-local.yml
+application-local.yaml
+application-*.local.yml
+# Backups and database dumps
+*.dump
+*.sql.gz
+backups/
+
+# Doc (local-only on purpose)
+docs/

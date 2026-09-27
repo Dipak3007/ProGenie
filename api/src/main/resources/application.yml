@@ -1,0 +1,159 @@
+# ProGenie API configuration.
+# Every value can be overridden with an environment variable (Spring relaxed binding),
+# e.g. SPRING_DATASOURCE_URL, PROGENIE_JWT_ACCESS_TOKEN_TTL, PROGENIE_CORS_ALLOWED_ORIGINS.
+
+spring:
+  application:
+    name: progenie-api
+  threads:
+    virtual:
+      enabled: true
+  datasource:
+    # stringtype=unspecified lets PostgreSQL infer citext/jsonb parameter types.
+    url: jdbc:postgresql://${DB_HOST:localhost}:${DB_PORT:5432}/${DB_NAME:progenie}?stringtype=unspecified
+    username: ${DB_USER:progenie}
+    password: ${DB_PASSWORD:progenie}
+    hikari:
+      maximum-pool-size: 10
+  jpa:
+    open-in-view: false
+    hibernate:
+      ddl-auto: none          # the schema is owned by Flyway, never by Hibernate
+    properties:
+      hibernate:
+        jdbc:
+          time_zone: UTC
+  flyway:
+    # Migrations live in the sibling folder ProGenieV2-Database (see its README).
+    # Path is relative to the api/ folder when you run from the IDE or with mvn.
+    locations: ${PROGENIE_DB_MIGRATIONS:filesystem:../../ProGenieV2-Database/migrations}
+    validate-on-migrate: true
+  mvc:
+    problemdetails:
+      enabled: true
+  servlet:
+    multipart:
+      max-file-size: 5MB
+      max-request-size: 6MB
+
+server:
+  port: ${SERVER_PORT:8080}
+  shutdown: graceful
+  forward-headers-strategy: framework
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info,metrics
+  endpoint:
+    health:
+      probes:
+        enabled: true
+      show-details: when-authorized
+
+springdoc:
+  swagger-ui:
+    path: /swagger-ui.html
+  api-docs:
+    path: /v3/api-docs
+
+progenie:
+  # local (default) allows the development fallbacks below. On a server set sit, uat or prod: the API then refuses
+  # to start until every secret is set (see DeploymentSafetyCheck and docs/DEPLOYMENT.md).
+  environment: ${PROGENIE_ENVIRONMENT:local}
+  timezone: Asia/Kolkata         # business time zone: slots, availability and payout weeks
+  jwt:
+    issuer: progenie-api
+    access-token-ttl: 15m
+    refresh-token-ttl: 7d
+    # Base64 PEM keys. Leave empty locally: a temporary key pair is generated at startup
+    # (you will need to log in again after every API restart). Always set both in production.
+    private-key: ${PROGENIE_JWT_PRIVATE_KEY:}
+    public-key: ${PROGENIE_JWT_PUBLIC_KEY:}
+  cookie:
+    secure: ${PROGENIE_COOKIE_SECURE:false}   # true behind HTTPS
+  cors:
+    allowed-origins: ${PROGENIE_CORS_ALLOWED_ORIGINS:http://localhost:4200}
+  auth:
+    otp-pepper: ${PROGENIE_OTP_PEPPER:local-dev-otp-pepper-change-me}   # HMAC key for one-time codes; set a long random secret in production
+    otp-ttl: 5m
+    otp-max-attempts: 5
+    otp-resend-after: 30s
+    otp-per-destination-per-hour: 5
+    otp-per-ip-per-hour: 20
+    reset-token-ttl: 15m
+    login-max-failures: 10            # wrong passwords within the window that lock password login
+    login-failure-window: 15m
+    login-lock-duration: 15m
+    require-verified-phone: true      # an unverified phone can browse but not book / submit a Genie profile
+  company:                            # printed on receipts and filled into the legal pages' [placeholders]
+    legal-name: ${PROGENIE_COMPANY_LEGAL_NAME:}
+    address: ${PROGENIE_COMPANY_ADDRESS:}
+    city: ${PROGENIE_COMPANY_CITY:Ahmedabad}
+    support-email: ${PROGENIE_SUPPORT_EMAIL:support@progenie.in}
+    support-phone: ${PROGENIE_SUPPORT_PHONE:}
+    grievance-name: ${PROGENIE_COMPANY_GRIEVANCE_NAME:}
+    grievance-email: ${PROGENIE_COMPANY_GRIEVANCE_EMAIL:grievance@progenie.in}
+    website: ${PROGENIE_WEB_BASE_URL:http://localhost:4200}
+  booking:
+    request-ttl: 30m                        # a Genie must accept within this time, else the request expires
+    min-lead-time: 2h                       # earliest bookable slot
+    horizon-days: 14                        # how far ahead customers can book
+    slot-step-minutes: 30
+    start-early-window: 30m                 # a Genie can start up to 30 min before the slot
+    free-cancellation-window: 2h            # free customer cancellation until 2 h before the slot
+    late-cancellation-fee: 49.00            # INR, paid to the Genie
+    genie-cancellation-flag-threshold: 3    # Genie cancellations within the window that flag them to admin
+    genie-cancellation-flag-window: 30d
+    max-reschedules: 2
+    reminder-lead: 60m                      # WhatsApp reminder to both sides this long before the slot
+  payments:
+    gateway: ${PROGENIE_PAYMENT_GATEWAY:fake}   # "fake" simulates a gateway locally (no real money)
+    webhook-secret: ${PROGENIE_PAYMENT_WEBHOOK_SECRET:local-dev-webhook-secret}
+    currency: INR
+    razorpay:                                   # used when PROGENIE_PAYMENT_GATEWAY=razorpay (keys live in infra/.env)
+      key-id: ${RAZORPAY_KEY_ID:}
+      key-secret: ${RAZORPAY_KEY_SECRET:}
+      webhook-secret: ${RAZORPAY_WEBHOOK_SECRET:}
+  tax:                                          # off: "Payment receipt"; on (with GSTIN): "Tax invoice" with CGST/SGST
+    gst-enabled: ${PROGENIE_TAX_GST_ENABLED:false}
+    gstin: ${PROGENIE_TAX_GSTIN:}
+    sac: ${PROGENIE_TAX_SAC:}
+    rate: ${PROGENIE_TAX_RATE:18}
+  messaging:
+    # Every channel goes to Mailpit locally (http://localhost:8025). "msg91" switches a channel to the live adapter.
+    sms-provider: ${PROGENIE_SMS_PROVIDER:mailpit}
+    whatsapp-provider: ${PROGENIE_WHATSAPP_PROVIDER:mailpit}
+    email-provider: ${PROGENIE_EMAIL_PROVIDER:mailpit}
+    from-email: ${PROGENIE_MAIL_FROM:no-reply@progenie.in}
+    from-name: ProGenie
+    web-base-url: ${PROGENIE_WEB_BASE_URL:http://localhost:4200}   # links inside messages
+    dispatch-interval: 5s
+    batch-size: 20
+    retry-delays: 1m, 5m, 30m, 120m          # then the message is FAILED and shows in Admin → Messages
+    mailpit:
+      base-url: ${PROGENIE_MAILPIT_URL:http://localhost:8025}
+    msg91:
+      auth-key: ${MSG91_AUTH_KEY:}
+      sender-id: ${MSG91_SENDER_ID:}                # 6-letter DLT header, e.g. PRGENI
+      whatsapp-number: ${MSG91_WHATSAPP_NUMBER:}    # your integrated WhatsApp number, 91XXXXXXXXXX
+      email-domain: ${MSG91_EMAIL_DOMAIN:}
+      webhook-token: ${MSG91_WEBHOOK_TOKEN:}        # ?token= on /api/v1/webhooks/msg91/delivery
+      # Provider template per message (fill in once DLT / Meta approve them). Example:
+      # templates:
+      #   OTP:
+      #     sms-template-id: 64f0c0ffee0000000000abcd
+      #     whatsapp-name: progenie_otp
+      #     whatsapp-params: [code, minutes]
+      #     email-template-id: progenie_otp
+      templates: {}
+  storage:
+    local-dir: ${PROGENIE_STORAGE_DIR:./data/uploads}   # KYC files (S3 adapter later)
+    max-upload-bytes: 5242880                         # 5 MB
+
+logging:
+  level:
+    com.progenie: ${PROGENIE_LOG_LEVEL:DEBUG}
+    org.flywaydb: INFO
+    org.apache.pdfbox.pdmodel.font: ERROR   # harmless notices about unused standard fonts

@@ -1,0 +1,144 @@
+# ProGenie local stack.
+#
+#   Infra only (you run api + web from your IDE / terminal):
+#     docker compose up -d
+#
+#   Everything in containers (like production):
+#     docker compose --profile app up -d --build
+#
+#   Optional S3-compatible file storage (needed from Phase 2 for KYC uploads):
+#     docker compose --profile storage up -d
+#
+# Ports: web 8088 · api 8080 · postgres 5432 · redis 6379 · mailpit 8025 · s3 8333
+
+name: progenie
+
+services:
+  postgres:
+    image: postgis/postgis:17-3.5
+    container_name: progenie-postgres
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-progenie}
+      POSTGRES_USER: ${POSTGRES_USER:-progenie}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-progenie}
+      TZ: Asia/Kolkata
+    ports:
+      - "${POSTGRES_PORT:-5432}:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-progenie} -d ${POSTGRES_DB:-progenie}"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+    restart: unless-stopped
+
+  redis:
+    image: redis:7-alpine
+    container_name: progenie-redis
+    ports:
+      - "${REDIS_PORT:-6379}:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+    restart: unless-stopped
+
+  # S3-compatible object storage for KYC documents and photos (Phase 2).
+  # MinIO no longer publishes its community image on Docker Hub, so we use SeaweedFS.
+  # Only started with:  docker compose --profile storage up -d
+  s3:
+    profiles: ["storage"]
+    image: chrislusf/seaweedfs:latest
+    container_name: progenie-s3
+    command: server -dir=/data -s3 -s3.port=8333
+    ports:
+      - "8333:8333"   # S3 API: http://localhost:8333
+    volumes:
+      - s3data:/data
+    restart: unless-stopped
+
+  mailpit:
+    image: axllent/mailpit:latest
+    container_name: progenie-mailpit
+    ports:
+      - "8025:8025"   # web inbox: http://localhost:8025
+      - "1025:1025"   # SMTP
+    restart: unless-stopped
+
+  # ---------------------------------------------------------------- application (profile "app")
+  api:
+    profiles: ["app"]
+    build: ../api
+    container_name: progenie-api
+    environment:
+      DB_HOST: postgres
+      DB_PORT: 5432
+      DB_NAME: ${POSTGRES_DB:-progenie}
+      DB_USER: ${POSTGRES_USER:-progenie}
+      DB_PASSWORD: ${POSTGRES_PASSWORD:-progenie}
+      PROGENIE_DB_MIGRATIONS: filesystem:/db/migrations
+      PROGENIE_CORS_ALLOWED_ORIGINS: http://localhost:8088
+      PROGENIE_JWT_PRIVATE_KEY: ${PROGENIE_JWT_PRIVATE_KEY:-}
+      PROGENIE_JWT_PUBLIC_KEY: ${PROGENIE_JWT_PUBLIC_KEY:-}
+      PROGENIE_STORAGE_DIR: /data/uploads
+      PROGENIE_PAYMENT_WEBHOOK_SECRET: ${PROGENIE_PAYMENT_WEBHOOK_SECRET:-local-dev-webhook-secret}
+      PROGENIE_WEB_BASE_URL: http://localhost:${WEB_PORT:-8088}
+      # Accounts and messages (SMS / WhatsApp / email go to Mailpit unless a provider is set to msg91)
+      PROGENIE_OTP_PEPPER: ${PROGENIE_OTP_PEPPER:-local-dev-otp-pepper-change-me}
+      PROGENIE_MAILPIT_URL: http://mailpit:8025
+      PROGENIE_SMS_PROVIDER: ${PROGENIE_SMS_PROVIDER:-mailpit}
+      PROGENIE_WHATSAPP_PROVIDER: ${PROGENIE_WHATSAPP_PROVIDER:-mailpit}
+      PROGENIE_EMAIL_PROVIDER: ${PROGENIE_EMAIL_PROVIDER:-mailpit}
+      PROGENIE_MAIL_FROM: ${PROGENIE_MAIL_FROM:-no-reply@progenie.in}
+      MSG91_AUTH_KEY: ${MSG91_AUTH_KEY:-}
+      MSG91_SENDER_ID: ${MSG91_SENDER_ID:-}
+      MSG91_WHATSAPP_NUMBER: ${MSG91_WHATSAPP_NUMBER:-}
+      MSG91_EMAIL_DOMAIN: ${MSG91_EMAIL_DOMAIN:-}
+      MSG91_WEBHOOK_TOKEN: ${MSG91_WEBHOOK_TOKEN:-}
+      # Payments (the fake gateway stays the default until Razorpay keys are set)
+      PROGENIE_PAYMENT_GATEWAY: ${PROGENIE_PAYMENT_GATEWAY:-fake}
+      RAZORPAY_KEY_ID: ${RAZORPAY_KEY_ID:-}
+      RAZORPAY_KEY_SECRET: ${RAZORPAY_KEY_SECRET:-}
+      RAZORPAY_WEBHOOK_SECRET: ${RAZORPAY_WEBHOOK_SECRET:-}
+      PROGENIE_TAX_GST_ENABLED: ${PROGENIE_TAX_GST_ENABLED:-false}
+      PROGENIE_TAX_GSTIN: ${PROGENIE_TAX_GSTIN:-}
+      PROGENIE_TAX_SAC: ${PROGENIE_TAX_SAC:-}
+      PROGENIE_TAX_RATE: ${PROGENIE_TAX_RATE:-18}
+      # Company details for receipts and the legal pages' placeholders
+      PROGENIE_COMPANY_LEGAL_NAME: ${PROGENIE_COMPANY_LEGAL_NAME:-}
+      PROGENIE_COMPANY_ADDRESS: ${PROGENIE_COMPANY_ADDRESS:-}
+      PROGENIE_COMPANY_CITY: ${PROGENIE_COMPANY_CITY:-Ahmedabad}
+      PROGENIE_SUPPORT_EMAIL: ${PROGENIE_SUPPORT_EMAIL:-support@progenie.in}
+      PROGENIE_SUPPORT_PHONE: ${PROGENIE_SUPPORT_PHONE:-}
+      PROGENIE_COMPANY_GRIEVANCE_NAME: ${PROGENIE_COMPANY_GRIEVANCE_NAME:-}
+      PROGENIE_COMPANY_GRIEVANCE_EMAIL: ${PROGENIE_COMPANY_GRIEVANCE_EMAIL:-grievance@progenie.in}
+    volumes:
+      # The DDL + Day-0 scripts live in the sibling folder ProGenieV2-Database
+      - ${PROGENIE_DB_DIR:-../../ProGenieV2-Database}/migrations:/db/migrations:ro
+      # KYC documents uploaded by Genies (kept across container restarts)
+      - uploads:/data/uploads
+    ports:
+      - "8080:8080"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      mailpit:
+        condition: service_started
+    restart: unless-stopped
+
+  web:
+    profiles: ["app"]
+    build: ../web
+    container_name: progenie-web
+    ports:
+      - "${WEB_PORT:-8088}:80"
+    depends_on:
+      - api
+    restart: unless-stopped
+
+volumes:
+  pgdata:
+  s3data:
+  uploads:
