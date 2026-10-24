@@ -10,6 +10,9 @@ import org.springframework.jdbc.core.simple.JdbcClient;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import com.progenie.shared.config.QueryConstants;
+import com.progenie.shared.util.QueryUtil;
+
 /**
  * Which channels a user wants per message category. No row means the default: everything on, except
  * promotions (opt-in only). Mandatory messages (codes, security notices, the Genie's new-request alert)
@@ -35,7 +38,7 @@ public class NotificationPreferences {
     @Transactional(readOnly = true)
     public List<PreferenceDto> list(UUID userId) {
         Map<MessageCategory, PreferenceDto> stored = new EnumMap<>(MessageCategory.class);
-        jdbc.sql("SELECT category, sms, whatsapp, email FROM notification_preferences WHERE user_id = :u")
+        jdbc.sql(QueryUtil.get(QueryConstants.GET_NOTIFICATION_PREFERENCE_ALL))
             .param("u", userId)
             .query(PreferenceDto.class).list()
             .forEach(p -> stored.put(p.category(), p));
@@ -52,12 +55,7 @@ public class NotificationPreferences {
             if (p.category() == null) {
                 continue;
             }
-            jdbc.sql("""
-                    INSERT INTO notification_preferences (user_id, category, sms, whatsapp, email)
-                    VALUES (:u, :c, :sms, :wa, :email)
-                    ON CONFLICT (user_id, category)
-                    DO UPDATE SET sms = EXCLUDED.sms, whatsapp = EXCLUDED.whatsapp, email = EXCLUDED.email, updated_at = now()
-                    """)
+            jdbc.sql(QueryUtil.get(QueryConstants.UPSERT_NOTIFICATION_PREFERENCE_SAVE))
                 .param("u", userId).param("c", p.category().name())
                 .param("sms", p.sms()).param("wa", p.whatsapp()).param("email", p.email())
                 .update();
@@ -67,9 +65,7 @@ public class NotificationPreferences {
 
     @Transactional(readOnly = true)
     public boolean allows(UUID userId, MessageCategory category, Channel channel) {
-        PreferenceDto p = jdbc.sql("""
-                SELECT category, sms, whatsapp, email FROM notification_preferences WHERE user_id = :u AND category = :c
-                """)
+        PreferenceDto p = jdbc.sql(QueryUtil.get(QueryConstants.GET_NOTIFICATION_PREFERENCE_ONE))
             .param("u", userId).param("c", category.name())
             .query(PreferenceDto.class).optional()
             .orElseGet(() -> defaults(category));
@@ -83,6 +79,6 @@ public class NotificationPreferences {
     /** Account deletion removes preferences with the rest of the personal data. */
     @Transactional
     public void deleteAll(UUID userId) {
-        jdbc.sql("DELETE FROM notification_preferences WHERE user_id = :u").param("u", userId).update();
+        jdbc.sql(QueryUtil.get(QueryConstants.DELETE_NOTIFICATION_PREFERENCE_ALL)).param("u", userId).update();
     }
 }

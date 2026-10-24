@@ -2,6 +2,8 @@ package com.progenie.provider;
 
 import com.progenie.identity.UserRegisteredEvent;
 import com.progenie.identity.domain.Role;
+import com.progenie.shared.config.QueryConstants;
+import com.progenie.shared.util.QueryUtil;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.context.event.EventListener;
@@ -29,15 +31,10 @@ class GenieOnboardingListener {
         if (event.role() != Role.GENIE) {
             return;
         }
-        jdbc.sql("""
-                INSERT INTO genie_profiles (user_id, verification_status) VALUES (:id, 'REGISTERED')
-                """)
+        jdbc.sql(QueryUtil.get(QueryConstants.INSERT_GENIE_PROFILE_REGISTER))
             .param("id", event.userId())
             .update();
-        jdbc.sql("""
-                INSERT INTO genie_verification_events (genie_id, from_status, to_status, reason, actor_id)
-                VALUES (:id, NULL, 'REGISTERED', 'Account created', :id)
-                """)
+        jdbc.sql(QueryUtil.get(QueryConstants.INSERT_GENIE_VERIFICATION_REGISTERED))
             .param("id", event.userId())
             .update();
         log.info("Created Genie profile for {}", event.userId());

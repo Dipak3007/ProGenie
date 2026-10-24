@@ -6,8 +6,10 @@ import java.util.Locale;
 import java.util.Set;
 import java.util.UUID;
 
+import com.progenie.shared.config.QueryConstants;
 import com.progenie.shared.error.ApiException;
 import com.progenie.shared.util.Masking;
+import com.progenie.shared.util.QueryUtil;
 import com.progenie.shared.web.PageResponse;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -36,13 +38,9 @@ public class MessageAdmin {
 
     @Transactional(readOnly = true)
     public PageResponse<MessageDto> list(String status, String channel, String q, int page, int size) {
-        StringBuilder where = new StringBuilder(" WHERE 1 = 1");
-        if (status != null && !status.isBlank()) {
-            String s = status.toUpperCase(Locale.ROOT);
-            if (!STATUSES.contains(s)) {
-                throw ApiException.badRequest("BAD_STATUS", "Unknown status " + status);
-            }
-            where.append(" AND status = '").append(s).append("'");
+        String s = status == null || status.isBlank() ? null : status.toUpperCase(Locale.ROOT);
+        if (s != null && !STATUSES.contains(s)) {
+            throw ApiException.badRequest("BAD_STATUS", "Unknown status " + status);
         }
         String ch = channel == null || channel.isBlank() ? null : channel.toUpperCase(Locale.ROOT);
         if (ch != null) {
@@ -51,23 +49,13 @@ public class MessageAdmin {
             } catch (IllegalArgumentException e) {
                 throw ApiException.badRequest("BAD_CHANNEL", "Unknown channel " + channel);
             }
-            where.append(" AND channel = '").append(ch).append("'");
         }
-        boolean search = q != null && !q.isBlank();
-        if (search) {
-            where.append(" AND (template ILIKE :q OR destination ILIKE :q OR subject ILIKE :q)");
-        }
-        var count = jdbc.sql("SELECT count(*) FROM outbound_messages" + where);
-        var select = jdbc.sql("""
-                SELECT id, channel, template, destination, subject, body, status, attempts, provider, delivery_status,
-                       last_error, created_at, sent_at, delivered_at
-                  FROM outbound_messages""" + where + " ORDER BY created_at DESC LIMIT :limit OFFSET :offset");
-        if (search) {
-            count = count.param("q", "%" + q.trim() + "%");
-            select = select.param("q", "%" + q.trim() + "%");
-        }
-        long total = count.query(Long.class).single();
-        List<MessageDto> items = select
+        String search = q == null || q.isBlank() ? null : "%" + q.trim() + "%";
+        long total = jdbc.sql(QueryUtil.get(QueryConstants.COUNT_MESSAGE_LIST))
+            .param("status", s).param("channel", ch).param("q", search)
+            .query(Long.class).single();
+        List<MessageDto> items = jdbc.sql(QueryUtil.get(QueryConstants.GET_MESSAGE_LIST))
+            .param("status", s).param("channel", ch).param("q", search)
             .param("limit", PageResponse.clampSize(size)).param("offset", PageResponse.offset(page, size))
             .query(MessageDto.class).list().stream()
             .map(m -> new MessageDto(m.id(), m.channel(), m.template(), Masking.destination(m.destination()), m.subject(),
@@ -80,20 +68,17 @@ public class MessageAdmin {
     /** Puts a FAILED message back in the queue with a fresh retry budget. */
     @Transactional
     public void retry(UUID id) {
-        String status = jdbc.sql("SELECT status FROM outbound_messages WHERE id = :id FOR UPDATE")
+        String status = jdbc.sql(QueryUtil.get(QueryConstants.LOCK_MESSAGE_STATUS))
             .param("id", id).query(String.class).optional()
             .orElseThrow(() -> ApiException.notFound("MESSAGE_NOT_FOUND", "Message not found"));
         if (!"FAILED".equals(status)) {
             throw ApiException.unprocessable("NOT_FAILED", "Only failed messages can be retried");
         }
-        if ("[redacted]".equals(jdbc.sql("SELECT body FROM outbound_messages WHERE id = :id").param("id", id)
+        if ("[redacted]".equals(jdbc.sql(QueryUtil.get(QueryConstants.GET_MESSAGE_BODY)).param("id", id)
                 .query(String.class).single())) {
             throw ApiException.unprocessable("MESSAGE_EXPIRED", "One-time codes can't be resent; ask the user to request a new one");
         }
-        jdbc.sql("""
-                UPDATE outbound_messages SET status = 'PENDING', attempts = 0, next_attempt_at = now(), last_error = NULL
-                 WHERE id = :id
-                """)
+        jdbc.sql(QueryUtil.get(QueryConstants.UPDATE_MESSAGE_RETRY))
             .param("id", id).update();
     }
 
@@ -105,11 +90,7 @@ public class MessageAdmin {
         }
         String s = deliveryStatus.trim().toUpperCase(Locale.ROOT);
         boolean delivered = s.startsWith("DELIVER") || s.equals("1") || s.equals("READ");
-        int rows = jdbc.sql("""
-                UPDATE outbound_messages
-                   SET delivery_status = :s, delivered_at = CASE WHEN :delivered THEN coalesce(delivered_at, now()) ELSE delivered_at END
-                 WHERE provider = :p AND provider_message_id = :pid
-                """)
+        int rows = jdbc.sql(QueryUtil.get(QueryConstants.UPDATE_MESSAGE_DELIVERY_REPORT))
             .param("s", delivered ? "DELIVERED" : MessageOutbox.truncate(s, 20)).param("delivered", delivered)
             .param("p", provider).param("pid", providerMessageId)
             .update();

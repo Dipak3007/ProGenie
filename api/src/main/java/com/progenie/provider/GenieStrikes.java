@@ -6,6 +6,9 @@ import org.springframework.jdbc.core.simple.JdbcClient;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import com.progenie.shared.config.QueryConstants;
+import com.progenie.shared.util.QueryUtil;
+
 /**
  * Warnings on a Genie from resolved complaints. Three strikes within 90 days raise the reliability flag,
  * so an admin reviews the Genie (the same flag as for repeated cancellations).
@@ -26,7 +29,7 @@ public class GenieStrikes {
     /** Records a strike and returns how many the Genie has in the last 90 days. */
     @Transactional
     public int add(UUID genieId, UUID ticketId, String reason, UUID adminId) {
-        jdbc.sql("INSERT INTO genie_strikes (genie_id, ticket_id, reason, created_by) VALUES (:g, :t, :r, :a)")
+        jdbc.sql(QueryUtil.get(QueryConstants.INSERT_GENIE_STRIKE_ADD))
             .param("g", genieId).param("t", ticketId).param("r", reason).param("a", adminId).update();
         int recent = count(genieId);
         if (recent >= THRESHOLD) {
@@ -37,7 +40,7 @@ public class GenieStrikes {
 
     @Transactional(readOnly = true)
     public int count(UUID genieId) {
-        return jdbc.sql("SELECT count(*) FROM genie_strikes WHERE genie_id = :g AND created_at > now() - interval '90 days'")
+        return jdbc.sql(QueryUtil.get(QueryConstants.COUNT_GENIE_STRIKE_RECENT))
             .param("g", genieId).query(Integer.class).single();
     }
 }

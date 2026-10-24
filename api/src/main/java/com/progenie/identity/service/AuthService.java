@@ -29,12 +29,14 @@ import com.progenie.identity.web.dto.AuthDtos.RegisterRequest;
 import com.progenie.identity.web.dto.AuthDtos.UserDto;
 import com.progenie.legal.ConsentService;
 import com.progenie.notification.delivery.MessageCategory;
-import com.progenie.notification.delivery.NotificationPreferences;
 import com.progenie.notification.delivery.NotificationPreferences.PreferenceDto;
+import com.progenie.notification.delivery.NotificationPreferences;
 import com.progenie.shared.config.AppProperties;
+import com.progenie.shared.config.QueryConstants;
 import com.progenie.shared.error.ApiException;
 import com.progenie.shared.security.JwtTokenService;
 import com.progenie.shared.util.Phones;
+import com.progenie.shared.util.QueryUtil;
 import com.progenie.shared.util.Times;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -185,8 +187,8 @@ public class AuthService {
             }
             case RESET_PASSWORD -> {
                 String token = newOpaqueToken();
-                jdbc.sql("DELETE FROM password_reset_tokens WHERE user_id = :u").param("u", user.getId()).update();
-                jdbc.sql("INSERT INTO password_reset_tokens (token_hash, user_id, expires_at) VALUES (:h, :u, :exp)")
+                jdbc.sql(QueryUtil.get(QueryConstants.DELETE_PASSWORD_RESET_FOR_USER)).param("u", user.getId()).update();
+                jdbc.sql(QueryUtil.get(QueryConstants.INSERT_PASSWORD_RESET_TOKEN))
                     .param("h", sha256(token)).param("u", user.getId())
                     .param("exp", Times.odt(clock.instant().plus(auth.resetTokenTtl())))
                     .update();
@@ -205,12 +207,12 @@ public class AuthService {
         }
         Instant now = clock.instant();
         String hash = sha256(resetToken);
-        Token t = jdbc.sql("SELECT user_id, expires_at, used_at FROM password_reset_tokens WHERE token_hash = :h FOR UPDATE")
+        Token t = jdbc.sql(QueryUtil.get(QueryConstants.LOCK_PASSWORD_RESET_TOKEN))
             .param("h", hash).query(Token.class).optional()
             .filter(x -> x.usedAt() == null && x.expiresAt().toInstant().isAfter(now))
             .orElseThrow(() -> ApiException.badRequest("RESET_TOKEN_INVALID",
                 "This reset link has expired. Please ask for a new code"));
-        jdbc.sql("UPDATE password_reset_tokens SET used_at = :now WHERE token_hash = :h")
+        jdbc.sql(QueryUtil.get(QueryConstants.UPDATE_PASSWORD_RESET_USED))
             .param("now", Times.odt(now)).param("h", hash).update();
         User user = users.findById(t.userId())
             .filter(User::isActive)

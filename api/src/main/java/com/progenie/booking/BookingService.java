@@ -18,14 +18,16 @@ import com.progenie.booking.domain.BookingRepository;
 import com.progenie.booking.domain.BookingStatus;
 import com.progenie.customer.AddressDtos.AddressDto;
 import com.progenie.customer.AddressService;
-import com.progenie.pricing.PriceCalculator.PriceBreakdown;
-import com.progenie.pricing.PricingService;
-import com.progenie.provider.GenieDirectory;
-import com.progenie.provider.GenieDirectory.Offer;
 import com.progenie.identity.AccountGuards;
 import com.progenie.legal.ConsentService;
+import com.progenie.pricing.PriceCalculator.PriceBreakdown;
+import com.progenie.pricing.PricingService;
+import com.progenie.provider.GenieDirectory.Offer;
+import com.progenie.provider.GenieDirectory;
 import com.progenie.shared.config.AppProperties;
+import com.progenie.shared.config.QueryConstants;
 import com.progenie.shared.error.ApiException;
+import com.progenie.shared.util.QueryUtil;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.dao.DataIntegrityViolationException;
@@ -129,15 +131,7 @@ public class BookingService {
             throw e;
         }
         // Freeze the address as it is now (the customer may edit or delete it later).
-        jdbc.sql("""
-                UPDATE bookings b
-                   SET address_snapshot = jsonb_build_object(
-                           'label', a.label, 'line1', a.line1, 'line2', a.line2, 'landmark', a.landmark,
-                           'area', a.area, 'city', c.name, 'pincode', a.pincode),
-                       customer_location = a.location
-                  FROM addresses a JOIN cities c ON c.id = a.city_id
-                 WHERE b.id = :bookingId AND a.id = :addressId
-                """)
+        jdbc.sql(QueryUtil.get(QueryConstants.UPDATE_BOOKING_SNAPSHOT_ADDRESS))
             .param("bookingId", booking.getId())
             .param("addressId", address.id())
             .update();
@@ -225,7 +219,7 @@ public class BookingService {
 
     /** PG-2026-000123 (year in the business time zone, number from a database sequence). */
     private String nextBookingRef(Instant now) {
-        long n = jdbc.sql("SELECT nextval('booking_ref_seq')").query(Long.class).single();
+        long n = jdbc.sql(QueryUtil.get(QueryConstants.GET_BOOKING_NEXT_REF)).query(Long.class).single();
         return "PG-%d-%06d".formatted(LocalDate.ofInstant(now, zone).getYear(), n);
     }
 

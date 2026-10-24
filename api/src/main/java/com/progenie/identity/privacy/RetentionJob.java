@@ -3,8 +3,10 @@ package com.progenie.identity.privacy;
 import java.util.List;
 import java.util.UUID;
 
+import com.progenie.shared.config.QueryConstants;
 import com.progenie.shared.jobs.JobLock;
 import com.progenie.shared.storage.FileStorage;
+import com.progenie.shared.util.QueryUtil;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.jdbc.core.simple.JdbcClient;
@@ -45,10 +47,10 @@ class RetentionJob {
         }
         int kyc = deleteKycFiles();
         int tickets = deleteOldTickets();
-        int messages = jdbc.sql("DELETE FROM outbound_messages WHERE created_at < now() - interval '90 days' AND status <> 'PENDING'").update();
-        int otps = jdbc.sql("DELETE FROM otp_challenges WHERE expires_at < now() - interval '1 day'").update();
-        int resets = jdbc.sql("DELETE FROM password_reset_tokens WHERE expires_at < now() - interval '1 day'").update();
-        int hooks = jdbc.sql("DELETE FROM webhook_events WHERE received_at < now() - interval '90 days'").update();
+        int messages = jdbc.sql(QueryUtil.get(QueryConstants.DELETE_RETENTION_OLD_MESSAGES)).update();
+        int otps = jdbc.sql(QueryUtil.get(QueryConstants.DELETE_RETENTION_OLD_OTPS)).update();
+        int resets = jdbc.sql(QueryUtil.get(QueryConstants.DELETE_RETENTION_OLD_RESET_TOKENS)).update();
+        int hooks = jdbc.sql(QueryUtil.get(QueryConstants.DELETE_RETENTION_OLD_WEBHOOK_EVENTS)).update();
         log.info("Retention: {} KYC files, {} tickets, {} message copies, {} codes, {} reset tokens, {} webhook ids removed",
             kyc, tickets, messages, otps, resets, hooks);
     }
@@ -56,32 +58,22 @@ class RetentionJob {
     private int deleteKycFiles() {
         record Doc(UUID id, String objectKey) {
         }
-        List<Doc> docs = jdbc.sql("""
-                SELECT d.id, d.object_key FROM genie_documents d
-                  JOIN users u ON u.id = d.genie_id
-                  JOIN genie_profiles gp ON gp.user_id = d.genie_id
-                 WHERE (u.deleted_at IS NOT NULL AND u.deleted_at < now() - interval '30 days')
-                    OR (gp.verification_status = 'REJECTED' AND NOT EXISTS (
-                          SELECT 1 FROM genie_verification_events e
-                           WHERE e.genie_id = d.genie_id AND e.created_at > now() - interval '180 days'))
-                """).query(Doc.class).list();
+        List<Doc> docs = jdbc.sql(QueryUtil.get(QueryConstants.GET_RETENTION_EXPIRED_KYC_FILES)).query(Doc.class).list();
         for (Doc d : docs) {
             try {
                 storage.delete(d.objectKey());
             } catch (RuntimeException ex) {
                 log.warn("Could not delete KYC file {}: {}", d.objectKey(), ex.getMessage());
             }
-            jdbc.sql("DELETE FROM genie_documents WHERE id = :id").param("id", d.id()).update();
+            jdbc.sql(QueryUtil.get(QueryConstants.DELETE_GENIE_DOCUMENT_BY_ID)).param("id", d.id()).update();
         }
         return docs.size();
     }
 
     private int deleteOldTickets() {
-        List<UUID> old = jdbc.sql("""
-                SELECT id FROM tickets WHERE status = 'CLOSED' AND closed_at < now() - interval '3 years' LIMIT 500
-                """).query(UUID.class).list();
+        List<UUID> old = jdbc.sql(QueryUtil.get(QueryConstants.GET_RETENTION_OLD_CLOSED_TICKETS)).query(UUID.class).list();
         for (UUID id : old) {
-            jdbc.sql("SELECT file_key FROM ticket_attachments WHERE ticket_id = :t").param("t", id).query(String.class).list()
+            jdbc.sql(QueryUtil.get(QueryConstants.GET_TICKET_ATTACHMENT_FILE_KEYS)).param("t", id).query(String.class).list()
                 .forEach(key -> {
                     try {
                         storage.delete(key);
@@ -89,9 +81,9 @@ class RetentionJob {
                         log.warn("Could not delete ticket photo {}: {}", key, ex.getMessage());
                     }
                 });
-            jdbc.sql("UPDATE refunds SET ticket_id = NULL WHERE ticket_id = :t").param("t", id).update();
-            jdbc.sql("UPDATE genie_strikes SET ticket_id = NULL WHERE ticket_id = :t").param("t", id).update();
-            jdbc.sql("DELETE FROM tickets WHERE id = :t").param("t", id).update();
+            jdbc.sql(QueryUtil.get(QueryConstants.UPDATE_RETENTION_DETACH_REFUNDS)).param("t", id).update();
+            jdbc.sql(QueryUtil.get(QueryConstants.UPDATE_RETENTION_DETACH_STRIKES)).param("t", id).update();
+            jdbc.sql(QueryUtil.get(QueryConstants.DELETE_TICKET_BY_ID)).param("t", id).update();
         }
         return old.size();
     }

@@ -5,7 +5,9 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 
+import com.progenie.shared.config.QueryConstants;
 import com.progenie.shared.error.ApiException;
+import com.progenie.shared.util.QueryUtil;
 import jakarta.validation.constraints.DecimalMax;
 import jakarta.validation.constraints.DecimalMin;
 import jakarta.validation.constraints.Max;
@@ -74,21 +76,14 @@ public class CatalogAdminService {
 
     @Transactional(readOnly = true)
     public List<AdminCategoryDto> categories() {
-        return jdbc.sql("""
-                SELECT c.id, c.slug, c.name, c.description, c.icon, c.image_url, c.sort_order, c.is_active AS active,
-                       (SELECT count(*) FROM services s WHERE s.category_id = c.id) AS service_count
-                  FROM service_categories c ORDER BY c.sort_order, c.name
-                """)
+        return jdbc.sql(QueryUtil.get(QueryConstants.GET_CATALOG_ADMIN_CATEGORIES))
             .query(AdminCategoryDto.class).list();
     }
 
     @Transactional
     public AdminCategoryDto createCategory(CategoryRequest req) {
         try {
-            long id = jdbc.sql("""
-                    INSERT INTO service_categories (slug, name, description, icon, image_url, sort_order, is_active)
-                    VALUES (:slug, :name, :description, :icon, :image, :sort, :active) RETURNING id
-                    """)
+            long id = jdbc.sql(QueryUtil.get(QueryConstants.INSERT_CATALOG_CATEGORY))
                 .params(categoryParams(req)).query(Long.class).single();
             return category(id);
         } catch (DuplicateKeyException e) {
@@ -99,11 +94,7 @@ public class CatalogAdminService {
     @Transactional
     public AdminCategoryDto updateCategory(long id, CategoryRequest req) {
         try {
-            int rows = jdbc.sql("""
-                    UPDATE service_categories SET slug = :slug, name = :name, description = :description, icon = :icon,
-                           image_url = :image, sort_order = :sort, is_active = :active
-                     WHERE id = :id
-                    """)
+            int rows = jdbc.sql(QueryUtil.get(QueryConstants.UPDATE_CATALOG_CATEGORY))
                 .params(categoryParams(req)).param("id", id).update();
             if (rows == 0) {
                 throw ApiException.notFound("CATEGORY_NOT_FOUND", "Category not found");
@@ -133,16 +124,9 @@ public class CatalogAdminService {
 
     // ------------------------------------------------------------------ services
 
-    private static final String SERVICE_SELECT = """
-        SELECT s.id, s.category_id, c.name AS category_name, s.slug, s.name, s.description, s.base_price,
-               s.duration_minutes, s.is_active AS active,
-               (SELECT count(*) FROM genie_services gs WHERE gs.service_id = s.id AND gs.is_active) AS genie_count
-          FROM services s JOIN service_categories c ON c.id = s.category_id
-        """;
-
     @Transactional(readOnly = true)
     public List<AdminServiceDto> services(Long categoryId) {
-        return jdbc.sql(SERVICE_SELECT + " WHERE (CAST(:c AS bigint) IS NULL OR s.category_id = :c) ORDER BY c.sort_order, s.base_price")
+        return jdbc.sql(QueryUtil.get(QueryConstants.GET_CATALOG_ADMIN_SERVICES))
             .param("c", categoryId).query(AdminServiceDto.class).list();
     }
 
@@ -150,10 +134,7 @@ public class CatalogAdminService {
     public AdminServiceDto createService(ServiceRequest req) {
         requireCategory(req.categoryId());
         try {
-            long id = jdbc.sql("""
-                    INSERT INTO services (category_id, slug, name, description, base_price, duration_minutes, is_active)
-                    VALUES (:category, :slug, :name, :description, :price, :duration, :active) RETURNING id
-                    """)
+            long id = jdbc.sql(QueryUtil.get(QueryConstants.INSERT_CATALOG_SERVICE))
                 .params(serviceParams(req)).query(Long.class).single();
             return service(id);
         } catch (DuplicateKeyException e) {
@@ -166,11 +147,7 @@ public class CatalogAdminService {
     public AdminServiceDto updateService(long id, ServiceRequest req) {
         requireCategory(req.categoryId());
         try {
-            int rows = jdbc.sql("""
-                    UPDATE services SET category_id = :category, slug = :slug, name = :name, description = :description,
-                           base_price = :price, duration_minutes = :duration, is_active = :active
-                     WHERE id = :id
-                    """)
+            int rows = jdbc.sql(QueryUtil.get(QueryConstants.UPDATE_CATALOG_SERVICE))
                 .params(serviceParams(req)).param("id", id).update();
             if (rows == 0) {
                 throw ApiException.notFound("SERVICE_NOT_FOUND", "Service not found");
@@ -182,12 +159,12 @@ public class CatalogAdminService {
     }
 
     private AdminServiceDto service(long id) {
-        return jdbc.sql(SERVICE_SELECT + " WHERE s.id = :id").param("id", id).query(AdminServiceDto.class).optional()
+        return jdbc.sql(QueryUtil.get(QueryConstants.GET_CATALOG_ADMIN_SERVICE)).param("id", id).query(AdminServiceDto.class).optional()
             .orElseThrow(() -> ApiException.notFound("SERVICE_NOT_FOUND", "Service not found"));
     }
 
     private void requireCategory(long categoryId) {
-        boolean exists = jdbc.sql("SELECT EXISTS (SELECT 1 FROM service_categories WHERE id = :id)")
+        boolean exists = jdbc.sql(QueryUtil.get(QueryConstants.EXISTS_CATALOG_CATEGORY))
             .param("id", categoryId).query(Boolean.class).single();
         if (!exists) {
             throw ApiException.badRequest("CATEGORY_NOT_FOUND", "Category not found");
@@ -210,29 +187,18 @@ public class CatalogAdminService {
 
     @Transactional(readOnly = true)
     public List<CityPricingDto> cityPricing() {
-        return jdbc.sql("""
-                SELECT c.id AS city_id, c.name, c.state, c.is_active AS active, p.commission_rate, p.travel_free_km,
-                       p.travel_base_fee, p.travel_per_km, p.travel_fee_cap, p.currency
-                  FROM cities c LEFT JOIN city_pricing p ON p.city_id = c.id ORDER BY c.name
-                """)
+        return jdbc.sql(QueryUtil.get(QueryConstants.GET_CATALOG_CITY_PRICING))
             .query(CityPricingDto.class).list();
     }
 
     @Transactional
     public CityPricingDto updatePricing(long cityId, PricingRequest req) {
-        boolean exists = jdbc.sql("SELECT EXISTS (SELECT 1 FROM cities WHERE id = :id)").param("id", cityId)
+        boolean exists = jdbc.sql(QueryUtil.get(QueryConstants.EXISTS_CATALOG_CITY)).param("id", cityId)
             .query(Boolean.class).single();
         if (!exists) {
             throw ApiException.notFound("CITY_NOT_FOUND", "City not found");
         }
-        jdbc.sql("""
-                INSERT INTO city_pricing (city_id, commission_rate, travel_free_km, travel_base_fee, travel_per_km,
-                                          travel_fee_cap, updated_at)
-                VALUES (:id, :rate, :free, :base, :perKm, :cap, now())
-                ON CONFLICT (city_id) DO UPDATE SET commission_rate = EXCLUDED.commission_rate,
-                    travel_free_km = EXCLUDED.travel_free_km, travel_base_fee = EXCLUDED.travel_base_fee,
-                    travel_per_km = EXCLUDED.travel_per_km, travel_fee_cap = EXCLUDED.travel_fee_cap, updated_at = now()
-                """)
+        jdbc.sql(QueryUtil.get(QueryConstants.UPSERT_CATALOG_CITY_PRICING))
             .param("id", cityId).param("rate", req.commissionRate()).param("free", req.travelFreeKm())
             .param("base", req.travelBaseFee()).param("perKm", req.travelPerKm()).param("cap", req.travelFeeCap())
             .update();

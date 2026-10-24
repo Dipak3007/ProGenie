@@ -2,8 +2,11 @@ package com.progenie.notification;
 
 import java.time.OffsetDateTime;
 import java.util.List;
+import java.util.Map;
 import java.util.UUID;
 
+import com.progenie.shared.config.QueryConstants;
+import com.progenie.shared.util.QueryUtil;
 import com.progenie.shared.web.PageResponse;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -32,7 +35,7 @@ public class NotificationService {
 
     @Transactional
     public void notify(UUID userId, String type, String title, String body, String link) {
-        jdbc.sql("INSERT INTO notifications (user_id, type, title, body, link) VALUES (:u, :type, :title, :body, :link)")
+        jdbc.sql(QueryUtil.get(QueryConstants.INSERT_NOTIFICATION_CREATE))
             .param("u", userId).param("type", type).param("title", truncate(title, 120)).param("body", truncate(body, 500))
             .param("link", link)
             .update();
@@ -41,10 +44,7 @@ public class NotificationService {
 
     @Transactional
     public void notifyAdmins(String type, String title, String body, String link) {
-        jdbc.sql("""
-                INSERT INTO notifications (user_id, type, title, body, link)
-                SELECT id, :type, :title, :body, :link FROM users WHERE role = 'ADMIN' AND status = 'ACTIVE'
-                """)
+        jdbc.sql(QueryUtil.get(QueryConstants.INSERT_NOTIFICATION_FOR_ADMINS))
             .param("type", type).param("title", truncate(title, 120)).param("body", truncate(body, 500))
             .param("link", link)
             .update();
@@ -52,11 +52,11 @@ public class NotificationService {
 
     @Transactional(readOnly = true)
     public PageResponse<NotificationDto> list(UUID userId, boolean unreadOnly, int page, int size) {
-        String where = " WHERE user_id = :u" + (unreadOnly ? " AND read_at IS NULL" : "");
-        long total = jdbc.sql("SELECT count(*) FROM notifications" + where).param("u", userId).query(Long.class).single();
-        List<NotificationDto> items = jdbc.sql("""
-                SELECT id, type, title, body, link, read_at, created_at FROM notifications
-                """ + where + " ORDER BY created_at DESC LIMIT :limit OFFSET :offset")
+        Map<String, String> unread = Map.of("unread",
+            unreadOnly ? QueryConstants.FRAGMENT_NOTIFICATION_UNREAD_ONLY : QueryConstants.FRAGMENT_NONE);
+        long total = jdbc.sql(QueryUtil.get(QueryConstants.COUNT_NOTIFICATION_LIST, unread))
+            .param("u", userId).query(Long.class).single();
+        List<NotificationDto> items = jdbc.sql(QueryUtil.get(QueryConstants.GET_NOTIFICATION_LIST, unread))
             .param("u", userId)
             .param("limit", PageResponse.clampSize(size)).param("offset", PageResponse.offset(page, size))
             .query(NotificationDto.class).list();
@@ -65,19 +65,19 @@ public class NotificationService {
 
     @Transactional(readOnly = true)
     public long unreadCount(UUID userId) {
-        return jdbc.sql("SELECT count(*) FROM notifications WHERE user_id = :u AND read_at IS NULL")
+        return jdbc.sql(QueryUtil.get(QueryConstants.COUNT_NOTIFICATION_UNREAD))
             .param("u", userId).query(Long.class).single();
     }
 
     @Transactional
     public void markRead(UUID userId, UUID notificationId) {
-        jdbc.sql("UPDATE notifications SET read_at = now() WHERE id = :id AND user_id = :u AND read_at IS NULL")
+        jdbc.sql(QueryUtil.get(QueryConstants.UPDATE_NOTIFICATION_MARK_READ))
             .param("id", notificationId).param("u", userId).update();
     }
 
     @Transactional
     public int markAllRead(UUID userId) {
-        return jdbc.sql("UPDATE notifications SET read_at = now() WHERE user_id = :u AND read_at IS NULL")
+        return jdbc.sql(QueryUtil.get(QueryConstants.UPDATE_NOTIFICATION_MARK_ALL_READ))
             .param("u", userId).update();
     }
 

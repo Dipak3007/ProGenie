@@ -7,11 +7,13 @@ import java.util.List;
 import java.util.Locale;
 import java.util.UUID;
 
-import com.progenie.booking.BookingPayments;
 import com.progenie.booking.BookingPayments.Payable;
+import com.progenie.booking.BookingPayments;
 import com.progenie.payment.PaymentDtos.RefundProcessed;
 import com.progenie.payment.PaymentGateway.RefundResult;
+import com.progenie.shared.config.QueryConstants;
 import com.progenie.shared.error.ApiException;
+import com.progenie.shared.util.QueryUtil;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.context.ApplicationEventPublisher;
@@ -56,12 +58,6 @@ public class RefundService {
                      String method, String status) {
     }
 
-    private static final String SELECT = """
-        SELECT id, payment_id, booking_id, amount, genie_share, platform_share, reason, method, status, provider_refund_id,
-               manual_reference, failure_reason, ticket_id, created_at, processed_at
-          FROM refunds
-        """;
-
     private final JdbcClient jdbc;
     private final BookingPayments bookings;
     private final LedgerService ledger;
@@ -80,10 +76,7 @@ public class RefundService {
     /** Admin refund, optionally linked to a complaint ticket. */
     @Transactional
     public RefundDto create(UUID adminId, UUID paymentId, RefundRequest req, UUID ticketId) {
-        PaymentForRefund p = jdbc.sql("""
-                SELECT id, booking_id, customer_id, purpose, method, provider, provider_ref, amount, status
-                  FROM payments WHERE id = :id FOR UPDATE
-                """)
+        PaymentForRefund p = jdbc.sql(QueryUtil.get(QueryConstants.LOCK_REFUND_PAYMENT))
             .param("id", paymentId).query(PaymentForRefund.class).optional()
             .orElseThrow(() -> ApiException.notFound("PAYMENT_NOT_FOUND", "Payment not found"));
         if (!"SUCCEEDED".equals(p.status())) {
@@ -136,12 +129,7 @@ public class RefundService {
         }
 
         Payable b = bookings.lockPayable(p.bookingId());
-        UUID refundId = jdbc.sql("""
-                INSERT INTO refunds (payment_id, booking_id, amount, genie_share, platform_share, reason, method,
-                                     manual_reference, ticket_id, initiated_by)
-                VALUES (:p, :b, :amount, :g, :pl, :reason, :method, :ref, :ticket, :admin)
-                RETURNING id
-                """)
+        UUID refundId = jdbc.sql(QueryUtil.get(QueryConstants.INSERT_REFUND_CREATE))
             .param("p", p.id()).param("b", p.bookingId()).param("amount", amount).param("g", genieShare)
             .param("pl", platformShare).param("reason", reason).param("method", method).param("ref", manualRef)
             .param("ticket", ticketId).param("admin", adminId)
@@ -149,7 +137,7 @@ public class RefundService {
 
         if ("GATEWAY".equals(method)) {
             RefundResult result = gateway.refund(p.providerRef(), amount, b.bookingRef());
-            jdbc.sql("UPDATE refunds SET provider_refund_id = :r WHERE id = :id")
+            jdbc.sql(QueryUtil.get(QueryConstants.UPDATE_REFUND_PROVIDER_ID))
                 .param("r", result.refundId()).param("id", refundId).update();
             if (result.processed()) {
                 process(refundId, b);
@@ -170,10 +158,7 @@ public class RefundService {
         }
         record Found(UUID id, UUID bookingId, String status) {
         }
-        Found f = jdbc.sql("""
-                SELECT r.id, r.booking_id, r.status FROM refunds r JOIN payments p ON p.id = r.payment_id
-                 WHERE r.provider_refund_id = :r AND p.provider = :provider FOR UPDATE OF r
-                """)
+        Found f = jdbc.sql(QueryUtil.get(QueryConstants.GET_REFUND_BY_PROVIDER_ID))
             .param("r", providerRefundId).param("provider", provider).query(Found.class).optional().orElse(null);
         if (f == null || !"PENDING".equals(f.status())) {
             return;
@@ -181,7 +166,7 @@ public class RefundService {
         if (processed) {
             process(f.id(), bookings.lockPayable(f.bookingId()));
         } else {
-            jdbc.sql("UPDATE refunds SET status = 'FAILED', failure_reason = :reason WHERE id = :id")
+            jdbc.sql(QueryUtil.get(QueryConstants.UPDATE_REFUND_FAILED))
                 .param("reason", reason == null ? "Refund failed at the gateway" : reason).param("id", f.id()).update();
             log.warn("Refund {} failed at the gateway: {}", f.id(), reason);
         }
@@ -189,47 +174,40 @@ public class RefundService {
 
     @Transactional(readOnly = true)
     public List<RefundDto> forBooking(UUID bookingId) {
-        return jdbc.sql(SELECT + " WHERE booking_id = :b ORDER BY created_at DESC").param("b", bookingId)
+        return jdbc.sql(QueryUtil.get(QueryConstants.GET_REFUND_FOR_BOOKING)).param("b", bookingId)
             .query(RefundDto.class).list();
     }
 
     @Transactional(readOnly = true)
     public RefundDto get(UUID refundId) {
-        return jdbc.sql(SELECT + " WHERE id = :id").param("id", refundId).query(RefundDto.class).optional()
+        return jdbc.sql(QueryUtil.get(QueryConstants.GET_REFUND_BY_ID)).param("id", refundId).query(RefundDto.class).optional()
             .orElseThrow(() -> ApiException.notFound("REFUND_NOT_FOUND", "Refund not found"));
     }
 
     /** What can still be refunded on this payment (pending refunds count as used). */
     BigDecimal refundable(PaymentForRefund p) {
-        BigDecimal used = jdbc.sql("""
-                SELECT coalesce(sum(amount), 0) FROM refunds WHERE payment_id = :p AND status IN ('PENDING', 'PROCESSED')
-                """)
+        BigDecimal used = jdbc.sql(QueryUtil.get(QueryConstants.GET_REFUND_COMMITTED_TOTAL))
             .param("p", p.id()).query(BigDecimal.class).single();
         return p.amount().subtract(used).max(BigDecimal.ZERO);
     }
 
     /** The money has gone: post the ledger, update payment and booking status, tell everyone. */
     private void process(UUID refundId, Payable b) {
-        RefundRow r = jdbc.sql("""
-                SELECT id, payment_id, amount, genie_share, platform_share, method, status FROM refunds WHERE id = :id
-                """)
+        RefundRow r = jdbc.sql(QueryUtil.get(QueryConstants.GET_REFUND_FOR_PROCESSING))
             .param("id", refundId).query(RefundRow.class).single();
-        PaymentForRefund p = jdbc.sql("""
-                SELECT id, booking_id, customer_id, purpose, method, provider, provider_ref, amount, status
-                  FROM payments WHERE id = :id
-                """)
+        PaymentForRefund p = jdbc.sql(QueryUtil.get(QueryConstants.GET_REFUND_PAYMENT))
             .param("id", r.paymentId()).query(PaymentForRefund.class).single();
-        jdbc.sql("UPDATE refunds SET status = 'PROCESSED', processed_at = now() WHERE id = :id").param("id", refundId).update();
+        jdbc.sql(QueryUtil.get(QueryConstants.UPDATE_REFUND_PROCESSED)).param("id", refundId).update();
 
         BigDecimal commission = "BOOKING".equals(p.purpose()) ? b.commissionAmount() : BigDecimal.ZERO;
         ledger.postRefund(LedgerPostings.refund(b.bookingId(), b.genieId(), b.bookingRef(), r.genieShare(),
             r.platformShare(), p.amount(), commission), refundId);
 
-        BigDecimal refunded = jdbc.sql("SELECT coalesce(sum(amount), 0) FROM refunds WHERE payment_id = :p AND status = 'PROCESSED'")
+        BigDecimal refunded = jdbc.sql(QueryUtil.get(QueryConstants.GET_REFUND_PROCESSED_TOTAL))
             .param("p", p.id()).query(BigDecimal.class).single();
         boolean full = refunded.compareTo(p.amount()) >= 0;
         if (full) {
-            jdbc.sql("UPDATE payments SET status = 'REFUNDED', updated_at = now() WHERE id = :id").param("id", p.id()).update();
+            jdbc.sql(QueryUtil.get(QueryConstants.UPDATE_REFUND_PAYMENT_REFUNDED)).param("id", p.id()).update();
         }
         if ("BOOKING".equals(p.purpose())) {
             bookings.markRefunded(b.bookingId(), full);

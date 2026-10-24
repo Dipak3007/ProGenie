@@ -7,7 +7,9 @@ import java.util.Set;
 import java.util.UUID;
 
 import com.progenie.notification.delivery.MessageOutbox.NewMessage;
+import com.progenie.shared.config.QueryConstants;
 import com.progenie.shared.util.Masking;
+import com.progenie.shared.util.QueryUtil;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.jdbc.core.simple.JdbcClient;
@@ -92,7 +94,7 @@ public class Messenger {
     /** Every active admin (e.g. the SMS for an urgent safety complaint). */
     @Transactional
     public void toAdmins(MessageTemplate template, Set<Channel> channels, Map<String, String> params, String dedupeKey) {
-        List<UUID> admins = jdbc.sql("SELECT id FROM users WHERE role = 'ADMIN' AND status = 'ACTIVE'")
+        List<UUID> admins = jdbc.sql(QueryUtil.get(QueryConstants.GET_USER_ACTIVE_ADMIN_IDS))
             .query(UUID.class).list();
         admins.forEach(id -> toUser(id, template, channels, params, dedupeKey));
     }
@@ -116,7 +118,7 @@ public class Messenger {
     }
 
     private Contact contact(UUID userId) {
-        return jdbc.sql("SELECT id, full_name, phone, email, email_verified, status FROM users WHERE id = :id")
+        return jdbc.sql(QueryUtil.get(QueryConstants.GET_USER_CONTACT))
             .param("id", userId)
             .query(Contact.class).optional().orElse(null);
     }

@@ -4,7 +4,9 @@ import java.time.Clock;
 import java.time.Duration;
 import java.time.Instant;
 
+import com.progenie.shared.config.QueryConstants;
 import com.progenie.shared.jobs.JobLock;
+import com.progenie.shared.util.QueryUtil;
 import com.progenie.shared.util.Times;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -43,11 +45,7 @@ public class RateLimiter {
     /** Counts one hit and returns the number of hits in the current window (including this one). */
     @Transactional(propagation = Propagation.REQUIRES_NEW)
     public int hit(String key, Duration window) {
-        Integer hits = jdbc.sql("""
-                INSERT INTO rate_limit_counters (key, window_start, hits) VALUES (:key, :start, 1)
-                ON CONFLICT (key, window_start) DO UPDATE SET hits = rate_limit_counters.hits + 1
-                RETURNING hits
-                """)
+        Integer hits = jdbc.sql(QueryUtil.get(QueryConstants.UPSERT_RATE_LIMIT_HIT))
             .param("key", key).param("start", Times.odt(windowStart(window)))
             .query(Integer.class).single();
         return hits;
@@ -56,7 +54,7 @@ public class RateLimiter {
     /** Forgets a key (e.g. failed logins after a successful one). */
     @Transactional(propagation = Propagation.REQUIRES_NEW)
     public void reset(String key) {
-        jdbc.sql("DELETE FROM rate_limit_counters WHERE key = :key").param("key", key).update();
+        jdbc.sql(QueryUtil.get(QueryConstants.DELETE_RATE_LIMIT_KEY)).param("key", key).update();
     }
 
     Instant windowStart(Duration window) {
@@ -72,7 +70,7 @@ public class RateLimiter {
         if (!lock.tryAcquire("rate-limit-purge")) {
             return;
         }
-        int rows = jdbc.sql("DELETE FROM rate_limit_counters WHERE window_start < now() - interval '1 day'").update();
+        int rows = jdbc.sql(QueryUtil.get(QueryConstants.DELETE_RATE_LIMIT_OLD_WINDOWS)).update();
         if (rows > 0) {
             log.debug("Purged {} rate-limit windows", rows);
         }

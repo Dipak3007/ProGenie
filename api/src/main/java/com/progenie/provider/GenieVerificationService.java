@@ -8,7 +8,9 @@ import java.util.UUID;
 
 import com.progenie.provider.GenieEvents.GenieVerificationDecided;
 import com.progenie.provider.GenieProfileDtos.MyProfileDto;
+import com.progenie.shared.config.QueryConstants;
 import com.progenie.shared.error.ApiException;
+import com.progenie.shared.util.QueryUtil;
 import com.progenie.shared.web.PageResponse;
 import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.jdbc.core.simple.JdbcClient;
@@ -62,27 +64,12 @@ public class GenieVerificationService {
 
     @Transactional(readOnly = true)
     public PageResponse<QueueItemDto> queue(String status, Boolean flagged, String q, int page, int size) {
-        String where = """
-             WHERE (CAST(:status AS varchar) IS NULL OR gp.verification_status = :status)
-               AND (CAST(:flagged AS boolean) IS NULL OR (gp.flagged_at IS NOT NULL) = :flagged)
-               AND (CAST(:q AS varchar) IS NULL OR u.full_name ILIKE :q OR u.phone LIKE :q)
-            """;
         String query = StringUtils.hasText(q) ? "%" + q.trim() + "%" : null;
         String statusFilter = StringUtils.hasText(status) ? status.trim().toUpperCase() : null;
-        long total = jdbc.sql("SELECT count(*) FROM genie_profiles gp JOIN users u ON u.id = gp.user_id " + where)
+        long total = jdbc.sql(QueryUtil.get(QueryConstants.COUNT_GENIE_VERIFICATION_QUEUE))
             .param("status", statusFilter).param("flagged", flagged).param("q", query)
             .query(Long.class).single();
-        List<QueueItemDto> items = jdbc.sql("""
-                SELECT u.id, u.full_name, u.phone, gp.base_area, gp.verification_status, gp.submitted_at, gp.created_at,
-                       (SELECT count(*) FROM genie_services gs WHERE gs.genie_id = gp.user_id AND gs.is_active) AS service_count,
-                       (SELECT count(*) FROM genie_documents d WHERE d.genie_id = gp.user_id AND d.status = 'PENDING')
-                           AS pending_documents,
-                       gp.flagged_at, gp.flag_reason
-                  FROM genie_profiles gp JOIN users u ON u.id = gp.user_id
-                """ + where + """
-                 ORDER BY gp.flagged_at DESC NULLS LAST, gp.submitted_at ASC NULLS LAST, gp.created_at DESC
-                 LIMIT :limit OFFSET :offset
-                """)
+        List<QueueItemDto> items = jdbc.sql(QueryUtil.get(QueryConstants.GET_GENIE_VERIFICATION_QUEUE))
             .param("status", statusFilter).param("flagged", flagged).param("q", query)
             .param("limit", PageResponse.clampSize(size)).param("offset", PageResponse.offset(page, size))
             .query(QueueItemDto.class)
@@ -95,23 +82,16 @@ public class GenieVerificationService {
         MyProfileDto profile = profiles.me(genieId);
         record Extra(String userStatus, OffsetDateTime flaggedAt, String flagReason) {
         }
-        Extra extra = jdbc.sql("""
-                SELECT u.status AS user_status, gp.flagged_at, gp.flag_reason
-                  FROM genie_profiles gp JOIN users u ON u.id = gp.user_id WHERE gp.user_id = :id
-                """)
+        Extra extra = jdbc.sql(QueryUtil.get(QueryConstants.GET_GENIE_VERIFICATION_FLAGS))
             .param("id", genieId).query(Extra.class).single();
-        List<VerificationEventDto> history = jdbc.sql("""
-                SELECT e.from_status, e.to_status, e.reason, a.full_name AS actor_name, e.created_at
-                  FROM genie_verification_events e LEFT JOIN users a ON a.id = e.actor_id
-                 WHERE e.genie_id = :id ORDER BY e.created_at DESC, e.id DESC
-                """)
+        List<VerificationEventDto> history = jdbc.sql(QueryUtil.get(QueryConstants.GET_GENIE_VERIFICATION_EVENTS))
             .param("id", genieId).query(VerificationEventDto.class).list();
         return new AdminGenieDetailDto(profile, extra.userStatus(), extra.flaggedAt(), extra.flagReason(), history);
     }
 
     @Transactional
     public AdminGenieDetailDto decide(UUID genieId, UUID adminId, Decision decision, String note) {
-        String from = jdbc.sql("SELECT verification_status FROM genie_profiles WHERE user_id = :id FOR UPDATE")
+        String from = jdbc.sql(QueryUtil.get(QueryConstants.LOCK_GENIE_PROFILE_STATUS))
             .param("id", genieId).query(String.class).optional()
             .orElseThrow(() -> ApiException.notFound("GENIE_NOT_FOUND", "Genie not found"));
         if (!FROM.get(decision).contains(from)) {
@@ -124,34 +104,17 @@ public class GenieVerificationService {
         String to = TO.get(decision);
         if (decision == Decision.APPROVE) {
             // Approving the Genie accepts every document still pending review.
-            jdbc.sql("""
-                    UPDATE genie_documents SET status = 'APPROVED', reviewed_by = :admin, reviewed_at = now()
-                     WHERE genie_id = :id AND status = 'PENDING'
-                    """)
+            jdbc.sql(QueryUtil.get(QueryConstants.UPDATE_GENIE_DOCUMENT_APPROVE_PENDING))
                 .param("admin", adminId).param("id", genieId).update();
         }
-        jdbc.sql("""
-                UPDATE genie_profiles
-                   SET verification_status = :to,
-                       verification_note = :note,
-                       is_online = CASE WHEN :to = 'APPROVED' THEN is_online ELSE FALSE END,
-                       approved_at = CASE WHEN :decision = 'APPROVE' THEN now() ELSE approved_at END,
-                       approved_by = CASE WHEN :decision = 'APPROVE' THEN CAST(:admin AS uuid) ELSE approved_by END,
-                       flagged_at = CASE WHEN :decision = 'REINSTATE' THEN NULL ELSE flagged_at END,
-                       flag_reason = CASE WHEN :decision = 'REINSTATE' THEN NULL ELSE flag_reason END,
-                       updated_at = now()
-                 WHERE user_id = :id
-                """)
+        jdbc.sql(QueryUtil.get(QueryConstants.UPDATE_GENIE_PROFILE_DECISION))
             .param("to", to)
             .param("note", StringUtils.hasText(note) ? note.trim() : null)
             .param("decision", decision.name())
             .param("admin", adminId)
             .param("id", genieId)
             .update();
-        jdbc.sql("""
-                INSERT INTO genie_verification_events (genie_id, from_status, to_status, reason, actor_id)
-                VALUES (:id, :from, :to, :reason, :admin)
-                """)
+        jdbc.sql(QueryUtil.get(QueryConstants.INSERT_GENIE_VERIFICATION_EVENT))
             .param("id", genieId).param("from", from).param("to", to)
             .param("reason", StringUtils.hasText(note) ? note.trim() : decision.name())
             .param("admin", adminId)
@@ -165,10 +128,7 @@ public class GenieVerificationService {
         if (!approve && !StringUtils.hasText(note)) {
             throw ApiException.badRequest("NOTE_REQUIRED", "Please say why the document was rejected");
         }
-        int rows = jdbc.sql("""
-                UPDATE genie_documents SET status = :status, review_note = :note, reviewed_by = :admin, reviewed_at = now()
-                 WHERE id = :id
-                """)
+        int rows = jdbc.sql(QueryUtil.get(QueryConstants.UPDATE_GENIE_DOCUMENT_REVIEW))
             .param("status", approve ? "APPROVED" : "REJECTED")
             .param("note", StringUtils.hasText(note) ? note.trim() : null)
             .param("admin", adminId)
@@ -181,17 +141,14 @@ public class GenieVerificationService {
 
     @Transactional
     public void clearFlag(UUID genieId, UUID adminId) {
-        int rows = jdbc.sql("UPDATE genie_profiles SET flagged_at = NULL, flag_reason = NULL WHERE user_id = :id")
+        int rows = jdbc.sql(QueryUtil.get(QueryConstants.UPDATE_GENIE_PROFILE_CLEAR_FLAG))
             .param("id", genieId).update();
         if (rows == 0) {
             throw ApiException.notFound("GENIE_NOT_FOUND", "Genie not found");
         }
-        String status = jdbc.sql("SELECT verification_status FROM genie_profiles WHERE user_id = :id")
+        String status = jdbc.sql(QueryUtil.get(QueryConstants.GET_GENIE_PROFILE_STATUS))
             .param("id", genieId).query(String.class).single();
-        jdbc.sql("""
-                INSERT INTO genie_verification_events (genie_id, from_status, to_status, reason, actor_id)
-                VALUES (:id, :s, :s, 'Reliability flag cleared', :admin)
-                """)
+        jdbc.sql(QueryUtil.get(QueryConstants.INSERT_GENIE_VERIFICATION_FLAG_CLEARED))
             .param("id", genieId).param("s", status).param("admin", adminId).update();
     }
 }

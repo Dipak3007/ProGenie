@@ -11,6 +11,9 @@ import org.springframework.stereotype.Component;
 import tools.jackson.core.type.TypeReference;
 import tools.jackson.databind.json.JsonMapper;
 
+import com.progenie.shared.config.QueryConstants;
+import com.progenie.shared.util.QueryUtil;
+
 /** SQL for the {@code outbound_messages} table (the transactional outbox). */
 @Component
 class MessageOutbox {
@@ -39,13 +42,7 @@ class MessageOutbox {
 
     /** Joins the caller's transaction. Returns false when a message with the same dedupe key already exists. */
     boolean enqueue(NewMessage m) {
-        return jdbc.sql("""
-                INSERT INTO outbound_messages (user_id, channel, template, destination, subject, body, params, sensitive,
-                                               attachment_key, attachment_name, dedupe_key)
-                VALUES (:user, :channel, :template, :dest, :subject, :body, CAST(:params AS jsonb), :sensitive,
-                        :attKey, :attName, :dedupe)
-                ON CONFLICT (dedupe_key) DO NOTHING
-                """)
+        return jdbc.sql(QueryUtil.get(QueryConstants.INSERT_MESSAGE_ENQUEUE))
             .param("user", m.userId())
             .param("channel", m.channel().name())
             .param("template", m.template().name())
@@ -65,17 +62,7 @@ class MessageOutbox {
      * so a crash mid-send simply retries after the lease. SKIP LOCKED keeps replicas from claiming the same rows.
      */
     List<QueuedMessage> claimDue(int limit, Duration lease) {
-        return jdbc.sql("""
-                UPDATE outbound_messages m
-                   SET attempts = m.attempts + 1, next_attempt_at = now() + make_interval(secs => :lease)
-                 WHERE m.id IN (SELECT id FROM outbound_messages
-                                 WHERE status = 'PENDING' AND next_attempt_at <= now()
-                                 ORDER BY next_attempt_at
-                                 LIMIT :limit
-                                 FOR UPDATE SKIP LOCKED)
-                RETURNING m.id, m.channel, m.template, m.destination, m.subject, m.body, m.params::text AS params,
-                          m.attachment_key, m.attachment_name, m.attempts
-                """)
+        return jdbc.sql(QueryUtil.get(QueryConstants.UPDATE_MESSAGE_CLAIM_DUE))
             .param("lease", lease.toSeconds())
             .param("limit", limit)
             .query((rs, i) -> new QueuedMessage(
@@ -93,36 +80,20 @@ class MessageOutbox {
     }
 
     void markSent(UUID id, String provider, String providerMessageId) {
-        jdbc.sql("""
-                UPDATE outbound_messages
-                   SET status = 'SENT', provider = :provider, provider_message_id = :pid, sent_at = now(), last_error = NULL,
-                       body = CASE WHEN sensitive THEN '[redacted]' ELSE body END,
-                       params = CASE WHEN sensitive THEN '{}'::jsonb ELSE params END
-                 WHERE id = :id
-                """)
+        jdbc.sql(QueryUtil.get(QueryConstants.UPDATE_MESSAGE_SENT))
             .param("provider", provider).param("pid", truncate(providerMessageId, 120)).param("id", id)
             .update();
     }
 
     void reschedule(UUID id, String provider, Duration delay, String error) {
-        jdbc.sql("""
-                UPDATE outbound_messages
-                   SET provider = :provider, last_error = :error, next_attempt_at = now() + make_interval(secs => :delay)
-                 WHERE id = :id
-                """)
+        jdbc.sql(QueryUtil.get(QueryConstants.UPDATE_MESSAGE_RESCHEDULE))
             .param("provider", provider).param("error", truncate(error, 500)).param("delay", delay.toSeconds())
             .param("id", id)
             .update();
     }
 
     void markFailed(UUID id, String provider, String error) {
-        jdbc.sql("""
-                UPDATE outbound_messages
-                   SET status = 'FAILED', provider = :provider, last_error = :error,
-                       body = CASE WHEN sensitive THEN '[redacted]' ELSE body END,
-                       params = CASE WHEN sensitive THEN '{}'::jsonb ELSE params END
-                 WHERE id = :id
-                """)
+        jdbc.sql(QueryUtil.get(QueryConstants.UPDATE_MESSAGE_FAILED))
             .param("provider", provider).param("error", truncate(error, 500)).param("id", id)
             .update();
     }

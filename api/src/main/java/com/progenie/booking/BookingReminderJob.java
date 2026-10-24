@@ -7,7 +7,9 @@ import java.time.OffsetDateTime;
 import java.util.List;
 import java.util.UUID;
 
+import com.progenie.shared.config.QueryConstants;
 import com.progenie.shared.jobs.JobLock;
+import com.progenie.shared.util.QueryUtil;
 import com.progenie.shared.util.Times;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -53,18 +55,11 @@ class BookingReminderJob {
             return;
         }
         Instant now = clock.instant();
-        List<Due> due = jdbc.sql("""
-                SELECT id, booking_ref, customer_id, genie_id, slot_start FROM bookings
-                 WHERE status = 'ACCEPTED' AND reminder_sent_at IS NULL
-                   AND slot_start > :now AND slot_start <= :until
-                 ORDER BY slot_start
-                 LIMIT 200
-                 FOR UPDATE SKIP LOCKED
-                """)
+        List<Due> due = jdbc.sql(QueryUtil.get(QueryConstants.LOCK_BOOKING_DUE_REMINDERS))
             .param("now", Times.odt(now)).param("until", Times.odt(now.plus(lead)))
             .query(Due.class).list();
         for (Due d : due) {
-            jdbc.sql("UPDATE bookings SET reminder_sent_at = now() WHERE id = :id").param("id", d.id()).update();
+            jdbc.sql(QueryUtil.get(QueryConstants.UPDATE_BOOKING_REMINDER_SENT)).param("id", d.id()).update();
             events.publishEvent(new BookingReminderDue(d.id(), d.bookingRef(), d.customerId(), d.genieId(),
                 d.slotStart().toInstant()));
         }

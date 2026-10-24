@@ -27,8 +27,10 @@ import com.progenie.payment.PaymentDtos.RefundProcessed;
 import com.progenie.payment.ReceiptPdf.Line;
 import com.progenie.shared.config.AppProperties;
 import com.progenie.shared.config.CompanyProperties;
+import com.progenie.shared.config.QueryConstants;
 import com.progenie.shared.error.ApiException;
 import com.progenie.shared.storage.FileStorage;
+import com.progenie.shared.util.QueryUtil;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.context.event.EventListener;
@@ -95,17 +97,13 @@ public class ReceiptService {
 
     @EventListener
     public void onPayment(PaymentReceived e) {
-        if (exists("payment_id = :id AND kind = 'RECEIPT'", e.paymentId())) {
+        if (exists(QueryConstants.EXISTS_RECEIPT_FOR_PAYMENT, e.paymentId())) {
             return;   // never burn a number on a duplicate
         }
         LocalDate today = LocalDate.now(clock.withZone(zone));
         String number = numbers.next(Series.RECEIPT, today);
         String taxJson = taxJson(e.amount());
-        UUID id = jdbc.sql("""
-                INSERT INTO receipts (number, kind, booking_id, payment_id, customer_id, amount, tax, gstin)
-                VALUES (:n, 'RECEIPT', :b, :p, :c, :amount, CAST(:tax AS jsonb), :gstin)
-                RETURNING id
-                """)
+        UUID id = jdbc.sql(QueryUtil.get(QueryConstants.INSERT_RECEIPT_PAYMENT))
             .param("n", number).param("b", e.bookingId()).param("p", e.paymentId()).param("c", e.customerId())
             .param("amount", e.amount()).param("tax", taxJson).param("gstin", tax.active() ? tax.gstin() : null)
             .query(UUID.class).single();
@@ -127,16 +125,12 @@ public class ReceiptService {
 
     @EventListener
     public void onRefund(RefundProcessed e) {
-        if (exists("refund_id = :id", e.refundId())) {
+        if (exists(QueryConstants.EXISTS_RECEIPT_FOR_REFUND, e.refundId())) {
             return;
         }
         LocalDate today = LocalDate.now(clock.withZone(zone));
         String number = numbers.next(Series.CREDIT_NOTE, today);
-        UUID id = jdbc.sql("""
-                INSERT INTO receipts (number, kind, booking_id, payment_id, refund_id, customer_id, amount, tax, gstin)
-                VALUES (:n, 'CREDIT_NOTE', :b, :p, :r, :c, :amount, CAST(:tax AS jsonb), :gstin)
-                RETURNING id
-                """)
+        UUID id = jdbc.sql(QueryUtil.get(QueryConstants.INSERT_RECEIPT_CREDIT_NOTE))
             .param("n", number).param("b", e.bookingId()).param("p", e.paymentId()).param("r", e.refundId())
             .param("c", e.customerId()).param("amount", e.amount()).param("tax", taxJson(e.amount()))
             .param("gstin", tax.active() ? tax.gstin() : null)
@@ -160,8 +154,8 @@ public class ReceiptService {
         log.info("Issued credit note {} for {}", number, e.bookingRef());
     }
 
-    private boolean exists(String where, UUID id) {
-        return jdbc.sql("SELECT EXISTS (SELECT 1 FROM receipts WHERE " + where + ")").param("id", id)
+    private boolean exists(String queryKey, UUID id) {
+        return jdbc.sql(QueryUtil.get(queryKey)).param("id", id)
             .query(Boolean.class).single();
     }
 
@@ -169,11 +163,7 @@ public class ReceiptService {
 
     @Transactional(readOnly = true)
     public List<ReceiptDto> forBooking(UUID bookingId, UUID customerIdOrNull) {
-        return jdbc.sql("""
-                SELECT id, number, kind, booking_id, payment_id, refund_id, amount, issued_at FROM receipts
-                 WHERE booking_id = :b AND (CAST(:c AS uuid) IS NULL OR customer_id = :c)
-                 ORDER BY issued_at
-                """)
+        return jdbc.sql(QueryUtil.get(QueryConstants.GET_RECEIPT_FOR_BOOKING))
             .param("b", bookingId).param("c", customerIdOrNull)
             .query(ReceiptDto.class).list();
     }
@@ -181,10 +171,7 @@ public class ReceiptService {
     /** Receipts and credit notes of one customer (data export). */
     @Transactional(readOnly = true)
     public List<ReceiptDto> forCustomer(UUID customerId) {
-        return jdbc.sql("""
-                SELECT id, number, kind, booking_id, payment_id, refund_id, amount, issued_at FROM receipts
-                 WHERE customer_id = :c ORDER BY issued_at
-                """)
+        return jdbc.sql(QueryUtil.get(QueryConstants.GET_RECEIPT_FOR_CUSTOMER))
             .param("c", customerId).query(ReceiptDto.class).list();
     }
 
@@ -194,7 +181,7 @@ public class ReceiptService {
     /** The PDF, for its customer or an admin. Rendered again if the stored file is missing. */
     @Transactional
     public PdfFile pdf(UUID receiptId, UUID userId, boolean admin) {
-        ReceiptRow r = jdbc.sql(ROW + " WHERE id = :id").param("id", receiptId).query(ReceiptRow.class).optional()
+        ReceiptRow r = jdbc.sql(QueryUtil.get(QueryConstants.GET_RECEIPT_ROW)).param("id", receiptId).query(ReceiptRow.class).optional()
             .filter(x -> admin || x.customerId().equals(userId))
             .orElseThrow(() -> ApiException.notFound("RECEIPT_NOT_FOUND", "Receipt not found"));
         if (r.fileKey() != null) {
@@ -211,13 +198,8 @@ public class ReceiptService {
 
     // ------------------------------------------------------------------ rendering
 
-    private static final String ROW = """
-        SELECT id, number, kind, booking_id, payment_id, refund_id, customer_id, amount, tax::text AS tax, file_key, issued_at
-          FROM receipts
-        """;
-
     private ReceiptRow row(UUID id) {
-        return jdbc.sql(ROW + " WHERE id = :id").param("id", id).query(ReceiptRow.class).single();
+        return jdbc.sql(QueryUtil.get(QueryConstants.GET_RECEIPT_ROW)).param("id", id).query(ReceiptRow.class).single();
     }
 
     /** A PDF problem must never undo the payment: the file is rendered again on first download. */
@@ -233,15 +215,13 @@ public class ReceiptService {
     private String store(ReceiptRow r, byte[] pdf) {
         String key = "receipts/" + r.issuedAt().atZoneSameInstant(zone).getYear() + "/" + r.id() + ".pdf";
         storage.put(key, new ByteArrayInputStream(pdf), pdf.length, "application/pdf");
-        jdbc.sql("UPDATE receipts SET file_key = :k WHERE id = :id").param("k", key).param("id", r.id()).update();
+        jdbc.sql(QueryUtil.get(QueryConstants.UPDATE_RECEIPT_FILE_KEY)).param("k", key).param("id", r.id()).update();
         return key;
     }
 
     byte[] render(ReceiptRow r) {
         Source s = source(r.bookingId());
-        PaymentInfo p = r.paymentId() == null ? null : jdbc.sql("""
-                SELECT id, purpose, method, provider, provider_ref, amount, updated_at FROM payments WHERE id = :id
-                """)
+        PaymentInfo p = r.paymentId() == null ? null : jdbc.sql(QueryUtil.get(QueryConstants.GET_RECEIPT_PAYMENT_DETAILS))
             .param("id", r.paymentId()).query(PaymentInfo.class).optional().orElse(null);
         boolean credit = "CREDIT_NOTE".equals(r.kind());
         boolean taxed = r.tax() != null && !r.tax().isBlank() && !"null".equals(r.tax());
@@ -276,9 +256,9 @@ public class ReceiptService {
         if (credit) {
             record RefundInfo(String reason, String method, String manualReference) {
             }
-            RefundInfo ri = jdbc.sql("SELECT reason, method, manual_reference FROM refunds WHERE id = :id")
+            RefundInfo ri = jdbc.sql(QueryUtil.get(QueryConstants.GET_RECEIPT_REFUND_DETAILS))
                 .param("id", r.refundId()).query(RefundInfo.class).single();
-            String original = jdbc.sql("SELECT number FROM receipts WHERE payment_id = :p AND kind = 'RECEIPT'")
+            String original = jdbc.sql(QueryUtil.get(QueryConstants.GET_RECEIPT_NUMBER_FOR_PAYMENT))
                 .param("p", r.paymentId()).query(String.class).optional().orElse(null);
             lines.add(new Line("Refund", ri.reason(), r.amount()));
             if (original != null) {
@@ -316,18 +296,7 @@ public class ReceiptService {
     }
 
     private Source source(UUID bookingId) {
-        return jdbc.sql("""
-                SELECT b.id AS booking_id, b.booking_ref, b.customer_id, cu.full_name AS customer_name,
-                       cu.email AS customer_email, cu.phone AS customer_phone, gu.full_name AS genie_name, s.name AS service,
-                       b.slot_start, b.address_snapshot ->> 'area' AS area, b.address_snapshot ->> 'city' AS city,
-                       b.address_snapshot ->> 'pincode' AS pincode, b.service_amount, b.travel_fee, b.extra_amount,
-                       b.extra_note, b.tip_amount, b.cancellation_fee
-                  FROM bookings b
-                  JOIN users cu ON cu.id = b.customer_id
-                  JOIN users gu ON gu.id = b.genie_id
-                  JOIN services s ON s.id = b.service_id
-                 WHERE b.id = :id
-                """)
+        return jdbc.sql(QueryUtil.get(QueryConstants.GET_RECEIPT_SOURCE))
             .param("id", bookingId).query(Source.class).single();
     }
 

@@ -5,16 +5,19 @@ import java.util.ArrayList;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Locale;
+import java.util.Map;
 import java.util.Set;
 import java.util.UUID;
 
 import com.progenie.booking.BookingReworks;
-import com.progenie.payment.RefundService;
 import com.progenie.payment.RefundService.RefundDto;
 import com.progenie.payment.RefundService.RefundRequest;
+import com.progenie.payment.RefundService;
 import com.progenie.provider.GenieStrikes;
+import com.progenie.shared.config.QueryConstants;
 import com.progenie.shared.error.ApiException;
 import com.progenie.shared.jobs.JobLock;
+import com.progenie.shared.util.QueryUtil;
 import com.progenie.shared.web.PageResponse;
 import com.progenie.support.TicketService.Ticket;
 import com.progenie.support.TicketService.TicketDetail;
@@ -91,25 +94,12 @@ public class TicketAdminService {
         String p = StringUtils.hasText(priority) ? priority.trim().toUpperCase(Locale.ROOT) : null;
         String ty = StringUtils.hasText(type) ? type.trim().toUpperCase(Locale.ROOT) : null;
         String query = StringUtils.hasText(q) ? "%" + q.trim() + "%" : null;
-        String where = """
-             WHERE (:status = 'ALL' OR t.status = :status
-                    OR (:status = 'ACTIVE' AND t.status IN ('OPEN', 'IN_REVIEW', 'AWAITING_REPLY')))
-               AND (CAST(:priority AS varchar) IS NULL OR t.priority = :priority)
-               AND (CAST(:type AS varchar) IS NULL OR t.type = :type)
-               AND (NOT :mine OR t.assigned_to = :admin)
-               AND (CAST(:q AS varchar) IS NULL OR t.ticket_ref ILIKE :q OR b.booking_ref ILIKE :q OR t.subject ILIKE :q
-                    OR ru.full_name ILIKE :q)
-            """ + (overdueOnly ? " AND " + TicketService.OVERDUE_SQL : "");
-        long total = jdbc.sql("""
-                SELECT count(*) FROM tickets t LEFT JOIN bookings b ON b.id = t.booking_id JOIN users ru ON ru.id = t.raised_by
-                """ + where)
+        Map<String, String> overdue = Map.of("overdueFilter",
+            overdueOnly ? QueryConstants.FRAGMENT_TICKET_OVERDUE_ONLY : QueryConstants.FRAGMENT_NONE);
+        long total = jdbc.sql(QueryUtil.get(QueryConstants.COUNT_TICKET_ADMIN_QUEUE, overdue))
             .param("status", s).param("priority", p).param("type", ty).param("mine", mine).param("admin", adminId)
             .param("q", query).query(Long.class).single();
-        List<TicketSummary> items = jdbc.sql(TicketService.SUMMARY_SELECT + where + """
-                 ORDER BY overdue DESC, CASE t.priority WHEN 'URGENT' THEN 0 WHEN 'HIGH' THEN 1 ELSE 2 END,
-                          t.resolution_due, t.created_at
-                 LIMIT :limit OFFSET :offset
-                """)
+        List<TicketSummary> items = jdbc.sql(QueryUtil.get(QueryConstants.GET_TICKET_ADMIN_QUEUE, overdue))
             .param("status", s).param("priority", p).param("type", ty).param("mine", mine).param("admin", adminId)
             .param("q", query)
             .param("limit", PageResponse.clampSize(size)).param("offset", PageResponse.offset(page, size))
@@ -123,16 +113,12 @@ public class TicketAdminService {
         Ticket t = tickets.lock(ticketId);
         requireOpen(t);
         UUID to = assignee == null ? adminId : assignee;
-        boolean isAdmin = jdbc.sql("SELECT EXISTS (SELECT 1 FROM users WHERE id = :id AND role = 'ADMIN' AND status = 'ACTIVE')")
+        boolean isAdmin = jdbc.sql(QueryUtil.get(QueryConstants.EXISTS_USER_ACTIVE_ADMIN))
             .param("id", to).query(Boolean.class).single();
         if (!isAdmin) {
             throw ApiException.badRequest("NOT_AN_ADMIN", "Tickets can only be assigned to an admin");
         }
-        jdbc.sql("""
-                UPDATE tickets SET assigned_to = :a, status = CASE WHEN status = 'OPEN' THEN 'IN_REVIEW' ELSE status END,
-                       updated_at = now(), version = version + 1
-                 WHERE id = :id
-                """)
+        jdbc.sql(QueryUtil.get(QueryConstants.UPDATE_TICKET_ASSIGN))
             .param("a", to).param("id", ticketId).update();
         return tickets.detail(ticketId, adminId, "ADMIN");
     }
@@ -145,13 +131,7 @@ public class TicketAdminService {
         String text = TicketService.required(req.body(), 2000, "message");
         tickets.addMessage(ticketId, adminId, "ADMIN", text, req.isInternal());
         if (!req.isInternal()) {
-            jdbc.sql("""
-                    UPDATE tickets
-                       SET first_responded_at = coalesce(first_responded_at, now()),
-                           assigned_to = coalesce(assigned_to, :admin),
-                           status = :status, updated_at = now(), version = version + 1
-                     WHERE id = :id
-                    """)
+            jdbc.sql(QueryUtil.get(QueryConstants.UPDATE_TICKET_ADMIN_REPLY))
                 .param("admin", adminId).param("status", req.isAwaitingReply() ? "AWAITING_REPLY" : "IN_REVIEW")
                 .param("id", ticketId).update();
             tickets.publishReplied(t, adminId, "ADMIN", req.isAwaitingReply(), text);
@@ -214,14 +194,7 @@ public class TicketAdminService {
             summary.add("Genie warned (" + recent + " in 90 days)");
         }
         String actionList = String.join(",", actions);
-        jdbc.sql("""
-                UPDATE tickets
-                   SET status = 'RESOLVED', resolved_at = now(), resolution_actions = :actions, resolution_note = :note,
-                       refund_id = coalesce(:refund, refund_id), redo_booking_id = coalesce(:redo, redo_booking_id),
-                       first_responded_at = coalesce(first_responded_at, now()), assigned_to = coalesce(assigned_to, :admin),
-                       updated_at = now(), version = version + 1
-                 WHERE id = :id
-                """)
+        jdbc.sql(QueryUtil.get(QueryConstants.UPDATE_TICKET_RESOLVE))
             .param("actions", actionList).param("note", note).param("refund", refundId).param("redo", redoId)
             .param("admin", adminId).param("id", ticketId).update();
         String message = "Resolved: " + note + (summary.isEmpty() ? "" : " (" + String.join("; ", summary) + ")");
@@ -237,12 +210,7 @@ public class TicketAdminService {
         Ticket t = tickets.lock(ticketId);
         requireOpen(t);
         String note = TicketService.required(reason, 1000, "reason");
-        jdbc.sql("""
-                UPDATE tickets SET status = 'REJECTED', resolved_at = now(), resolution_note = :note,
-                       resolution_actions = 'REJECTED', first_responded_at = coalesce(first_responded_at, now()),
-                       assigned_to = coalesce(assigned_to, :admin), updated_at = now(), version = version + 1
-                 WHERE id = :id
-                """)
+        jdbc.sql(QueryUtil.get(QueryConstants.UPDATE_TICKET_REJECT))
             .param("note", note).param("admin", adminId).param("id", ticketId).update();
         tickets.addMessage(ticketId, adminId, "ADMIN", "Closed without action: " + note, false);
         tickets.publishResolved(t, "REJECTED", "REJECTED", note);
@@ -256,20 +224,14 @@ public class TicketAdminService {
         if (!lock.tryAcquire("ticket-auto-close")) {
             return;
         }
-        int rows = jdbc.sql("""
-                UPDATE tickets SET status = 'CLOSED', closed_at = now(), updated_at = now(), version = version + 1
-                 WHERE status IN ('RESOLVED', 'REJECTED') AND resolved_at < now() - interval '7 days'
-                """).update();
+        int rows = jdbc.sql(QueryUtil.get(QueryConstants.UPDATE_TICKET_CLOSE_SETTLED)).update();
         if (rows > 0) {
             log.info("Auto-closed {} settled tickets", rows);
         }
     }
 
     private UUID bookingPayment(UUID bookingId) {
-        return jdbc.sql("""
-                SELECT id FROM payments WHERE booking_id = :b AND status = 'SUCCEEDED'
-                 ORDER BY CASE purpose WHEN 'BOOKING' THEN 0 ELSE 1 END, created_at DESC LIMIT 1
-                """)
+        return jdbc.sql(QueryUtil.get(QueryConstants.GET_TICKET_BOOKING_PAYMENT))
             .param("b", bookingId).query(UUID.class).optional()
             .orElseThrow(() -> ApiException.unprocessable("NOTHING_TO_REFUND", "This booking has no payment to refund"));
     }

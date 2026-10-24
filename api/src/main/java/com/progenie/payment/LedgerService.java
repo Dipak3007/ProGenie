@@ -3,6 +3,8 @@ package com.progenie.payment;
 import java.util.List;
 
 import com.progenie.payment.LedgerPostings.Entry;
+import com.progenie.shared.config.QueryConstants;
+import com.progenie.shared.util.QueryUtil;
 import org.springframework.jdbc.core.simple.JdbcClient;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Propagation;
@@ -43,10 +45,7 @@ public class LedgerService {
     }
 
     private void insert(Entry e, java.util.UUID refundId) {
-        jdbc.sql("""
-                INSERT INTO ledger_entries (booking_id, genie_id, account, direction, amount, description, payout_id, refund_id)
-                VALUES (:booking, :genie, :account, :direction, :amount, :description, :payout, :refund)
-                """)
+        jdbc.sql(QueryUtil.get(QueryConstants.INSERT_LEDGER_ENTRY))
             .param("booking", e.bookingId())
             .param("genie", e.genieId())
             .param("account", e.account())

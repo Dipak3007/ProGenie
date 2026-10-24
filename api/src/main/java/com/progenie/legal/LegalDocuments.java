@@ -8,7 +8,9 @@ import java.util.Map;
 import java.util.UUID;
 
 import com.progenie.shared.config.CompanyProperties;
+import com.progenie.shared.config.QueryConstants;
 import com.progenie.shared.error.ApiException;
+import com.progenie.shared.util.QueryUtil;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.jdbc.core.simple.JdbcClient;
@@ -43,12 +45,6 @@ public class LegalDocuments {
                              String grievanceName, String grievanceEmail) {
     }
 
-    private static final String SELECT = """
-        SELECT id, kind, version, title, body, change_summary, requires_reacceptance, effective_from, published_at,
-               updated_at
-          FROM legal_documents
-        """;
-
     private final JdbcClient jdbc;
     private final CompanyProperties company;
 
@@ -60,7 +56,7 @@ public class LegalDocuments {
     /** The latest published version. */
     @Transactional(readOnly = true)
     public DocumentDto current(LegalKind kind) {
-        return jdbc.sql(SELECT + " WHERE kind = :k AND published_at IS NOT NULL ORDER BY version DESC LIMIT 1")
+        return jdbc.sql(QueryUtil.get(QueryConstants.GET_LEGAL_CURRENT))
             .param("k", kind.name()).query(DocumentDto.class).optional()
             .map(this::withCompany)
             .orElseThrow(() -> ApiException.notFound("LEGAL_DOCUMENT_NOT_FOUND", "This document isn't published yet"));
@@ -68,7 +64,7 @@ public class LegalDocuments {
 
     @Transactional(readOnly = true)
     public DocumentDto version(LegalKind kind, int version) {
-        return jdbc.sql(SELECT + " WHERE kind = :k AND version = :v AND published_at IS NOT NULL")
+        return jdbc.sql(QueryUtil.get(QueryConstants.GET_LEGAL_VERSION))
             .param("k", kind.name()).param("v", version).query(DocumentDto.class).optional()
             .map(this::withCompany)
             .orElseThrow(() -> ApiException.notFound("LEGAL_DOCUMENT_NOT_FOUND", "No such version"));
@@ -76,10 +72,7 @@ public class LegalDocuments {
 
     @Transactional(readOnly = true)
     public List<VersionDto> versions(LegalKind kind) {
-        return jdbc.sql("""
-                SELECT version, title, change_summary, requires_reacceptance, effective_from, published_at
-                  FROM legal_documents WHERE kind = :k AND published_at IS NOT NULL ORDER BY version DESC
-                """)
+        return jdbc.sql(QueryUtil.get(QueryConstants.GET_LEGAL_VERSIONS))
             .param("k", kind.name()).query(VersionDto.class).list();
     }
 
@@ -93,7 +86,7 @@ public class LegalDocuments {
     /** Every version and draft, newest first per kind, with the raw text (placeholders not filled). */
     @Transactional(readOnly = true)
     public List<DocumentDto> adminList() {
-        return jdbc.sql(SELECT + " ORDER BY kind, version DESC").query(DocumentDto.class).list();
+        return jdbc.sql(QueryUtil.get(QueryConstants.GET_LEGAL_ADMIN_LIST)).query(DocumentDto.class).list();
     }
 
     /** Creates or updates the one draft of this kind (the next version number). */
@@ -105,35 +98,25 @@ public class LegalDocuments {
         if (req.title().length() > 150 || (req.changeSummary() != null && req.changeSummary().length() > 300)) {
             throw ApiException.badRequest("DRAFT_TOO_LONG", "The title or change summary is too long");
         }
-        jdbc.sql("SELECT pg_advisory_xact_lock(hashtext(:k))").param("k", "legal-draft:" + kind.name()).query().singleRow();
-        int updated = jdbc.sql("""
-                UPDATE legal_documents
-                   SET title = :title, body = :body, change_summary = :summary, requires_reacceptance = :re,
-                       effective_from = :eff, updated_at = now()
-                 WHERE kind = :k AND published_at IS NULL
-                """)
+        jdbc.sql(QueryUtil.get(QueryConstants.LOCK_LEGAL_DRAFT)).param("k", "legal-draft:" + kind.name()).query().singleRow();
+        int updated = jdbc.sql(QueryUtil.get(QueryConstants.UPDATE_LEGAL_DRAFT))
             .param("title", req.title().trim()).param("body", req.body()).param("summary", req.changeSummary())
             .param("re", Boolean.TRUE.equals(req.requiresReacceptance())).param("eff", req.effectiveFrom()).param("k", kind.name())
             .update();
         if (updated == 0) {
-            jdbc.sql("""
-                    INSERT INTO legal_documents (kind, version, title, body, change_summary, requires_reacceptance,
-                                                 effective_from, created_by)
-                    SELECT :k, coalesce(max(version), 0) + 1, :title, :body, :summary, :re, :eff, :admin
-                      FROM legal_documents WHERE kind = :k
-                    """)
+            jdbc.sql(QueryUtil.get(QueryConstants.INSERT_LEGAL_DRAFT))
                 .param("k", kind.name()).param("title", req.title().trim()).param("body", req.body())
                 .param("summary", req.changeSummary()).param("re", Boolean.TRUE.equals(req.requiresReacceptance()))
                 .param("eff", req.effectiveFrom()).param("admin", adminId)
                 .update();
         }
-        return jdbc.sql(SELECT + " WHERE kind = :k AND published_at IS NULL").param("k", kind.name())
+        return jdbc.sql(QueryUtil.get(QueryConstants.GET_LEGAL_DRAFT)).param("k", kind.name())
             .query(DocumentDto.class).single();
     }
 
     @Transactional
     public void deleteDraft(LegalKind kind) {
-        jdbc.sql("DELETE FROM legal_documents WHERE kind = :k AND published_at IS NULL").param("k", kind.name()).update();
+        jdbc.sql(QueryUtil.get(QueryConstants.DELETE_LEGAL_DRAFT)).param("k", kind.name()).update();
     }
 
     /**
@@ -142,19 +125,16 @@ public class LegalDocuments {
      */
     @Transactional
     public DocumentDto publish(UUID documentId) {
-        DocumentDto d = jdbc.sql(SELECT + " WHERE id = :id FOR UPDATE").param("id", documentId)
+        DocumentDto d = jdbc.sql(QueryUtil.get(QueryConstants.LOCK_LEGAL_DOCUMENT)).param("id", documentId)
             .query(DocumentDto.class).optional()
             .orElseThrow(() -> ApiException.notFound("LEGAL_DOCUMENT_NOT_FOUND", "Document not found"));
         if (d.publishedAt() != null) {
             throw ApiException.unprocessable("ALREADY_PUBLISHED", "This version is already published");
         }
-        jdbc.sql("""
-                UPDATE legal_documents SET published_at = now(), effective_from = coalesce(effective_from, CURRENT_DATE)
-                 WHERE id = :id
-                """)
+        jdbc.sql(QueryUtil.get(QueryConstants.UPDATE_LEGAL_PUBLISH))
             .param("id", documentId).update();
         log.info("Published {} v{} (re-acceptance: {})", d.kind(), d.version(), d.requiresReacceptance());
-        return jdbc.sql(SELECT + " WHERE id = :id").param("id", documentId).query(DocumentDto.class).single();
+        return jdbc.sql(QueryUtil.get(QueryConstants.GET_LEGAL_DOCUMENT)).param("id", documentId).query(DocumentDto.class).single();
     }
 
     private DocumentDto withCompany(DocumentDto d) {

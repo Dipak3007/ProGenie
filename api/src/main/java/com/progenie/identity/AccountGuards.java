@@ -3,7 +3,9 @@ package com.progenie.identity;
 import java.util.UUID;
 
 import com.progenie.identity.service.AuthProperties;
+import com.progenie.shared.config.QueryConstants;
 import com.progenie.shared.error.ApiException;
+import com.progenie.shared.util.QueryUtil;
 import org.springframework.jdbc.core.simple.JdbcClient;
 import org.springframework.stereotype.Component;
 import org.springframework.transaction.annotation.Transactional;
@@ -26,7 +28,7 @@ public class AccountGuards {
         if (!props.requireVerifiedPhone()) {
             return;
         }
-        Boolean verified = jdbc.sql("SELECT phone_verified FROM users WHERE id = :id")
+        Boolean verified = jdbc.sql(QueryUtil.get(QueryConstants.GET_USER_PHONE_VERIFIED))
             .param("id", userId).query(Boolean.class).optional().orElse(false);
         if (!Boolean.TRUE.equals(verified)) {
             throw ApiException.forbidden("PHONE_NOT_VERIFIED", "Please verify your mobile number first");

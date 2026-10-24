@@ -24,9 +24,9 @@ spring:
         jdbc:
           time_zone: UTC
   flyway:
-    # Migrations live in the sibling folder ProGenieV2-Database (see its README).
+    # Migrations live in the sibling folder ProGenie_DB_Scripts (see its README).
     # Path is relative to the api/ folder when you run from the IDE or with mvn.
-    locations: ${PROGENIE_DB_MIGRATIONS:filesystem:../../ProGenieV2-Database/migrations}
+    locations: ${PROGENIE_DB_MIGRATIONS:filesystem:../../ProGenie_DB_Scripts/migrations}
     validate-on-migrate: true
   mvc:
     problemdetails:

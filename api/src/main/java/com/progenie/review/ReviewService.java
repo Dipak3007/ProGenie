@@ -4,10 +4,12 @@ import java.time.OffsetDateTime;
 import java.util.List;
 import java.util.UUID;
 
-import com.progenie.booking.BookingQueryService;
 import com.progenie.booking.BookingQueryService.ReviewableBooking;
+import com.progenie.booking.BookingQueryService;
 import com.progenie.provider.GenieProfileService;
+import com.progenie.shared.config.QueryConstants;
 import com.progenie.shared.error.ApiException;
+import com.progenie.shared.util.QueryUtil;
 import com.progenie.shared.web.PageResponse;
 import jakarta.validation.constraints.Max;
 import jakarta.validation.constraints.Min;
@@ -37,15 +39,6 @@ public class ReviewService {
     public record ReviewSubmitted(UUID reviewId, UUID genieId, int rating) {
     }
 
-    private static final String SELECT = """
-        SELECT r.id, r.booking_id, b.booking_ref, s.name AS service_name, r.rating, r.comment,
-               split_part(u.full_name, ' ', 1) AS customer_name, r.created_at, r.genie_reply, r.replied_at
-          FROM reviews r
-          JOIN bookings b ON b.id = r.booking_id
-          JOIN services s ON s.id = b.service_id
-          JOIN users u    ON u.id = r.customer_id
-        """;
-
     private final JdbcClient jdbc;
     private final BookingQueryService bookings;
     private final GenieProfileService genies;
@@ -64,10 +57,7 @@ public class ReviewService {
         ReviewableBooking booking = bookings.reviewable(customerId, bookingId);
         UUID id;
         try {
-            id = jdbc.sql("""
-                    INSERT INTO reviews (booking_id, customer_id, genie_id, rating, comment)
-                    VALUES (:b, :c, :g, :rating, :comment) RETURNING id
-                    """)
+            id = jdbc.sql(QueryUtil.get(QueryConstants.INSERT_REVIEW_CREATE))
                 .param("b", bookingId).param("c", customerId).param("g", booking.genieId())
                 .param("rating", req.rating())
                 .param("comment", StringUtils.hasText(req.comment()) ? req.comment().trim() : null)
@@ -82,9 +72,9 @@ public class ReviewService {
 
     @Transactional(readOnly = true)
     public PageResponse<ReviewDto> forGenie(UUID genieId, int page, int size) {
-        long total = jdbc.sql("SELECT count(*) FROM reviews WHERE genie_id = :g").param("g", genieId)
+        long total = jdbc.sql(QueryUtil.get(QueryConstants.COUNT_REVIEW_FOR_GENIE)).param("g", genieId)
             .query(Long.class).single();
-        List<ReviewDto> items = jdbc.sql(SELECT + " WHERE r.genie_id = :g ORDER BY r.created_at DESC LIMIT :limit OFFSET :offset")
+        List<ReviewDto> items = jdbc.sql(QueryUtil.get(QueryConstants.GET_REVIEW_FOR_GENIE))
             .param("g", genieId)
             .param("limit", PageResponse.clampSize(size)).param("offset", PageResponse.offset(page, size))
             .query(ReviewDto.class).list();
@@ -94,13 +84,10 @@ public class ReviewService {
     /** A Genie can reply publicly to a review once. */
     @Transactional
     public ReviewDto reply(UUID genieId, UUID reviewId, String reply) {
-        int rows = jdbc.sql("""
-                UPDATE reviews SET genie_reply = :reply, replied_at = now()
-                 WHERE id = :id AND genie_id = :g AND genie_reply IS NULL
-                """)
+        int rows = jdbc.sql(QueryUtil.get(QueryConstants.UPDATE_REVIEW_REPLY))
             .param("reply", reply.trim()).param("id", reviewId).param("g", genieId).update();
         if (rows == 0) {
-            boolean exists = jdbc.sql("SELECT EXISTS (SELECT 1 FROM reviews WHERE id = :id AND genie_id = :g)")
+            boolean exists = jdbc.sql(QueryUtil.get(QueryConstants.EXISTS_REVIEW_OWNED))
                 .param("id", reviewId).param("g", genieId).query(Boolean.class).single();
             throw exists ? ApiException.conflict("ALREADY_REPLIED", "You have already replied to this review")
                 : ApiException.notFound("REVIEW_NOT_FOUND", "Review not found");
@@ -109,6 +96,6 @@ public class ReviewService {
     }
 
     private ReviewDto get(UUID id) {
-        return jdbc.sql(SELECT + " WHERE r.id = :id").param("id", id).query(ReviewDto.class).single();
+        return jdbc.sql(QueryUtil.get(QueryConstants.GET_REVIEW_BY_ID)).param("id", id).query(ReviewDto.class).single();
     }
 }

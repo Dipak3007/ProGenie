@@ -14,6 +14,8 @@ import com.progenie.payment.PaymentDtos.LedgerLineDto;
 import com.progenie.payment.PaymentDtos.PayoutDto;
 import com.progenie.payment.PaymentDtos.WalletDto;
 import com.progenie.shared.config.AppProperties;
+import com.progenie.shared.config.QueryConstants;
+import com.progenie.shared.util.QueryUtil;
 import com.progenie.shared.util.Times;
 import com.progenie.shared.web.PageResponse;
 import org.springframework.jdbc.core.simple.JdbcClient;
@@ -24,7 +26,6 @@ import org.springframework.transaction.annotation.Transactional;
 @Service
 public class WalletService {
 
-    static final String WALLET_ACCOUNTS = "('GENIE_EARNINGS', 'TIPS', 'GENIE_CASH', 'PAYOUT', 'SETTLEMENT')";
 
     private final JdbcClient jdbc;
     private final ZoneId zone;
@@ -41,30 +42,22 @@ public class WalletService {
     /** Positive: the platform owes the Genie. Negative: the Genie owes commission from cash jobs. */
     @Transactional(readOnly = true)
     public BigDecimal balance(UUID genieId) {
-        return jdbc.sql("""
-                SELECT coalesce(sum(CASE direction WHEN 'C' THEN amount ELSE -amount END), 0) FROM ledger_entries
-                 WHERE genie_id = :g AND account IN """ + WALLET_ACCOUNTS)
+        return jdbc.sql(QueryUtil.get(QueryConstants.GET_WALLET_BALANCE))
             .param("g", genieId).query(BigDecimal.class).single();
     }
 
     @Transactional(readOnly = true)
     public WalletDto wallet(UUID genieId) {
         BigDecimal balance = balance(genieId);
-        BigDecimal pending = jdbc.sql("SELECT coalesce(sum(amount), 0) FROM payouts WHERE genie_id = :g AND status = 'PENDING'")
+        BigDecimal pending = jdbc.sql(QueryUtil.get(QueryConstants.GET_PAYOUT_PENDING_TOTAL))
             .param("g", genieId).query(BigDecimal.class).single();
         Instant weekStart = LocalDate.now(clock.withZone(zone)).with(TemporalAdjusters.previousOrSame(DayOfWeek.MONDAY))
             .atStartOfDay(zone).toInstant();
-        BigDecimal weekEarnings = jdbc.sql("""
-                SELECT coalesce(sum(amount), 0) FROM ledger_entries
-                 WHERE genie_id = :g AND direction = 'C' AND account IN ('GENIE_EARNINGS', 'TIPS') AND created_at >= :since
-                """)
+        BigDecimal weekEarnings = jdbc.sql(QueryUtil.get(QueryConstants.GET_WALLET_EARNINGS_SINCE))
             .param("g", genieId).param("since", Times.odt(weekStart)).query(BigDecimal.class).single();
-        int weekJobs = jdbc.sql("SELECT count(*) FROM bookings WHERE genie_id = :g AND status = 'COMPLETED' AND completed_at >= :since")
+        int weekJobs = jdbc.sql(QueryUtil.get(QueryConstants.COUNT_WALLET_COMPLETED_JOBS_SINCE))
             .param("g", genieId).param("since", Times.odt(weekStart)).query(Integer.class).single();
-        BigDecimal lifetime = jdbc.sql("""
-                SELECT coalesce(sum(amount), 0) FROM ledger_entries
-                 WHERE genie_id = :g AND direction = 'C' AND account IN ('GENIE_EARNINGS', 'TIPS')
-                """)
+        BigDecimal lifetime = jdbc.sql(QueryUtil.get(QueryConstants.GET_WALLET_LIFETIME_EARNINGS))
             .param("g", genieId).query(BigDecimal.class).single();
         BigDecimal available = balance.subtract(pending).max(BigDecimal.ZERO);
         BigDecimal due = balance.signum() < 0 ? balance.negate() : BigDecimal.ZERO;
@@ -73,15 +66,9 @@ public class WalletService {
 
     @Transactional(readOnly = true)
     public PageResponse<LedgerLineDto> entries(UUID genieId, int page, int size) {
-        long total = jdbc.sql("SELECT count(*) FROM ledger_entries WHERE genie_id = :g AND account IN " + WALLET_ACCOUNTS)
+        long total = jdbc.sql(QueryUtil.get(QueryConstants.COUNT_WALLET_ENTRIES))
             .param("g", genieId).query(Long.class).single();
-        List<LedgerLineDto> items = jdbc.sql("""
-                SELECT le.id, b.booking_ref, le.account, le.direction, le.amount, le.description, le.created_at
-                  FROM ledger_entries le LEFT JOIN bookings b ON b.id = le.booking_id
-                 WHERE le.genie_id = :g AND le.account IN """ + WALLET_ACCOUNTS + """
-                 ORDER BY le.created_at DESC, le.id DESC
-                 LIMIT :limit OFFSET :offset
-                """)
+        List<LedgerLineDto> items = jdbc.sql(QueryUtil.get(QueryConstants.GET_WALLET_ENTRIES))
             .param("g", genieId)
             .param("limit", PageResponse.clampSize(size)).param("offset", PageResponse.offset(page, size))
             .query(LedgerLineDto.class).list();
@@ -90,7 +77,7 @@ public class WalletService {
 
     @Transactional(readOnly = true)
     public List<PayoutDto> payouts(UUID genieId) {
-        return jdbc.sql(PayoutService.PAYOUT_SELECT + " WHERE p.genie_id = :g ORDER BY p.period_end DESC LIMIT 52")
+        return jdbc.sql(QueryUtil.get(QueryConstants.GET_WALLET_PAYOUTS))
             .param("g", genieId).query(PayoutDto.class).list();
     }
 }

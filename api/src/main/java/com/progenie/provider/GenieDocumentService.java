@@ -11,8 +11,10 @@ import java.util.UUID;
 
 import com.progenie.provider.GenieProfileDtos.DocumentDto;
 import com.progenie.shared.config.AppProperties;
+import com.progenie.shared.config.QueryConstants;
 import com.progenie.shared.error.ApiException;
 import com.progenie.shared.storage.FileStorage;
+import com.progenie.shared.util.QueryUtil;
 import org.springframework.jdbc.core.simple.JdbcClient;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -47,10 +49,7 @@ public class GenieDocumentService {
 
     @Transactional(readOnly = true)
     public List<DocumentDto> list(UUID genieId) {
-        return jdbc.sql("""
-                SELECT id, doc_type, masked_number, status, file_name, content_type, size_bytes, review_note, created_at
-                  FROM genie_documents WHERE genie_id = :id ORDER BY created_at DESC
-                """)
+        return jdbc.sql(QueryUtil.get(QueryConstants.GET_GENIE_DOCUMENT_LIST))
             .param("id", genieId)
             .query(DocumentDto.class)
             .list();
@@ -82,12 +81,7 @@ public class GenieDocumentService {
         UUID docId = UUID.randomUUID();
         String key = "kyc/" + genieId + "/" + docId + "." + EXTENSIONS.get(contentType);
         storage.put(key, new ByteArrayInputStream(bytes), bytes.length, contentType);
-        return jdbc.sql("""
-                INSERT INTO genie_documents (id, genie_id, doc_type, object_key, masked_number, status,
-                                             file_name, content_type, size_bytes)
-                VALUES (:id, :g, :type, :key, :masked, 'PENDING', :name, :ct, :size)
-                RETURNING id, doc_type, masked_number, status, file_name, content_type, size_bytes, review_note, created_at
-                """)
+        return jdbc.sql(QueryUtil.get(QueryConstants.INSERT_GENIE_DOCUMENT_UPLOAD))
             .param("id", docId)
             .param("g", genieId)
             .param("type", type)
@@ -105,26 +99,21 @@ public class GenieDocumentService {
         requireEditable(genieId);
         record Doc(String objectKey, String status) {
         }
-        Doc doc = jdbc.sql("SELECT object_key, status FROM genie_documents WHERE id = :id AND genie_id = :g")
+        Doc doc = jdbc.sql(QueryUtil.get(QueryConstants.GET_GENIE_DOCUMENT_OWNED))
             .param("id", docId).param("g", genieId)
             .query(Doc.class).optional()
             .orElseThrow(() -> ApiException.notFound("DOCUMENT_NOT_FOUND", "Document not found"));
         if ("APPROVED".equals(doc.status())) {
             throw ApiException.unprocessable("DOCUMENT_LOCKED", "An approved document cannot be deleted");
         }
-        jdbc.sql("DELETE FROM genie_documents WHERE id = :id").param("id", docId).update();
+        jdbc.sql(QueryUtil.get(QueryConstants.DELETE_GENIE_DOCUMENT_BY_ID)).param("id", docId).update();
         storage.delete(doc.objectKey());
     }
 
     /** Owner (genieId given) or admin (genieId null) opens a document. */
     @Transactional(readOnly = true)
     public StoredDocument find(UUID docId, UUID ownerOrNull) {
-        return jdbc.sql("""
-                SELECT object_key, coalesce(content_type, 'application/octet-stream') AS content_type,
-                       coalesce(file_name, doc_type || '-' || id) AS file_name
-                  FROM genie_documents
-                 WHERE id = :id AND (CAST(:owner AS uuid) IS NULL OR genie_id = :owner)
-                """)
+        return jdbc.sql(QueryUtil.get(QueryConstants.GET_GENIE_DOCUMENT_FILE))
             .param("id", docId)
             .param("owner", ownerOrNull)
             .query(StoredDocument.class)
@@ -138,7 +127,7 @@ public class GenieDocumentService {
 
     /** Documents cannot change while an admin is reviewing them. */
     private void requireEditable(UUID genieId) {
-        String status = jdbc.sql("SELECT verification_status FROM genie_profiles WHERE user_id = :id")
+        String status = jdbc.sql(QueryUtil.get(QueryConstants.GET_GENIE_PROFILE_STATUS))
             .param("id", genieId).query(String.class).optional()
             .orElseThrow(() -> ApiException.notFound("GENIE_PROFILE_NOT_FOUND", "Genie profile not found"));
         if ("UNDER_REVIEW".equals(status)) {

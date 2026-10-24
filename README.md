@@ -9,7 +9,7 @@ This is the rewrite of a college JSP/servlet project into two independently depl
 | **progenie-api** | Spring Boot 4.1 · Java 25 · PostgreSQL 17 + PostGIS · Flyway · JWT | [`api/`](api) |
 | **progenie-web** | Angular 21 (standalone, zoneless, signals) · Tailwind CSS v4 · Vitest | [`web/`](web) |
 
-Database DDL and Day-0 data live in the sibling folder **`../ProGenieV2-Database`** and are applied by Flyway on API startup.
+Database DDL and Day-0 data live in the sibling folder **`../ProGenie_DB_Scripts`** and are applied by Flyway on API startup.
 
 ## Quick start
 
