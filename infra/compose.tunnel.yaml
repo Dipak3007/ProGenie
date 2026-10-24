@@ -1,0 +1,29 @@
+# Tunnel mode: no public server needed. Run the SIT stack on your own computer and share it over a free
+# Cloudflare quick tunnel (https://<random>.trycloudflare.com). Nothing listens on your network; cloudflared only
+# connects out to Cloudflare. Enabled by SIT_TUNNEL=true in .env.sit (scripts/dc.sh then adds this file).
+# The address changes every time the tunnel container restarts: scripts/sit-tunnel-url.sh picks up the new one.
+# Own project name, so SIT data lives in separate volumes (progenie-sit_pgdata, ...) and never mixes with your local
+# development database. The container names are the same, so stop the dev stack first (docker compose down).
+name: progenie-sit
+
+services:
+  caddy:
+    ports: !reset []                  # no ports on your computer
+    environment:
+      SITE_ADDRESS: ":80"             # plain HTTP inside Docker; Cloudflare serves HTTPS to testers
+      TRUSTED_PROXIES: private_ranges # trust cloudflared, so each tester's real IP reaches the API (OTP limits are per IP)
+
+  tunnel:
+    profiles: ["app"]
+    image: cloudflare/cloudflared:latest
+    container_name: progenie-tunnel
+    command: ["tunnel", "--no-autoupdate", "--url", "http://caddy:80"]
+    depends_on:
+      - caddy
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+    mem_limit: 128m
+    restart: unless-stopped

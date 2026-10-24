@@ -1,0 +1,7 @@
+# ARM servers (Oracle Cloud Always Free Ampere A1, Raspberry Pi, Apple silicon): layered after compose.sit.yaml.
+# scripts/dc.sh adds this file automatically when the machine is ARM (uname -m = aarch64 / arm64).
+services:
+  postgres:
+    image: progenie/postgis:17-3-local    # built locally from ./postgis (no x86-only image to pull)
+    build: ./postgis
+    pull_policy: build

@@ -389,7 +389,7 @@ def main():
 
     # ------------------------------------------------------------------ reschedule
     section("Reschedule")
-    late = free_slots(anon, genie_id, service_id, needed=40)
+    late = free_slots(anon, genie_id, service_id, needed=1000)   # all 14 days: the first 40 can all fall within 48 h
     far = [x for x in late if dt.datetime.fromisoformat(x.replace("Z", "+00:00")) > dt.datetime.now(dt.timezone.utc) + dt.timedelta(hours=52)]
     if check(len(far) >= 2, "found slots more than 48 h ahead", len(far)):
         s, b6 = book(far[0])

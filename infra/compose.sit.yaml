@@ -76,7 +76,8 @@ services:
       - "443:443"
       - "443:443/udp"
     environment:
-      SIT_DOMAIN: ${SIT_DOMAIN}
+      SITE_ADDRESS: ${SIT_DOMAIN}      # compose.tunnel.yaml changes this to :80
+      TRUSTED_PROXIES: 127.0.0.1/32    # nobody in front of Caddy on a server: it sets X-Forwarded-For itself
       ACME_EMAIL: ${ACME_EMAIL:?set ACME_EMAIL in .env.sit (Let's Encrypt expiry notices)}
       MAILPIT_USER: ${MAILPIT_USER:?run scripts/sit-secrets.sh}
       MAILPIT_PASSWORD_HASH: ${MAILPIT_PASSWORD_HASH:?run scripts/sit-secrets.sh}

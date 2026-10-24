@@ -14,7 +14,9 @@ stamp=$(date +%F-%H%M)
 mkdir -p "$backup_dir"
 chmod 700 "$backup_dir"
 docker exec progenie-postgres pg_dump -U "${db_user:-progenie}" -d "${db_name:-progenie}" -Fc > "$backup_dir/db-$stamp.dump"
-docker run --rm -v progenie_uploads:/data:ro -v "$backup_dir":/backup alpine \
+# The uploads volume belongs to the stack's compose project (progenie on a server, progenie-sit in tunnel mode)
+project=$(docker inspect -f '{{ index .Config.Labels "com.docker.compose.project" }}' progenie-api 2>/dev/null || echo progenie)
+docker run --rm -v "${project}_uploads":/data:ro -v "$backup_dir":/backup alpine \
   tar czf "/backup/uploads-$stamp.tgz" -C /data .
 find "$backup_dir" -type f \( -name 'db-*.dump' -o -name 'uploads-*.tgz' \) -mtime +"$keep_days" -delete
 echo "$(date '+%F %T') backup ok: $(du -sh "$backup_dir" | cut -f1) in $backup_dir"

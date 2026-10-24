@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 # Creates infra/.env.sit for the SIT server with fresh random secrets.
 # Usage (on the server):  ./scripts/sit-secrets.sh <sit-domain> <email-for-lets-encrypt>
+#        (tunnel mode):     ./scripts/sit-secrets.sh tunnel <your-email>   (the address comes from Cloudflare later)
 # Never commit .env.sit; it is git-ignored. Run once; it refuses to overwrite an existing file.
 set -euo pipefail
 cd "$(dirname "$0")/.."
@@ -9,6 +10,12 @@ domain=${1:?usage: scripts/sit-secrets.sh <sit-domain> <email>}
 email=${2:?usage: scripts/sit-secrets.sh <sit-domain> <email>}
 [ -e .env.sit ] && { echo "infra/.env.sit already exists; not overwriting it." >&2; exit 1; }
 command -v openssl >/dev/null || { echo "openssl is required" >&2; exit 1; }
+
+tunnel=false
+if [ "$domain" = tunnel ]; then
+  tunnel=true
+  domain=pending.trycloudflare.com   # replaced by scripts/sit-tunnel-url.sh once the tunnel is up
+fi
 
 umask 077
 tmp=$(mktemp -d)
@@ -30,7 +37,8 @@ V_PROGENIE_JWT_PRIVATE_KEY=$(base64 -w0 < "$tmp/jwt.pem")
 V_PROGENIE_JWT_PUBLIC_KEY=$(base64 -w0 < "$tmp/jwt.pub")
 V_MAILPIT_PASSWORD_HASH="$mailpit_hash"
 V_MSG91_WEBHOOK_TOKEN=$(openssl rand -hex 16)
-export V_SIT_DOMAIN V_ACME_EMAIL V_POSTGRES_PASSWORD V_PROGENIE_OTP_PEPPER V_PROGENIE_PAYMENT_WEBHOOK_SECRET \
+V_SIT_TUNNEL="$tunnel"
+export V_SIT_TUNNEL V_SIT_DOMAIN V_ACME_EMAIL V_POSTGRES_PASSWORD V_PROGENIE_OTP_PEPPER V_PROGENIE_PAYMENT_WEBHOOK_SECRET \
   V_PROGENIE_JWT_PRIVATE_KEY V_PROGENIE_JWT_PUBLIC_KEY V_MAILPIT_PASSWORD_HASH V_MSG91_WEBHOOK_TOKEN
 
 # Copy the template, filling the generated values. Single quotes keep "$" in the bcrypt hash literal.
@@ -46,7 +54,7 @@ chmod 600 .env.sit
 cat <<MSG
 Created infra/.env.sit (readable only by you). Keep a copy in your password manager.
 
-  Site:           https://$domain
+  Site:           https://$domain$([ "$tunnel" = true ] && echo "   (tunnel mode: the real address is printed by sit-deploy.sh)")
   Mailpit inbox:  https://$domain/mailpit
   Mailpit login:  tester / $mailpit_password   (shown only now)
 

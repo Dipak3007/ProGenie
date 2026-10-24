@@ -1,0 +1,59 @@
+# The only open port of the Hugging Face Space. Started by start.sh.
+#
+# Browsers never come here directly: they use the Cloudflare Worker (infra/nocard/cloudflare/worker.js). The Space
+# is private, so only requests carrying a Hugging Face token reach this container at all, and on top of that the
+# Worker sends a shared secret in X-PG-Edge: anything without it gets 403.
+#
+# The Worker sends a few headers under its own names so that Hugging Face's proxy, which sits between the
+# Worker and this container, can't overwrite or consume them:
+#   X-PG-Authorization  the browser's Authorization header (access token, or Mailpit's basic auth)
+#   X-PG-Client-IP      the visitor's IP address (used by the API's rate limits)
+#   X-PG-Host           the public host name (the workers.dev address)
+{
+	admin off
+	auto_https off
+	persist_config off
+}
+
+:{$PORT:7860} {
+	header -Server
+
+	route {
+		# Hugging Face checks this to see that the Space is up.
+		@status path /
+		respond @status "ProGenie SIT backend is running. The site is served through Cloudflare." 200
+
+		@stranger not header X-PG-Edge {$EDGE_SECRET}
+		respond @stranger "Forbidden" 403
+		request_header -X-PG-Edge
+
+		# Authorization at this point is the Worker's Hugging Face token (for the private Space), never the
+		# visitor's: drop it, then put back the visitor's own header that the Worker sent as X-PG-Authorization.
+		request_header -Authorization
+		@auth header X-PG-Authorization *
+		request_header @auth Authorization {http.request.header.X-PG-Authorization}
+		request_header -X-PG-Authorization
+
+		# Mailpit inbox for testers (one-time codes), behind a password
+		@mailpit path /mailpit /mailpit/*
+		handle @mailpit {
+			basic_auth {
+				{$MAILPIT_USER:tester} {$MAILPIT_HASH}
+			}
+			reverse_proxy 127.0.0.1:8025
+		}
+
+		@api path /api/*
+		handle @api {
+			reverse_proxy 127.0.0.1:8080 {
+				header_up X-Forwarded-For {http.request.header.X-PG-Client-IP}
+				header_up X-Forwarded-Proto https
+				header_up X-Forwarded-Host {http.request.header.X-PG-Host}
+				header_up -X-PG-Client-IP
+				header_up -X-PG-Host
+			}
+		}
+
+		respond 404
+	}
+}
