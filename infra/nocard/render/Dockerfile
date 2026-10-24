@@ -18,12 +18,13 @@ RUN mvn -B -q package -DskipTests
 
 # ---- runtime: Java 25 + Caddy + Mailpit
 FROM eclipse-temurin:25-jre
-COPY --from=caddy:2 /usr/bin/caddy /usr/local/bin/caddy
+COPY --from=caddy:2 /usr/bin/caddy /tmp/caddy
 COPY --from=axllent/mailpit:v1.32.0 /mailpit /usr/local/bin/mailpit
 WORKDIR /app
 COPY --from=build /build/target/progenie-api.jar app.jar
 COPY infra/nocard/render/start.sh infra/nocard/render/Caddyfile ./
-RUN chmod 755 start.sh \
+RUN install -m 755 /tmp/caddy /usr/local/bin/caddy && rm /tmp/caddy \
+ && chmod 755 start.sh \
  && useradd -m -u 10001 app \
  && mkdir -p /data/uploads /data/mailpit /data/caddy \
  && chown -R app /data
