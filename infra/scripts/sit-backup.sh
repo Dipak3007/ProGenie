@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Nightly SIT backup: a PostgreSQL dump and the uploaded files (KYC documents, ticket photos, receipts, exports).
-# Cron (as the deploy user):  15 2 * * *  ~/progenie/ProGenieV2/infra/scripts/sit-backup.sh >> ~/progenie-backup.log 2>&1
+# Cron (as the deploy user):  15 2 * * *  ~/progenie/ProGenie/infra/scripts/sit-backup.sh >> ~/progenie-backup.log 2>&1
 # Restore steps are in docs/DEPLOYMENT.md.
 set -euo pipefail
 cd "$(dirname "$0")/.."

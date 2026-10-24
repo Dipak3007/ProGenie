@@ -1,6 +1,6 @@
 # ProGenie SIT (system integration testing) server: layered on top of compose.yaml.
 #
-#   cd ~/progenie/ProGenieV2/infra
+#   cd ~/progenie/ProGenie/infra
 #   docker compose -f compose.yaml -f compose.sit.yaml --env-file .env.sit --profile app up -d --build
 #   (or simply ./scripts/sit-deploy.sh, which does the same plus health checks)
 #

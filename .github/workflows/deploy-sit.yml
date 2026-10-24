@@ -30,7 +30,7 @@ jobs:
           printf '%s\n' "$SIT_HOST_KEY" > ~/.ssh/known_hosts
           ssh -o StrictHostKeyChecking=yes "$SIT_USER@$SIT_HOST" "REF='$REF' bash -s" <<'REMOTE'
           set -euo pipefail
-          cd ~/progenie/ProGenieV2-Database && git pull --ff-only
-          cd ~/progenie/ProGenieV2 && git fetch --prune && git checkout "$REF" && git pull --ff-only
+          cd ~/progenie/ProGenie_DB_Scripts && git pull --ff-only
+          cd ~/progenie/ProGenie && git fetch --prune && git checkout "$REF" && git pull --ff-only
           bash ./infra/scripts/sit-deploy.sh
           REMOTE

@@ -1,0 +1,57 @@
+# Caddy on the Azure VM: the only public entry (ports 80/443). Used by compose.yaml.
+#
+# Browsers never come here directly: they use the Cloudflare Worker (infra/nocard/cloudflare/worker.js), which
+# forwards /api/* and /mailpit/* with the shared secret EDGE_SECRET in X-PG-Edge. Anything without it gets 403,
+# so the API and Mailpit can't be reached around the Worker even though the VM has a public address.
+#
+# The Worker sends the visitor's details under its own header names, which nobody else can set:
+#   X-PG-Authorization  the browser's Authorization header (access token, or Mailpit's basic auth)
+#   X-PG-Client-IP      the visitor's IP address (used by the API's rate limits)
+#   X-PG-Host           the public host name (the workers.dev address)
+{
+	email {$ACME_EMAIL}
+}
+
+{$API_HOST} {
+	header {
+		Strict-Transport-Security "max-age=31536000"
+		-Server
+	}
+
+	route {
+		@status path /
+		respond @status "ProGenie SIT backend. The site is served through Cloudflare." 200
+
+		@stranger not header X-PG-Edge {$EDGE_SECRET}
+		respond @stranger "Forbidden" 403
+		request_header -X-PG-Edge
+
+		# Only the visitor's own Authorization, as forwarded by the Worker, reaches the API and Mailpit
+		request_header -Authorization
+		@auth header X-PG-Authorization *
+		request_header @auth Authorization {http.request.header.X-PG-Authorization}
+		request_header -X-PG-Authorization
+
+		# Mailpit inbox for testers (one-time codes), behind a password
+		@mailpit path /mailpit /mailpit/*
+		handle @mailpit {
+			basic_auth {
+				{$MAILPIT_USER:tester} {$MAILPIT_HASH}
+			}
+			reverse_proxy mailpit:8025
+		}
+
+		@api path /api/*
+		handle @api {
+			reverse_proxy api:8080 {
+				header_up X-Forwarded-For {http.request.header.X-PG-Client-IP}
+				header_up X-Forwarded-Proto https
+				header_up X-Forwarded-Host {http.request.header.X-PG-Host}
+				header_up -X-PG-Client-IP
+				header_up -X-PG-Host
+			}
+		}
+
+		respond 404
+	}
+}

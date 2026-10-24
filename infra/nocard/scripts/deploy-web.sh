@@ -1,25 +1,25 @@
 #!/usr/bin/env bash
 # Builds the Angular app and deploys it, with the /api proxy (worker.js), to Cloudflare Workers.
 #
-#   BACKEND_URL=https://<hf-user>-progenie-api.hf.space bash infra/nocard/scripts/deploy-web.sh
+#   BACKEND_URL=https://<api-host> bash infra/nocard/scripts/deploy-web.sh
+#   (<api-host> is the Azure VM's DNS name, e.g. progenie-api.centralindia.cloudapp.azure.com)
 #
 # Log in once with `npx wrangler@4 login` (opens the browser), or set CLOUDFLARE_API_TOKEN and
-# CLOUDFLARE_ACCOUNT_ID (that's what the GitHub workflow does). The Worker's secrets (EDGE_SECRET, HF_SPACE_TOKEN)
-# are set once with `wrangler secret put` and kept across deploys. See docs/DEPLOYMENT_NOCARD.md.
+# CLOUDFLARE_ACCOUNT_ID (that's what the GitHub workflow does). The Worker's secret EDGE_SECRET is set once
+# with `wrangler secret put EDGE_SECRET` and kept across deploys. See docs/DEPLOYMENT_NOCARD.md.
 set -euo pipefail
 root=$(cd "$(dirname "$0")/../../.." && pwd)
 
-backend=${BACKEND_URL:?set BACKEND_URL to the Space address, e.g. https://dipak-progenie-api.hf.space}
+backend=${BACKEND_URL:?set BACKEND_URL to the back end, e.g. https://progenie-api.centralindia.cloudapp.azure.com}
 backend=${backend%/}
-case $backend in
-  https://*.hf.space) ;;
-  https://*) echo "Note: BACKEND_URL doesn't end in .hf.space; using it anyway." ;;
-  *) echo "BACKEND_URL must start with https://" >&2; exit 1 ;;
-esac
+[[ $backend == https://* ]] || { echo "BACKEND_URL must start with https://" >&2; exit 1; }
 
 cd "$root/web"
-[ -d node_modules ] || npm ci --no-audit --no-fund
-npm run build
+# SKIP_BUILD=1 (used by laptop/start.sh) only changes BACKEND_URL and reuses the last build
+if [ "${SKIP_BUILD:-}" != 1 ] || [ ! -f dist/web/browser/index.html ]; then
+  [ -d node_modules ] || npm ci --no-audit --no-fund
+  npm run build
+fi
 cp "$root/infra/nocard/cloudflare/_headers" dist/web/browser/_headers
 
 cd "$root/infra/nocard/cloudflare"

@@ -1,19 +1,18 @@
 // ProGenie front end on Cloudflare Workers (free, no card). See docs/DEPLOYMENT_NOCARD.md.
 //
 // Static files (the Angular build) are served by Cloudflare directly; wrangler.jsonc sends only /api/* and
-// /mailpit/* to this code, which forwards them to the Hugging Face Space (BACKEND_URL).
+// /mailpit/* to this code, which forwards them to the back end (BACKEND_URL: your laptop's tunnel or a server).
 //
-// Why a proxy instead of calling the Space from the browser: the site and the API then share one origin, so the
+// Why a proxy instead of calling the back end from the browser: the site and the API then share one origin, so the
 // refresh-token cookie (HttpOnly, SameSite=Strict, Path=/api/v1/auth) keeps working, and there is no CORS.
 //
-// Settings: BACKEND_URL (a var, passed by scripts/deploy-web.sh), and two secrets (wrangler secret put <NAME>):
-//   HF_SPACE_TOKEN  a read-only Hugging Face token: the Space is private, so Hugging Face only lets this through
-//   EDGE_SECRET     shared with the Space, which refuses every request that doesn't carry it
+// Settings: BACKEND_URL (a var, passed by scripts/deploy-web.sh) and the secret EDGE_SECRET
+// (wrangler secret put EDGE_SECRET), shared with the back end, which refuses every request that doesn't carry it.
 
 const PROXIED = ['/api/', '/mailpit/'];
 
 // Not forwarded: connection-level headers, Cloudflare's own headers, and anything a visitor could use to
-// impersonate the Worker (the Space trusts the X-PG-* headers only because they come with EDGE_SECRET).
+// impersonate the Worker (the back end trusts the X-PG-* headers only because they come with EDGE_SECRET).
 const DROP = new Set([
   'host', 'connection', 'keep-alive', 'proxy-connection', 'te', 'trailer', 'transfer-encoding',
   'forwarded', 'x-forwarded-for', 'x-forwarded-host', 'x-forwarded-proto', 'x-real-ip', 'true-client-ip',
@@ -49,15 +48,12 @@ async function forward(request, env, url) {
   if (request.headers.has('upgrade')) {          // Mailpit's live updates use a WebSocket
     headers.set('connection', 'Upgrade');
   }
-  // Under our own names, so Hugging Face's proxy in front of the Space can't overwrite or consume them
+  // Under our own names, so nothing between here and the back end can overwrite or consume them
   headers.set('x-pg-edge', env.EDGE_SECRET);
   headers.set('x-pg-client-ip', request.headers.get('cf-connecting-ip') ?? '');
   headers.set('x-pg-host', url.host);
   if (request.headers.has('authorization')) {
     headers.set('x-pg-authorization', request.headers.get('authorization'));
-  }
-  if (env.HF_SPACE_TOKEN) {
-    headers.set('authorization', `Bearer ${env.HF_SPACE_TOKEN}`);
   }
 
   const hasBody = request.method !== 'GET' && request.method !== 'HEAD';
@@ -76,15 +72,8 @@ async function forward(request, env, url) {
     return response;
   }
 
-  // The API always answers in JSON (Caddy in plain text). An HTML page comes from Hugging Face itself:
-  // 401/403/404 = it didn't accept HF_SPACE_TOKEN (or BACKEND_URL is wrong); anything else = asleep or building.
-  const type = response.headers.get('content-type') ?? '';
-  const fromHuggingFace = type.startsWith('text/html') && url.pathname.startsWith('/api/');
-  if (fromHuggingFace && [401, 403, 404].includes(response.status)) {
-    return problem(502, 'BACKEND_REFUSED',
-      'The site could not reach its server. Check HF_SPACE_TOKEN and BACKEND_URL (docs/DEPLOYMENT_NOCARD.md).');
-  }
-  if ([502, 503, 504].includes(response.status) || fromHuggingFace) {
+  // 502/503/504 come from Caddy while the API restarts; 530 from Cloudflare when the tunnel or server is down
+  if ([502, 503, 504, 530].includes(response.status)) {
     return starting();
   }
 
@@ -96,7 +85,7 @@ async function forward(request, env, url) {
 
 function starting() {
   const res = problem(503, 'BACKEND_STARTING',
-    'The server is waking up or restarting. Please try again in a minute or two.');
+    'The server is offline or restarting. Please try again in a few minutes.');
   res.headers.set('retry-after', '60');
   return res;
 }
