@@ -1,10 +1,16 @@
-# Caddy in front of the SIT stack: HTTPS (Let's Encrypt, renewed automatically) for SIT_DOMAIN.
-# Used by compose.sit.yaml; values come from infra/.env.sit.
+# Caddy in front of the SIT stack. Used by compose.sit.yaml; values come from infra/.env.sit.
+#   Server mode (default): SITE_ADDRESS is the public host name, so Caddy gets a Let's Encrypt certificate
+#                          and serves HTTPS on 80/443.
+#   Tunnel mode (compose.tunnel.yaml): SITE_ADDRESS is ":80". Cloudflare terminates HTTPS and cloudflared
+#                          forwards plain HTTP here, so the tunnel is trusted for the client's real IP.
 {
 	email {$ACME_EMAIL}
+	servers {
+		trusted_proxies static {$TRUSTED_PROXIES:127.0.0.1/32}
+	}
 }
 
-{$SIT_DOMAIN} {
+{$SITE_ADDRESS} {
 	encode zstd gzip
 
 	header {
