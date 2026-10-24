@@ -1,14 +1,14 @@
 #!/usr/bin/env bash
 # Builds and (re)starts the SIT stack, then waits until the API reports healthy.
 # Works on an x86 or ARM server, and in tunnel mode on your own computer (scripts/dc.sh picks the files).
-# Usage:  ~/progenie/ProGenieV2/infra/scripts/sit-deploy.sh
+# Usage:  ~/progenie/ProGenie/infra/scripts/sit-deploy.sh
 set -euo pipefail
 cd "$(dirname "$0")/.."
 
 [ -f .env.sit ] || { echo "infra/.env.sit is missing: run scripts/sit-secrets.sh first" >&2; exit 1; }
 db_dir=$(grep -E '^PROGENIE_DB_DIR=' .env.sit | cut -d= -f2- | tr -d "'\"")
-[ -d "${db_dir:-../../ProGenieV2-Database}/migrations" ] || {
-  echo "Database scripts not found at ${db_dir:-../../ProGenieV2-Database}/migrations (clone ProGenieV2-Database next to ProGenieV2)" >&2
+[ -d "${db_dir:-../../ProGenie_DB_Scripts}/migrations" ] || {
+  echo "Database scripts not found at ${db_dir:-../../ProGenie_DB_Scripts}/migrations (clone ProGenie_DB_Scripts next to ProGenie)" >&2
   exit 1
 }
 tunnel=false

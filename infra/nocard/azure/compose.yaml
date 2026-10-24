@@ -1,0 +1,135 @@
+# ProGenie back end on one small Azure VM (Azure for Students, no card). See docs/DEPLOYMENT_NOCARD.md.
+#
+# The website itself is on Cloudflare (infra/nocard/cloudflare). This VM runs only the API, PostgreSQL + PostGIS,
+# Mailpit and Caddy. Caddy is the only container with open ports (80/443): it gets a Let's Encrypt certificate for
+# API_HOST and answers /api and /mailpit only for the Cloudflare Worker, which sends the shared EDGE_SECRET.
+#
+# Memory is sized for the free 1 GB VM sizes plus 2 GB of swap (setup.sh creates it): the API was measured at
+# 390-420 MB at peak during the smoke test and UI walkthrough, with a 320 MB heap.
+#
+#   cd ~/progenie/ProGenie/infra/nocard/azure
+#   bash deploy.sh                       (build, start, wait until healthy)
+#   docker compose ps | logs -f api | restart api
+#
+# Settings and secrets come from .env in this folder (git-ignored), created by make-env.sh.
+
+name: progenie-azure
+
+x-logging: &logging
+  driver: json-file
+  options:
+    max-size: "10m"
+    max-file: "3"
+
+services:
+  postgres:
+    image: postgis/postgis:17-3.5
+    environment:
+      POSTGRES_DB: progenie
+      POSTGRES_USER: progenie
+      POSTGRES_PASSWORD: ${DB_PASSWORD:?run make-env.sh first}
+      TZ: Asia/Kolkata
+    command: ["postgres", "-c", "shared_buffers=64MB", "-c", "max_connections=20", "-c", "work_mem=4MB",
+              "-c", "maintenance_work_mem=32MB", "-c", "effective_cache_size=256MB"]
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U progenie -d progenie"]
+      interval: 5s
+      timeout: 3s
+      retries: 30
+    mem_limit: 256m
+    logging: *logging
+    restart: unless-stopped
+
+  mailpit:
+    image: axllent/mailpit:v1.32.0
+    environment:
+      MP_WEBROOT: mailpit            # UI and API under /mailpit (Caddy adds the password)
+      MP_DATABASE: /data/mailpit.db  # keep messages across restarts
+      MP_MAX_MESSAGES: "2000"
+    volumes:
+      - mailpit:/data
+    mem_limit: 96m
+    logging: *logging
+    restart: unless-stopped
+
+  api:
+    build: ../../../api
+    environment:
+      PROGENIE_ENVIRONMENT: sit      # refuses to start while any secret is a local default
+      PROGENIE_COOKIE_SECURE: "true"
+      PROGENIE_WEB_BASE_URL: ${SITE_URL:?run make-env.sh first}
+      PROGENIE_CORS_ALLOWED_ORIGINS: ${SITE_URL}
+      PROGENIE_LOG_LEVEL: INFO
+      DB_HOST: postgres
+      DB_PORT: 5432
+      DB_NAME: progenie
+      DB_USER: progenie
+      DB_PASSWORD: ${DB_PASSWORD}
+      SPRING_DATASOURCE_HIKARI_MAXIMUM_POOL_SIZE: 5
+      PROGENIE_DB_MIGRATIONS: filesystem:/db/migrations
+      PROGENIE_STORAGE_DIR: /data/uploads
+      PROGENIE_MAILPIT_URL: http://mailpit:8025/mailpit
+      PROGENIE_OTP_PEPPER: ${PROGENIE_OTP_PEPPER:?run make-env.sh first}
+      PROGENIE_PAYMENT_WEBHOOK_SECRET: ${PROGENIE_PAYMENT_WEBHOOK_SECRET:?run make-env.sh first}
+      PROGENIE_JWT_PRIVATE_KEY: ${PROGENIE_JWT_PRIVATE_KEY:?run make-env.sh first}
+      PROGENIE_JWT_PUBLIC_KEY: ${PROGENIE_JWT_PUBLIC_KEY:?run make-env.sh first}
+      # Small heap for a 1 GB VM (-Xmx wins over the image's MaxRAMPercentage)
+      JAVA_TOOL_OPTIONS: -Xmx320m -Xss512k -XX:MaxMetaspaceSize=200m -XX:ReservedCodeCacheSize=64m -XX:+UseSerialGC
+      # Optional settings: add any of these to .env to change them
+      PROGENIE_SMS_PROVIDER: ${PROGENIE_SMS_PROVIDER:-mailpit}
+      PROGENIE_WHATSAPP_PROVIDER: ${PROGENIE_WHATSAPP_PROVIDER:-mailpit}
+      PROGENIE_EMAIL_PROVIDER: ${PROGENIE_EMAIL_PROVIDER:-mailpit}
+      PROGENIE_PAYMENT_GATEWAY: ${PROGENIE_PAYMENT_GATEWAY:-fake}
+      RAZORPAY_KEY_ID: ${RAZORPAY_KEY_ID:-}
+      RAZORPAY_KEY_SECRET: ${RAZORPAY_KEY_SECRET:-}
+      RAZORPAY_WEBHOOK_SECRET: ${RAZORPAY_WEBHOOK_SECRET:-}
+      PROGENIE_COMPANY_LEGAL_NAME: ${PROGENIE_COMPANY_LEGAL_NAME:-}
+      PROGENIE_COMPANY_ADDRESS: ${PROGENIE_COMPANY_ADDRESS:-}
+      PROGENIE_COMPANY_CITY: ${PROGENIE_COMPANY_CITY:-Ahmedabad}
+      PROGENIE_SUPPORT_EMAIL: ${PROGENIE_SUPPORT_EMAIL:-support@progenie.in}
+      PROGENIE_SUPPORT_PHONE: ${PROGENIE_SUPPORT_PHONE:-}
+      PROGENIE_COMPANY_GRIEVANCE_NAME: ${PROGENIE_COMPANY_GRIEVANCE_NAME:-}
+      PROGENIE_COMPANY_GRIEVANCE_EMAIL: ${PROGENIE_COMPANY_GRIEVANCE_EMAIL:-grievance@progenie.in}
+    volumes:
+      # The ProGenie_DB_Scripts clone next to ProGenie
+      - ${PROGENIE_DB_DIR:-../../../../ProGenie_DB_Scripts}/migrations:/db/migrations:ro
+      - uploads:/data/uploads        # KYC documents, ticket photos, receipts, exports
+    depends_on:
+      postgres:
+        condition: service_healthy
+      mailpit:
+        condition: service_started
+    mem_limit: 640m
+    logging: *logging
+    restart: unless-stopped
+
+  caddy:
+    image: caddy:2-alpine
+    ports:
+      - "80:80"
+      - "443:443"
+    environment:
+      API_HOST: ${API_HOST:?run make-env.sh first}
+      ACME_EMAIL: ${ACME_EMAIL:?run make-env.sh first}
+      EDGE_SECRET: ${EDGE_SECRET:?run make-env.sh first}
+      MAILPIT_USER: tester
+      MAILPIT_HASH: ${MAILPIT_HASH:?run make-env.sh first}
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data             # certificates: keep this volume (Let's Encrypt has rate limits)
+      - caddy_config:/config
+    depends_on:
+      - api
+      - mailpit
+    mem_limit: 96m
+    logging: *logging
+    restart: unless-stopped
+
+volumes:
+  pgdata:
+  mailpit:
+  uploads:
+  caddy_data:
+  caddy_config:

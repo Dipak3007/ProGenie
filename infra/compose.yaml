@@ -115,8 +115,8 @@ services:
       PROGENIE_COMPANY_GRIEVANCE_NAME: ${PROGENIE_COMPANY_GRIEVANCE_NAME:-}
       PROGENIE_COMPANY_GRIEVANCE_EMAIL: ${PROGENIE_COMPANY_GRIEVANCE_EMAIL:-grievance@progenie.in}
     volumes:
-      # The DDL + Day-0 scripts live in the sibling folder ProGenieV2-Database
-      - ${PROGENIE_DB_DIR:-../../ProGenieV2-Database}/migrations:/db/migrations:ro
+      # The DDL + Day-0 scripts live in the sibling folder ProGenie_DB_Scripts
+      - ${PROGENIE_DB_DIR:-../../ProGenie_DB_Scripts}/migrations:/db/migrations:ro
       # KYC documents uploaded by Genies (kept across container restarts)
       - uploads:/data/uploads
     ports:

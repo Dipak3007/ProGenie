@@ -1,6 +1,6 @@
 # Response headers for the static files on Cloudflare (the same ones web/nginx.conf sets in Docker).
 # deploy-web.sh copies this file into the Angular build folder. /api and /mailpit responses come from the
-# Space through worker.js and don't get these.
+# back end through worker.js and don't get these.
 
 /*
   X-Content-Type-Options: nosniff

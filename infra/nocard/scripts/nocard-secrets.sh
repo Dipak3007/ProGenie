@@ -1,11 +1,12 @@
 #!/usr/bin/env bash
 # Generates every secret the no-card setup needs and saves them to infra/nocard/.env.nocard (git-ignored,
-# readable only by you). You then paste them into the Hugging Face Space and Cloudflare. See docs/DEPLOYMENT_NOCARD.md.
+# readable only by you). You then copy the file to the Azure VM and give EDGE_SECRET to Cloudflare.
+# See docs/DEPLOYMENT_NOCARD.md.
 #
 #   bash infra/nocard/scripts/nocard-secrets.sh
 #
 # Run once. It refuses to overwrite an existing file, because changing the secrets later logs everyone out
-# and the Worker stops matching the Space until both have the new EDGE_SECRET.
+# and the Worker stops matching the back end until both have the new EDGE_SECRET.
 set -euo pipefail
 cd "$(dirname "$0")/.."
 out=.env.nocard
@@ -25,7 +26,7 @@ jwt_public=$(openssl base64 -A -in "$tmp/jwt.pub")
 cat > "$out" <<VALUES
 # ProGenie no-card SIT secrets. Never commit this file (.gitignore covers .env.*). Keep a copy in a password manager.
 
-# ---- Hugging Face Space → Settings → Variables and secrets → New secret (one per line below)
+# ---- Used on the Azure VM (make-env.sh reads this file)
 DB_PASSWORD=$(openssl rand -hex 24)
 PROGENIE_OTP_PEPPER=$(openssl rand -hex 32)
 PROGENIE_PAYMENT_WEBHOOK_SECRET=$(openssl rand -hex 24)
@@ -33,7 +34,7 @@ PROGENIE_JWT_PRIVATE_KEY=$jwt_private
 PROGENIE_JWT_PUBLIC_KEY=$jwt_public
 MAILPIT_PASSWORD=$(openssl rand -base64 24 | tr -d '/+=' | cut -c1-20)
 
-# ---- Both places: a Space secret AND a Cloudflare Worker secret (they must match)
+# ---- Both places: the Azure VM AND the Cloudflare Worker secret (they must match)
 EDGE_SECRET=$(openssl rand -hex 32)
 VALUES
 chmod 600 "$out"
@@ -41,8 +42,7 @@ chmod 600 "$out"
 cat <<MSG
 Created infra/nocard/$out (readable only by you).
 
-  1. Hugging Face Space → Settings → Variables and secrets: add every value above as a *secret*.
-  2. Cloudflare: cd infra/nocard/cloudflare && npx wrangler@4 secret put EDGE_SECRET   (paste the same EDGE_SECRET),
-     then npx wrangler@4 secret put HF_SPACE_TOKEN   (the read-only Hugging Face token, step 4c of the guide)
+  1. Copy this file to the Azure VM when the guide says so (scp).
+  2. Cloudflare: cd infra/nocard/cloudflare && npx wrangler@4 secret put EDGE_SECRET   (paste the EDGE_SECRET value)
   3. Mailpit login for testers: tester / the MAILPIT_PASSWORD value.
 MSG

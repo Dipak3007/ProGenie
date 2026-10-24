@@ -1,0 +1,26 @@
+# Laptop mode: the same back end as ../azure/compose.yaml, run on your own computer and reached through a free
+# Cloudflare quick tunnel. Nothing listens on your network: cloudflared only connects out to Cloudflare, and the
+# Cloudflare Worker (the website) forwards /api and /mailpit through it. See docs/DEPLOYMENT_NOCARD.md.
+#
+# Used by start.sh as:  docker compose -f ../azure/compose.yaml -f compose.laptop.yaml ...
+# Its own project name and volumes (progenie-azure_*), so it never touches your local development database,
+# and no ports on your computer, so it can run next to the local stack.
+
+services:
+  caddy:
+    ports: !reset []                  # nothing published on your computer
+    environment:
+      API_HOST: ":80"                 # plain HTTP inside Docker; Cloudflare serves HTTPS
+
+  tunnel:
+    image: cloudflare/cloudflared:latest
+    command: ["tunnel", "--no-autoupdate", "--url", "http://caddy:80"]
+    depends_on:
+      - caddy
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+    mem_limit: 128m
+    restart: unless-stopped

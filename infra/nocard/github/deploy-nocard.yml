@@ -1,12 +1,15 @@
 name: deploy-nocard
 
-# Free, no-card SIT (docs/DEPLOYMENT_NOCARD.md): front end on Cloudflare Workers, back end on a Hugging Face Space.
+# Free, no-card SIT (docs/DEPLOYMENT_NOCARD.md): front end on Cloudflare Workers, back end on an Azure VM.
 # Copy this file to .github/workflows/, then run it from Actions → deploy-nocard → Run workflow.
 #
-# Repository secrets: HF_TOKEN (the progenie-deploy token: write access to the Space), CLOUDFLARE_API_TOKEN,
-#                     CLOUDFLARE_ACCOUNT_ID
-# Repository variables: HF_SPACE (e.g. dipak/progenie-api), DB_REPO (e.g. dipak3007/ProGenieV2-Database),
-#                       BACKEND_URL (e.g. https://dipak-progenie-api.hf.space)
+# Repository secrets:
+#   CLOUDFLARE_API_TOKEN, CLOUDFLARE_ACCOUNT_ID            front end
+#   AZURE_HOST    the VM's DNS name, e.g. progenie-api.centralindia.cloudapp.azure.com
+#   AZURE_USER    the VM's user name, e.g. azureuser
+#   AZURE_SSH_KEY a private key allowed to log in to the VM (a separate deploy key, not your own)
+#   AZURE_HOST_KEY output of: ssh-keyscan -t ed25519 <AZURE_HOST>
+# Repository variable: BACKEND_URL, e.g. https://progenie-api.centralindia.cloudapp.azure.com
 on:
   workflow_dispatch:
     inputs:
@@ -27,17 +30,25 @@ jobs:
   backend:
     if: inputs.target != 'frontend'
     runs-on: ubuntu-latest
-    timeout-minutes: 10
+    timeout-minutes: 30
     steps:
-      - uses: actions/checkout@v4
-      - name: Send the Space files (Hugging Face builds the image itself)
+      - name: Pull and redeploy on the VM over SSH (the VM builds the image)
         env:
-          HF_TOKEN: ${{ secrets.HF_TOKEN }}
-          HF_SPACE: ${{ vars.HF_SPACE }}
-          APP_REPO: ${{ github.repository }}
-          APP_REF: ${{ github.sha }}
-          DB_REPO: ${{ vars.DB_REPO }}
-        run: bash infra/nocard/scripts/push-hf-space.sh
+          AZURE_HOST: ${{ secrets.AZURE_HOST }}
+          AZURE_USER: ${{ secrets.AZURE_USER }}
+          AZURE_SSH_KEY: ${{ secrets.AZURE_SSH_KEY }}
+          AZURE_HOST_KEY: ${{ secrets.AZURE_HOST_KEY }}
+          REF: ${{ github.ref_name }}
+        run: |
+          install -m 700 -d ~/.ssh
+          printf '%s\n' "$AZURE_SSH_KEY" > ~/.ssh/id_ed25519 && chmod 600 ~/.ssh/id_ed25519
+          printf '%s\n' "$AZURE_HOST_KEY" > ~/.ssh/known_hosts
+          ssh -o StrictHostKeyChecking=yes "$AZURE_USER@$AZURE_HOST" "REF='$REF' bash -s" <<'REMOTE'
+          set -euo pipefail
+          cd ~/progenie/ProGenie_DB_Scripts && git pull --ff-only
+          cd ~/progenie/ProGenie && git fetch --prune && git checkout "$REF" && git pull --ff-only
+          bash infra/nocard/azure/deploy.sh
+          REMOTE
 
   frontend:
     if: inputs.target != 'backend'
