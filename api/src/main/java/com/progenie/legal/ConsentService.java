@@ -6,7 +6,9 @@ import java.util.Collection;
 import java.util.List;
 import java.util.UUID;
 
+import com.progenie.shared.config.QueryConstants;
 import com.progenie.shared.error.ApiException;
+import com.progenie.shared.util.QueryUtil;
 import org.springframework.http.HttpStatus;
 import org.springframework.jdbc.core.simple.JdbcClient;
 import org.springframework.stereotype.Service;
@@ -41,17 +43,7 @@ public class ConsentService {
     public List<String> pendingKinds(UUID userId, String role) {
         List<String> pending = new ArrayList<>();
         for (LegalKind kind : requiredKinds(role)) {
-            Boolean isPending = jdbc.sql("""
-                    SELECT CASE
-                             WHEN NOT EXISTS (SELECT 1 FROM legal_documents WHERE kind = :k AND published_at IS NOT NULL)
-                               THEN FALSE
-                             WHEN a.max_version IS NULL THEN TRUE
-                             ELSE EXISTS (SELECT 1 FROM legal_documents d
-                                           WHERE d.kind = :k AND d.published_at IS NOT NULL
-                                             AND d.version > a.max_version AND d.requires_reacceptance)
-                           END
-                      FROM (SELECT max(version) AS max_version FROM user_consents WHERE user_id = :u AND kind = :k) a
-                    """)
+            Boolean isPending = jdbc.sql(QueryUtil.get(QueryConstants.GET_CONSENT_IS_PENDING))
                 .param("u", userId).param("k", kind.name())
                 .query(Boolean.class).single();
             if (Boolean.TRUE.equals(isPending)) {
@@ -85,13 +77,7 @@ public class ConsentService {
             if (!required.contains(kind)) {
                 throw ApiException.badRequest("CONSENT_NOT_NEEDED", kind.name() + " doesn't apply to your account");
             }
-            jdbc.sql("""
-                    INSERT INTO user_consents (user_id, document_id, kind, version, ip, user_agent)
-                    SELECT :u, id, kind, version, :ip, :ua FROM legal_documents
-                     WHERE kind = :k AND published_at IS NOT NULL
-                     ORDER BY version DESC LIMIT 1
-                    ON CONFLICT (user_id, document_id) DO NOTHING
-                    """)
+            jdbc.sql(QueryUtil.get(QueryConstants.INSERT_CONSENT_ACCEPT))
                 .param("u", userId).param("k", kind.name())
                 .param("ip", ip == null ? null : ip.length() > 45 ? ip.substring(0, 45) : ip)
                 .param("ua", userAgent == null ? null : userAgent.length() > 300 ? userAgent.substring(0, 300) : userAgent)
@@ -103,11 +89,7 @@ public class ConsentService {
     /** The user's acceptance history (profile page and data export). */
     @Transactional(readOnly = true)
     public List<ConsentDto> history(UUID userId) {
-        return jdbc.sql("""
-                SELECT c.kind, c.version, d.title, c.accepted_at
-                  FROM user_consents c JOIN legal_documents d ON d.id = c.document_id
-                 WHERE c.user_id = :u ORDER BY c.accepted_at DESC
-                """)
+        return jdbc.sql(QueryUtil.get(QueryConstants.GET_CONSENT_HISTORY))
             .param("u", userId).query(ConsentDto.class).list();
     }
 }

@@ -1,4 +1,4 @@
-import { ChangeDetectionStrategy, Component, computed, linkedSignal, signal } from '@angular/core';
+import { ChangeDetectionStrategy, Component, computed, inject, linkedSignal, signal } from '@angular/core';
 import { httpResource } from '@angular/common/http';
 import { RouterLink } from '@angular/router';
 import {
@@ -16,6 +16,7 @@ import {
 
 import { API, query } from '../../core/api/api';
 import { Overview } from '../../core/api/models';
+import { CityStore } from '../../core/city/city-store';
 import { addDays, inr, statusMeta, todayIst } from '../../shared/format';
 import { BarItem, BarList, ChartPoint, ColumnChart } from '../../shared/ui/charts';
 import { formatDay } from '../../shared/ui/day.pipe';
@@ -128,9 +129,10 @@ export default class AdminOverviewPage {
     return v === null || v === undefined ? '—' : `${v}%`;
   }
 
+  private readonly cities = inject(CityStore);
   protected readonly subtitle = computed(() => {
     const o = this.shown();
-    return o ? `${formatDay(o.from, 'd MMM y')} – ${formatDay(o.to, 'd MMM y')} · Ahmedabad` : 'Marketplace health at a glance';
+    return o ? `${formatDay(o.from, 'd MMM y')} – ${formatDay(o.to, 'd MMM y')} · ${this.cities.liveNames() || 'all cities'}` : 'Marketplace health at a glance';
   });
   protected readonly gmvSeries = computed<ChartPoint[]>(() => (this.shown()?.daily ?? []).map((d) => ({ label: d.day, value: d.gmv })));
   protected readonly bookingSeries = computed<ChartPoint[]>(() => (this.shown()?.daily ?? []).map((d) => ({ label: d.day, value: d.bookings })));

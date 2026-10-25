@@ -5,7 +5,9 @@ import java.util.UUID;
 
 import com.progenie.provider.GenieDtos.GenieCardDto;
 import com.progenie.provider.GenieQueryService;
+import com.progenie.shared.config.QueryConstants;
 import com.progenie.shared.error.ApiException;
+import com.progenie.shared.util.QueryUtil;
 import org.springframework.jdbc.core.simple.JdbcClient;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -24,7 +26,7 @@ public class FavouriteService {
 
     @Transactional(readOnly = true)
     public List<GenieCardDto> list(UUID customerId) {
-        List<UUID> ids = jdbc.sql("SELECT genie_id FROM favourites WHERE customer_id = :id ORDER BY created_at DESC")
+        List<UUID> ids = jdbc.sql(QueryUtil.get(QueryConstants.GET_FAVOURITE_GENIE_IDS))
             .param("id", customerId)
             .query(UUID.class)
             .list();
@@ -36,13 +38,13 @@ public class FavouriteService {
         if (!genies.isListed(genieId)) {
             throw ApiException.notFound("GENIE_NOT_FOUND", "Genie not found");
         }
-        jdbc.sql("INSERT INTO favourites (customer_id, genie_id) VALUES (:c, :g) ON CONFLICT DO NOTHING")
+        jdbc.sql(QueryUtil.get(QueryConstants.INSERT_FAVOURITE_ADD))
             .param("c", customerId).param("g", genieId).update();
     }
 
     @Transactional
     public void remove(UUID customerId, UUID genieId) {
-        jdbc.sql("DELETE FROM favourites WHERE customer_id = :c AND genie_id = :g")
+        jdbc.sql(QueryUtil.get(QueryConstants.DELETE_FAVOURITE_REMOVE))
             .param("c", customerId).param("g", genieId).update();
     }
 }

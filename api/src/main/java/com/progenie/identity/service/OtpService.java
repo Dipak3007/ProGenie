@@ -21,10 +21,12 @@ import javax.crypto.spec.SecretKeySpec;
 import com.progenie.identity.OtpRequested;
 import com.progenie.identity.domain.User;
 import com.progenie.identity.repository.UserRepository;
+import com.progenie.shared.config.QueryConstants;
 import com.progenie.shared.error.ApiException;
 import com.progenie.shared.ratelimit.RateLimiter;
 import com.progenie.shared.util.Masking;
 import com.progenie.shared.util.Phones;
+import com.progenie.shared.util.QueryUtil;
 import com.progenie.shared.util.Times;
 import jakarta.annotation.PostConstruct;
 import org.slf4j.Logger;
@@ -129,16 +131,10 @@ public class OtpService {
         UUID challengeId = UUID.randomUUID();
         String code = "%06d".formatted(RANDOM.nextInt(1_000_000));
         // an older code for the same destination and purpose stops working
-        jdbc.sql("""
-                UPDATE otp_challenges SET expires_at = :now
-                 WHERE destination = :dest AND purpose = :purpose AND consumed_at IS NULL AND expires_at > :now
-                """)
+        jdbc.sql(QueryUtil.get(QueryConstants.UPDATE_OTP_EXPIRE_PREVIOUS))
             .param("now", Times.odt(now)).param("dest", destination).param("purpose", purpose.name())
             .update();
-        jdbc.sql("""
-                INSERT INTO otp_challenges (id, user_id, purpose, channel, destination, code_hash, expires_at, ip)
-                VALUES (:id, :user, :purpose, :channel, :dest, :hash, :expires, :ip)
-                """)
+        jdbc.sql(QueryUtil.get(QueryConstants.INSERT_OTP_CHALLENGE))
             .param("id", challengeId)
             .param("user", owner == null ? null : owner.getId())
             .param("purpose", purpose.name())
@@ -163,10 +159,7 @@ public class OtpService {
     @Transactional(noRollbackFor = ApiException.class)
     public Verified verify(UUID challengeId, String code) {
         Instant now = clock.instant();
-        ChallengeRow c = jdbc.sql("""
-                SELECT id, user_id, purpose, channel, destination, code_hash, expires_at, attempts, consumed_at
-                  FROM otp_challenges WHERE id = :id FOR UPDATE
-                """)
+        ChallengeRow c = jdbc.sql(QueryUtil.get(QueryConstants.LOCK_OTP_CHALLENGE))
             .param("id", challengeId).query(ChallengeRow.class).optional()
             .orElseThrow(() -> ApiException.badRequest("OTP_INVALID", "The code is wrong"));
         if (c.consumedAt() != null || !c.expiresAt().toInstant().isAfter(now)) {
@@ -180,13 +173,13 @@ public class OtpService {
                 c.codeHash().getBytes(StandardCharsets.US_ASCII));
         if (!matches || c.userId() == null) {
             int attempts = c.attempts() + 1;
-            jdbc.sql("UPDATE otp_challenges SET attempts = :a WHERE id = :id").param("a", attempts).param("id", c.id()).update();
+            jdbc.sql(QueryUtil.get(QueryConstants.UPDATE_OTP_ATTEMPTS)).param("a", attempts).param("id", c.id()).update();
             int left = Math.max(0, props.otpMaxAttempts() - attempts);
             throw ApiException.badRequest(left == 0 ? "OTP_EXPIRED" : "OTP_INVALID",
                     left == 0 ? "Too many wrong codes. Please request a new one" : "The code is wrong")
                 .with("attemptsLeft", left);
         }
-        jdbc.sql("UPDATE otp_challenges SET consumed_at = :now WHERE id = :id")
+        jdbc.sql(QueryUtil.get(QueryConstants.UPDATE_OTP_CONSUMED))
             .param("now", Times.odt(now)).param("id", c.id()).update();
 
         User user = users.findById(c.userId())
@@ -204,13 +197,11 @@ public class OtpService {
     /** Deletes a user's codes (account deletion). */
     @Transactional
     public void deleteAllFor(UUID userId) {
-        jdbc.sql("DELETE FROM otp_challenges WHERE user_id = :u").param("u", userId).update();
+        jdbc.sql(QueryUtil.get(QueryConstants.DELETE_OTP_FOR_USER)).param("u", userId).update();
     }
 
     private void enforceLimits(String destination, String ip) {
-        Optional<OffsetDateTime> last = jdbc.sql("""
-                SELECT created_at FROM otp_challenges WHERE destination = :d ORDER BY created_at DESC LIMIT 1
-                """)
+        Optional<OffsetDateTime> last = jdbc.sql(QueryUtil.get(QueryConstants.GET_OTP_LAST_SENT_AT))
             .param("d", destination).query(OffsetDateTime.class).optional();
         Instant now = clock.instant();
         if (last.isPresent()) {

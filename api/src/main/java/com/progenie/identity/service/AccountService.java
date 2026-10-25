@@ -5,15 +5,18 @@ import java.time.OffsetDateTime;
 import java.util.Locale;
 import java.util.UUID;
 
+import com.progenie.identity.PasswordChanged;
 import com.progenie.identity.domain.RefreshToken;
 import com.progenie.identity.domain.User;
 import com.progenie.identity.domain.UserStatus;
 import com.progenie.identity.repository.RefreshTokenRepository;
 import com.progenie.identity.repository.UserRepository;
 import com.progenie.identity.web.dto.AuthDtos.UserDto;
+import com.progenie.shared.config.QueryConstants;
 import com.progenie.shared.error.ApiException;
+import com.progenie.shared.util.QueryUtil;
 import com.progenie.shared.web.PageResponse;
-import com.progenie.identity.PasswordChanged;
+import org.jspecify.annotations.Nullable;
 import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.jdbc.core.simple.JdbcClient;
 import org.springframework.security.crypto.password.PasswordEncoder;
@@ -23,6 +26,7 @@ import org.springframework.util.StringUtils;
 
 /** Self-service account changes and admin status changes. */
 @Service
+@org.springframework.modulith.NamedInterface("accounts") // used by the admin module (user search and suspension)
 public class AccountService {
 
     private final UserRepository users;
@@ -79,29 +83,21 @@ public class AccountService {
     }
 
     /** One row in the admin user list. */
-    public record UserRowDto(UUID id, String fullName, String email, String phone, String role, String status,
+    @org.springframework.modulith.NamedInterface("accounts")
+    public record UserRowDto(UUID id, String fullName, @Nullable String email, String phone, String role, String status,
                              OffsetDateTime createdAt, long bookingCount) {
     }
 
     /** Admin: search users by role, status and name/phone/email. */
     @Transactional(readOnly = true)
     public PageResponse<UserRowDto> search(String role, String status, String q, int page, int size) {
-        String where = """
-             WHERE (CAST(:role AS varchar) IS NULL OR u.role = :role)
-               AND (CAST(:status AS varchar) IS NULL OR u.status = :status)
-               AND (CAST(:q AS varchar) IS NULL OR u.full_name ILIKE :q OR u.phone LIKE :q OR u.email::text ILIKE :q)
-            """;
         String roleFilter = StringUtils.hasText(role) ? role.trim().toUpperCase(Locale.ROOT) : null;
         String statusFilter = StringUtils.hasText(status) ? status.trim().toUpperCase(Locale.ROOT) : null;
         String query = StringUtils.hasText(q) ? "%" + q.trim() + "%" : null;
-        long total = jdbc.sql("SELECT count(*) FROM users u" + where)
+        long total = jdbc.sql(QueryUtil.get(QueryConstants.COUNT_USER_SEARCH))
             .param("role", roleFilter).param("status", statusFilter).param("q", query)
             .query(Long.class).single();
-        var items = jdbc.sql("""
-                SELECT u.id, u.full_name, u.email, u.phone, u.role, u.status, u.created_at,
-                       (SELECT count(*) FROM bookings b WHERE b.customer_id = u.id OR b.genie_id = u.id) AS booking_count
-                  FROM users u
-                """ + where + " ORDER BY u.created_at DESC LIMIT :limit OFFSET :offset")
+        var items = jdbc.sql(QueryUtil.get(QueryConstants.GET_USER_SEARCH))
             .param("role", roleFilter).param("status", statusFilter).param("q", query)
             .param("limit", PageResponse.clampSize(size)).param("offset", PageResponse.offset(page, size))
             .query(UserRowDto.class).list();

@@ -12,7 +12,10 @@ import java.util.Map;
 import java.util.UUID;
 
 import com.progenie.shared.config.AppProperties;
+import com.progenie.shared.config.QueryConstants;
 import com.progenie.shared.error.ApiException;
+import com.progenie.shared.util.QueryUtil;
+import org.jspecify.annotations.Nullable;
 import org.springframework.jdbc.core.simple.JdbcClient;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -37,14 +40,14 @@ public class AnalyticsService {
 
     public record OverviewDto(LocalDate from, LocalDate to, long bookingsCreated, Map<String, Long> bookingsByStatus,
                               long completed, BigDecimal gmv, BigDecimal commission, BigDecimal avgOrderValue,
-                              BigDecimal acceptanceRate, BigDecimal cancellationRate, long newCustomers, long newGenies,
+                              @Nullable BigDecimal acceptanceRate, @Nullable BigDecimal cancellationRate, long newCustomers, long newGenies,
                               long approvedGenies, long pendingVerifications, long flaggedGenies,
                               long outstandingFees, List<CategoryStat> topCategories, List<GenieStat> topGenies,
                               List<DayStat> daily) {
     }
 
     public record GenieStatsDto(LocalDate from, LocalDate to, long requestsReceived, long completed,
-                                long cancelledByGenie, BigDecimal acceptanceRate, BigDecimal earnings,
+                                long cancelledByGenie, @Nullable BigDecimal acceptanceRate, BigDecimal earnings,
                                 BigDecimal avgRating, int ratingCount, List<DayStat> daily) {
     }
 
@@ -64,10 +67,7 @@ public class AnalyticsService {
         Map<String, Long> byStatus = new LinkedHashMap<>();
         record StatusCount(String status, long count) {
         }
-        jdbc.sql("""
-                SELECT status, count(*) AS count FROM bookings
-                 WHERE created_at >= :from AND created_at < :to GROUP BY status ORDER BY count(*) DESC
-                """)
+        jdbc.sql(QueryUtil.get(QueryConstants.GET_ANALYTICS_BOOKINGS_BY_STATUS))
             .param("from", r.fromTs()).param("to", r.toTs())
             .query(StatusCount.class).list()
             .forEach(s -> byStatus.put(s.status(), s.count()));
@@ -75,49 +75,24 @@ public class AnalyticsService {
 
         record Money(long completed, BigDecimal gmv, BigDecimal commission) {
         }
-        Money money = jdbc.sql("""
-                SELECT count(*) AS completed, coalesce(sum(total_amount), 0) AS gmv,
-                       coalesce(sum(commission_amount), 0) AS commission
-                  FROM bookings WHERE status = 'COMPLETED' AND completed_at >= :from AND completed_at < :to
-                """)
+        Money money = jdbc.sql(QueryUtil.get(QueryConstants.GET_ANALYTICS_MONEY_TOTALS))
             .param("from", r.fromTs()).param("to", r.toTs()).query(Money.class).single();
 
         record Response(long responded, long accepted) {
         }
-        Response response = jdbc.sql("""
-                SELECT count(*) FILTER (WHERE accepted_at IS NOT NULL OR status IN ('REJECTED', 'EXPIRED')) AS responded,
-                       count(*) FILTER (WHERE accepted_at IS NOT NULL) AS accepted
-                  FROM bookings WHERE created_at >= :from AND created_at < :to
-                """)
+        Response response = jdbc.sql(QueryUtil.get(QueryConstants.GET_ANALYTICS_RESPONSE_STATS))
             .param("from", r.fromTs()).param("to", r.toTs()).query(Response.class).single();
 
         record People(long newCustomers, long newGenies, long approvedGenies, long pendingVerifications,
                       long flaggedGenies, long outstandingFees) {
         }
-        People people = jdbc.sql("""
-                SELECT (SELECT count(*) FROM users WHERE role = 'CUSTOMER' AND created_at >= :from AND created_at < :to) AS new_customers,
-                       (SELECT count(*) FROM users WHERE role = 'GENIE' AND created_at >= :from AND created_at < :to) AS new_genies,
-                       (SELECT count(*) FROM genie_profiles WHERE verification_status = 'APPROVED') AS approved_genies,
-                       (SELECT count(*) FROM genie_profiles WHERE verification_status = 'UNDER_REVIEW') AS pending_verifications,
-                       (SELECT count(*) FROM genie_profiles WHERE flagged_at IS NOT NULL) AS flagged_genies,
-                       (SELECT count(*) FROM bookings WHERE cancellation_fee_status = 'DUE') AS outstanding_fees
-                """)
+        People people = jdbc.sql(QueryUtil.get(QueryConstants.GET_ANALYTICS_PEOPLE_TOTALS))
             .param("from", r.fromTs()).param("to", r.toTs()).query(People.class).single();
 
-        List<CategoryStat> categories = jdbc.sql("""
-                SELECT c.slug, c.name, count(*) AS completed, sum(b.total_amount) AS gmv
-                  FROM bookings b JOIN services s ON s.id = b.service_id JOIN service_categories c ON c.id = s.category_id
-                 WHERE b.status = 'COMPLETED' AND b.completed_at >= :from AND b.completed_at < :to
-                 GROUP BY c.slug, c.name ORDER BY count(*) DESC, sum(b.total_amount) DESC LIMIT 5
-                """)
+        List<CategoryStat> categories = jdbc.sql(QueryUtil.get(QueryConstants.GET_ANALYTICS_TOP_CATEGORIES))
             .param("from", r.fromTs()).param("to", r.toTs()).query(CategoryStat.class).list();
 
-        List<GenieStat> genies = jdbc.sql("""
-                SELECT u.id, u.full_name AS name, count(*) AS completed, gp.avg_rating, sum(b.genie_payout) AS earnings
-                  FROM bookings b JOIN users u ON u.id = b.genie_id JOIN genie_profiles gp ON gp.user_id = b.genie_id
-                 WHERE b.status = 'COMPLETED' AND b.completed_at >= :from AND b.completed_at < :to
-                 GROUP BY u.id, u.full_name, gp.avg_rating ORDER BY count(*) DESC, gp.avg_rating DESC LIMIT 5
-                """)
+        List<GenieStat> genies = jdbc.sql(QueryUtil.get(QueryConstants.GET_ANALYTICS_TOP_GENIES))
             .param("from", r.fromTs()).param("to", r.toTs()).query(GenieStat.class).list();
 
         return new OverviewDto(r.from(), r.to(), created, byStatus, money.completed(), money.gmv(), money.commission(),
@@ -133,24 +108,13 @@ public class AnalyticsService {
         Range r = range(today.minusDays(Math.clamp(days, 1, MAX_RANGE_DAYS) - 1L), today, 30);
         record Counts(long requests, long completed, long cancelled, long responded, long accepted) {
         }
-        Counts c = jdbc.sql("""
-                SELECT count(*) AS requests,
-                       count(*) FILTER (WHERE status = 'COMPLETED') AS completed,
-                       count(*) FILTER (WHERE status = 'CANCELLED' AND cancelled_by = :g) AS cancelled,
-                       count(*) FILTER (WHERE accepted_at IS NOT NULL OR status IN ('REJECTED', 'EXPIRED')) AS responded,
-                       count(*) FILTER (WHERE accepted_at IS NOT NULL) AS accepted
-                  FROM bookings WHERE genie_id = :g AND created_at >= :from AND created_at < :to
-                """)
+        Counts c = jdbc.sql(QueryUtil.get(QueryConstants.GET_ANALYTICS_GENIE_JOB_COUNTS))
             .param("g", genieId).param("from", r.fromTs()).param("to", r.toTs()).query(Counts.class).single();
-        BigDecimal earnings = jdbc.sql("""
-                SELECT coalesce(sum(amount), 0) FROM ledger_entries
-                 WHERE genie_id = :g AND direction = 'C' AND account IN ('GENIE_EARNINGS', 'TIPS')
-                   AND created_at >= :from AND created_at < :to
-                """)
+        BigDecimal earnings = jdbc.sql(QueryUtil.get(QueryConstants.GET_ANALYTICS_GENIE_EARNINGS))
             .param("g", genieId).param("from", r.fromTs()).param("to", r.toTs()).query(BigDecimal.class).single();
         record Rating(BigDecimal avgRating, int ratingCount) {
         }
-        Rating rating = jdbc.sql("SELECT avg_rating, rating_count FROM genie_profiles WHERE user_id = :g")
+        Rating rating = jdbc.sql(QueryUtil.get(QueryConstants.GET_ANALYTICS_GENIE_RATING))
             .param("g", genieId).query(Rating.class).optional()
             .orElseThrow(() -> ApiException.notFound("GENIE_PROFILE_NOT_FOUND", "Genie profile not found"));
         return new GenieStatsDto(r.from(), r.to(), c.requests(), c.completed(), c.cancelled(),
@@ -158,22 +122,7 @@ public class AnalyticsService {
     }
 
     private List<DayStat> daily(Range r, UUID genieId) {
-        return jdbc.sql("""
-                WITH days AS (
-                    SELECT d::date AS day FROM generate_series(CAST(:fromDay AS date), CAST(:toDay AS date), interval '1 day') d
-                )
-                SELECT days.day,
-                       (SELECT count(*) FROM bookings b
-                         WHERE (CAST(:g AS uuid) IS NULL OR b.genie_id = :g)
-                           AND (b.created_at AT TIME ZONE :tz)::date = days.day) AS bookings,
-                       (SELECT count(*) FROM bookings b
-                         WHERE (CAST(:g AS uuid) IS NULL OR b.genie_id = :g) AND b.status = 'COMPLETED'
-                           AND (b.completed_at AT TIME ZONE :tz)::date = days.day) AS completed,
-                       (SELECT coalesce(sum(b.total_amount), 0) FROM bookings b
-                         WHERE (CAST(:g AS uuid) IS NULL OR b.genie_id = :g) AND b.status = 'COMPLETED'
-                           AND (b.completed_at AT TIME ZONE :tz)::date = days.day) AS gmv
-                  FROM days ORDER BY days.day
-                """)
+        return jdbc.sql(QueryUtil.get(QueryConstants.GET_ANALYTICS_DAILY_SERIES))
             .param("fromDay", r.from()).param("toDay", r.to()).param("g", genieId).param("tz", zone.getId())
             .query(DayStat.class).list();
     }

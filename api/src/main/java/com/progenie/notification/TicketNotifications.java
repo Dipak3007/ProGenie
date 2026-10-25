@@ -5,9 +5,10 @@ import java.util.Map;
 import java.util.Set;
 import java.util.UUID;
 
-import com.progenie.notification.delivery.Channel;
-import com.progenie.notification.delivery.MessageTemplate;
-import com.progenie.notification.delivery.Messenger;
+import com.progenie.messaging.NotificationService;
+import com.progenie.messaging.delivery.Channel;
+import com.progenie.messaging.delivery.MessageTemplate;
+import com.progenie.messaging.delivery.Messenger;
 import com.progenie.support.TicketEvents.TicketRaised;
 import com.progenie.support.TicketEvents.TicketReplied;
 import com.progenie.support.TicketEvents.TicketResolved;

@@ -14,6 +14,7 @@ import {
 
 import { ConsoleShell, NavItem } from '../../shared/ui/kit';
 import { GenieStore } from './genie-store';
+import { liveReload } from '../../core/live/live-stream';
 
 /** Genie console layout. Loads the profile once; child pages read it from GenieStore. */
 @Component({
@@ -42,6 +43,9 @@ export default class GenieConsolePage {
   ]);
 
   constructor() {
+    liveReload('booking', (e) => ['REQUESTED', 'ACCEPTED', 'DECLINED', 'EXPIRED', 'CANCELLED'].includes(e.change), () =>
+      this.store.refreshRequests(),
+    );
     this.store.load();
   }
 }

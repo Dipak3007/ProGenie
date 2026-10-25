@@ -10,10 +10,12 @@ import java.util.UUID;
 import com.progenie.booking.domain.Booking;
 import com.progenie.booking.domain.BookingRepository;
 import com.progenie.booking.domain.BookingStatus;
-import com.progenie.provider.GenieDirectory;
 import com.progenie.provider.GenieDirectory.Offer;
+import com.progenie.provider.GenieDirectory;
 import com.progenie.shared.config.AppProperties;
+import com.progenie.shared.config.QueryConstants;
 import com.progenie.shared.error.ApiException;
+import com.progenie.shared.util.QueryUtil;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.jdbc.core.simple.JdbcClient;
 import org.springframework.stereotype.Service;
@@ -63,7 +65,7 @@ public class BookingReworks {
         Instant now = clock.instant();
         Instant end = slotStart.plus(Duration.ofMinutes(offer.durationMinutes()));
         slots.assertBookable(genie, slotStart, offer.durationMinutes(), null);
-        long n = jdbc.sql("SELECT nextval('booking_ref_seq')").query(Long.class).single();
+        long n = jdbc.sql(QueryUtil.get(QueryConstants.GET_BOOKING_NEXT_REF)).query(Long.class).single();
         String ref = "PG-%d-%06d".formatted(LocalDate.ofInstant(now, zone).getYear(), n);
         Booking redo = Booking.rework(original, ref, genie, slotStart, end,
             BookingPolicy.requestExpiry(now, slotStart, rules.requestTtl()),
@@ -76,10 +78,7 @@ public class BookingReworks {
             }
             throw e;
         }
-        jdbc.sql("""
-                UPDATE bookings r SET address_snapshot = o.address_snapshot, customer_location = o.customer_location
-                  FROM bookings o WHERE r.id = :redo AND o.id = :original
-                """)
+        jdbc.sql(QueryUtil.get(QueryConstants.UPDATE_BOOKING_COPY_ADDRESS_FROM_ORIGINAL))
             .param("redo", redo.getId()).param("original", original.getId()).update();
         support.transitioned(redo, null, adminId, "ADMIN", BookingEvent.Type.REQUESTED, null, false);
         return redo.getId();

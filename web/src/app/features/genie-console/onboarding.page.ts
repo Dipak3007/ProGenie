@@ -3,6 +3,7 @@ import { httpResource } from '@angular/common/http';
 import { CurrencyPipe, DatePipe } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { Router } from '@angular/router';
+import { firstValueFrom } from 'rxjs';
 import {
   LucideCircleCheck as CircleCheck,
   LucideDynamicIcon,
@@ -18,9 +19,11 @@ import { API, ApiClient, errorMessage } from '../../core/api/api';
 import { GenieApi } from '../../core/api/genie-api';
 import { AvailabilityWindow, Category, DocType, GenieDocument, MyProfile, OnboardingStep, ServiceItem } from '../../core/api/models';
 import { ConfirmService, ToastService } from '../../core/ui/feedback';
-import { humanize } from '../../shared/format';
+import { humanize, openInNewTab } from '../../shared/format';
 import { PageHead, Spinner } from '../../shared/ui/kit';
-import { AHMEDABAD, LatLng, MapPicker } from '../../shared/ui/map-picker';
+import { LatLng, MapPicker } from '../../shared/ui/map-picker';
+import { CityStore } from '../../core/city/city-store';
+import { LocationCheck } from '../../core/api/models';
 import { StatusBadge } from '../../shared/ui/status-badge';
 import { AvailabilityEditor } from './availability-editor';
 import { ALL_STEPS, GenieStore, STEP_TEXT } from './genie-store';
@@ -104,7 +107,7 @@ const MAX_BYTES = 5 * 1024 * 1024;
               class="field min-h-28"
               maxlength="600"
               [(ngModel)]="bio"
-              placeholder="e.g. 8 years fixing wiring, fans and inverters across west Ahmedabad. Neat work, fair prices, always on time."
+              placeholder="e.g. 8 years fixing wiring, fans and inverters across the west of the city. Neat work, fair prices, always on time."
             ></textarea>
           </div>
           <div>
@@ -118,7 +121,22 @@ const MAX_BYTES = 5 * 1024 * 1024;
           </div>
           <div class="lg:col-span-2">
             <span class="label">Base location <span class="font-normal text-muted">(where you usually start from; customers see only the area)</span></span>
-            <pg-map-picker [lat]="base()?.lat ?? null" [lng]="base()?.lng ?? null" label="Your base location" (moved)="base.set($event)" />
+            <pg-map-picker
+              [lat]="base()?.lat ?? null"
+              [lng]="base()?.lng ?? null"
+              [center]="mapCenter()"
+              label="Your base location"
+              (moved)="moveBase($event)"
+            />
+            <p class="mt-1 min-h-5 text-sm" aria-live="polite">
+              @if (baseCheck(); as c) {
+                @if (c.serviceable) {
+                  <span class="font-medium text-emerald-700">Inside {{ c.city!.name }}: customers there will see you.</span>
+                } @else {
+                  <span class="font-medium text-rose-700">ProGenie is not live here yet. Pick a base in {{ cities.liveNames() }}.</span>
+                }
+              }
+            </p>
           </div>
           <div>
             <label class="label" for="area">Area name</label>
@@ -133,7 +151,7 @@ const MAX_BYTES = 5 * 1024 * 1024;
             @if (!base()) {
               <span class="text-xs text-muted">Drop a pin on the map first.</span>
             }
-            <button type="submit" class="btn-primary" [disabled]="savingProfile() || !pf.valid || !base()">
+            <button type="submit" class="btn-primary" [disabled]="savingProfile() || !pf.valid || !base() || baseCheck()?.serviceable === false">
               @if (savingProfile()) {
                 <pg-spinner />
               }
@@ -370,6 +388,13 @@ export default class OnboardingPage {
   protected area = '';
   protected radius = 10;
   protected readonly base = signal<LatLng | null>(null);
+  protected readonly cities = inject(CityStore);
+  /** Server answer for the pin: is it inside a live city? (Outside India the map refuses the pin already.) */
+  protected readonly baseCheck = signal<LocationCheck | null>(null);
+  protected readonly mapCenter = computed(() => {
+    const c = this.cities.city();
+    return c?.lat != null && c.lng != null ? { lat: c.lat, lng: c.lng } : null;
+  });
   protected readonly savingProfile = signal(false);
 
   // services
@@ -443,8 +468,20 @@ export default class OnboardingPage {
   }
 
   // ---------------------------------------------------------------- profile
+  protected moveBase(point: LatLng): void {
+    this.base.set(point);
+    this.baseCheck.set(null);
+    this.cities.checkLocation(point.lat, point.lng).subscribe({
+      next: (c) => {
+        if (this.base() === point) this.baseCheck.set(c);
+      },
+      error: () => undefined, // the server checks again on save
+    });
+  }
+
   protected saveProfile(): void {
-    const base = this.base() ?? AHMEDABAD;
+    const base = this.base();
+    if (!base) return;
     this.savingProfile.set(true);
     this.api
       .updateProfile({
@@ -583,20 +620,9 @@ export default class OnboardingPage {
   }
 
   protected viewDoc(d: GenieDocument): void {
-    // Open the tab synchronously (popup blockers), then point it at the file once downloaded with the auth header.
-    const tab = window.open('', '_blank');
-    this.api.documentFile(d.id).subscribe({
-      next: (blob) => {
-        const url = URL.createObjectURL(blob);
-        if (tab) tab.location.href = url;
-        else window.location.assign(url);
-        setTimeout(() => URL.revokeObjectURL(url), 60_000);
-      },
-      error: (err) => {
-        tab?.close();
-        this.toast.error(errorMessage(err, 'Could not open the file.'));
-      },
-    });
+    openInNewTab(firstValueFrom(this.api.documentLink(d.id)).then((l) => l.url), (err) =>
+      this.toast.error(errorMessage(err, 'Could not open the file.')),
+    );
   }
 
   protected async deleteDoc(d: GenieDocument): Promise<void> {

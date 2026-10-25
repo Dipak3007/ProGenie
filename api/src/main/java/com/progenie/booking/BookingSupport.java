@@ -10,7 +10,9 @@ import java.util.UUID;
 import com.progenie.booking.domain.Booking;
 import com.progenie.booking.domain.BookingRepository;
 import com.progenie.booking.domain.BookingStatus;
+import com.progenie.shared.config.QueryConstants;
 import com.progenie.shared.error.ApiException;
+import com.progenie.shared.util.QueryUtil;
 import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.jdbc.core.simple.JdbcClient;
 import org.springframework.stereotype.Component;
@@ -51,10 +53,7 @@ class BookingSupport {
     void transitioned(Booking b, BookingStatus from, UUID actorId, String actorRole, BookingEvent.Type type,
                       String reason, boolean cashCollected) {
         bookings.flush();
-        jdbc.sql("""
-                INSERT INTO booking_status_history (booking_id, from_status, to_status, changed_by, reason)
-                VALUES (:id, :from, :to, :actor, :reason)
-                """)
+        jdbc.sql(QueryUtil.get(QueryConstants.INSERT_BOOKING_STATUS_HISTORY))
             .param("id", b.getId())
             .param("from", from == null ? null : from.name())
             .param("to", b.getStatus().name())
@@ -63,7 +62,7 @@ class BookingSupport {
             .update();
         if (type == BookingEvent.Type.RESCHEDULED) {
             // the new time gets its own reminder
-            jdbc.sql("UPDATE bookings SET reminder_sent_at = NULL WHERE id = :id").param("id", b.getId()).update();
+            jdbc.sql(QueryUtil.get(QueryConstants.UPDATE_BOOKING_CLEAR_REMINDER)).param("id", b.getId()).update();
         }
         events.publishEvent(new BookingEvent(type, b.getId(), b.getBookingRef(), b.getCustomerId(), b.getGenieId(),
             b.getSlotStart(), actorRole, reason, cashCollected));

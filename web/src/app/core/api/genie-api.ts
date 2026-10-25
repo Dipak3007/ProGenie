@@ -7,6 +7,7 @@ import {
   AvailabilityWindow,
   BookingDetail,
   DocType,
+  FileLink,
   GenieDocument,
   MyProfile,
   MyService,
@@ -65,8 +66,9 @@ export class GenieApi {
     return this.http.delete<void>(`${this.base}/documents/${id}`);
   }
 
-  documentFile(id: string): Observable<Blob> {
-    return this.http.get(`${this.base}/documents/${id}/file`, { responseType: 'blob' });
+  /** A short-lived link to view one of my documents (opens in the browser). */
+  documentLink(id: string): Observable<FileLink> {
+    return this.http.get<FileLink>(`${this.base}/documents/${id}/link`);
   }
 
   setOnline(online: boolean): Observable<{ online: boolean }> {

@@ -8,6 +8,7 @@ import com.progenie.identity.privacy.AccountDeletionService.DeletionStatus;
 import com.progenie.identity.privacy.DataExportService.ExportFile;
 import com.progenie.identity.privacy.DataExportService.ExportJobDto;
 import com.progenie.shared.security.CurrentUser;
+import com.progenie.shared.storage.FileStorage;
 import com.progenie.shared.web.PageResponse;
 import org.springframework.http.ContentDisposition;
 import org.springframework.http.HttpHeaders;
@@ -47,6 +48,11 @@ public class PrivacyController {
     @GetMapping("/api/v1/me/data-export")
     public List<ExportJobDto> exports() {
         return exports.list(CurrentUser.id());
+    }
+
+    @GetMapping("/api/v1/me/data-export/{id}/link")
+    public FileStorage.FileLink exportLink(@PathVariable UUID id) {
+        return exports.link(CurrentUser.id(), id);
     }
 
     @GetMapping("/api/v1/me/data-export/{id}/file")

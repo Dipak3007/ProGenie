@@ -17,6 +17,7 @@ import { API, errorMessage, query } from '../../core/api/api';
 import { GenieApi } from '../../core/api/genie-api';
 import { BookingSummary, GenieStats, Page, Wallet } from '../../core/api/models';
 import { ConfirmService, ToastService } from '../../core/ui/feedback';
+import { liveReload } from '../../core/live/live-stream';
 import { inr } from '../../shared/format';
 import { BookingRow } from '../../shared/ui/booking-parts';
 import { ChartPoint, ColumnChart } from '../../shared/ui/charts';
@@ -222,6 +223,18 @@ export default class GenieDashboardPage {
     if (!w) return null;
     return w.commissionDue > 0 ? `${inr(w.commissionDue)} commission due` : `${inr(w.availableForPayout)} for next payout`;
   });
+
+  constructor() {
+    // New requests and changes appear without a refresh (live stream)
+    liveReload('booking', () => true, () => {
+      this.requests.reload();
+      this.upcoming.reload();
+    });
+    liveReload('booking', (e) => ['COMPLETED', 'PAID', 'REFUNDED'].includes(e.change), () => {
+      this.wallet.reload();
+      this.stats.reload();
+    });
+  }
 
   protected toggleOnline(online: boolean): void {
     this.toggling.set(true);

@@ -7,6 +7,9 @@ import org.springframework.stereotype.Component;
 import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
 
+import com.progenie.shared.config.QueryConstants;
+import com.progenie.shared.util.QueryUtil;
+
 /**
  * Gap-free document numbers per series and Indian financial year (April–March), e.g. PG/2026-27/000123.
  * The counter row stays locked until the caller's transaction ends, so a rolled-back receipt gives its number
@@ -34,11 +37,7 @@ class DocumentNumbers {
     @Transactional(propagation = Propagation.MANDATORY)
     String next(Series series, LocalDate date) {
         String fy = fiscalYear(date);
-        long value = jdbc.sql("""
-                INSERT INTO document_sequences (series, fiscal_year, next_value) VALUES (:s, :fy, 2)
-                ON CONFLICT (series, fiscal_year) DO UPDATE SET next_value = document_sequences.next_value + 1
-                RETURNING next_value - 1
-                """)
+        long value = jdbc.sql(QueryUtil.get(QueryConstants.UPSERT_DOCUMENT_SEQUENCE_NEXT))
             .param("s", series.name()).param("fy", fy)
             .query(Long.class).single();
         return format(series, fy, value);

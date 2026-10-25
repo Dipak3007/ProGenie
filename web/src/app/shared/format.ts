@@ -1,6 +1,6 @@
 /**
  * Small presentation helpers shared by every console.
- * All times are shown in India time (the trial city is Ahmedabad), whatever the browser's zone.
+ * All times are shown in India time (ProGenie serves India only), whatever the browser's zone.
  */
 
 export const IST = '+0530';
@@ -81,16 +81,36 @@ export const TICKET_CATEGORY_LABEL: Record<string, string> = {
   OTHER: 'Something else',
 };
 
-/** Saves a downloaded file (receipt PDF, data export) under the given name. */
-export function saveBlob(blob: Blob, fileName: string): void {
-  const url = URL.createObjectURL(blob);
+/**
+ * Downloads a file from a short-lived link (receipt PDF, data export). The server sends it as an attachment
+ * with its file name, so the page stays where it is; the bytes go from storage to the browser, not through
+ * the app.
+ */
+export function downloadLink(url: string): void {
   const a = document.createElement('a');
   a.href = url;
-  a.download = fileName;
+  a.rel = 'noopener';
   document.body.appendChild(a);
   a.click();
   a.remove();
-  setTimeout(() => URL.revokeObjectURL(url), 10_000);
+}
+
+/**
+ * Opens a file in a new tab once its link arrives. The tab is opened right away, inside the click, so popup
+ * blockers allow it; it is closed again if the link can't be fetched.
+ */
+export function openInNewTab(link: Promise<string>, onError: (err: unknown) => void): void {
+  const tab = window.open('', '_blank');
+  link.then(
+    (url) => {
+      if (tab) tab.location.href = url;
+      else window.location.assign(url);
+    },
+    (err) => {
+      tab?.close();
+      onError(err);
+    },
+  );
 }
 
 export function statusMeta(status: string | null | undefined): { label: string; tone: Tone } {

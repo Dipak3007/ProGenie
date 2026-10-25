@@ -8,6 +8,7 @@ import {
   Consent,
   DeletionStatus,
   ExportJob,
+  FileLink,
   LegalDocument,
   LegalKind,
   LegalVersion,
@@ -97,8 +98,8 @@ export class AccountApi {
     return this.http.post<ExportJob>(`${API}/me/data-export`, {});
   }
 
-  exportFile(id: string): Observable<Blob> {
-    return this.http.get(`${API}/me/data-export/${id}/file`, { responseType: 'blob' });
+  exportLink(id: string): Observable<FileLink> {
+    return this.http.get<FileLink>(`${API}/me/data-export/${id}/link`);
   }
 
   deletionStatus(): Observable<DeletionStatus> {

@@ -9,8 +9,9 @@ import { API, errorMessage } from '../../core/api/api';
 import { AdminApi } from '../../core/api/admin-api';
 import { BookingDetail, Payment, Receipt, Refund, RefundRequest } from '../../core/api/models';
 import { SupportApi } from '../../core/api/support-api';
-import { saveBlob } from '../../shared/format';
+import { downloadLink } from '../../shared/format';
 import { ConfirmService, ToastService } from '../../core/ui/feedback';
+import { liveReload } from '../../core/live/live-stream';
 import { Avatar } from '../../shared/ui/avatar';
 import { PriceSummary, Timeline } from '../../shared/ui/booking-parts';
 import { Dialog } from '../../shared/ui/dialog';
@@ -225,6 +226,15 @@ export default class AdminBookingPage {
   protected reason = '';
   protected waiveFee = true;
 
+  constructor() {
+    liveReload('booking', (e) => e.bookingId === this.id(), () => {
+      this.detail.reload();
+      this.payments.reload();
+      this.refunds.reload();
+      this.receipts.reload();
+    });
+  }
+
   protected openRefund(p: Payment): void {
     this.refund.set(newRefund(p));
     this.refundPayment.set(p);
@@ -255,8 +265,8 @@ export default class AdminBookingPage {
   }
 
   protected download(rc: Receipt): void {
-    this.support.receiptPdf(rc.id).subscribe({
-      next: (blob) => saveBlob(blob, `${rc.number}.pdf`),
+    this.support.receiptLink(rc.id).subscribe({
+      next: (link) => downloadLink(link.url),
       error: (err) => this.toast.error(errorMessage(err)),
     });
   }

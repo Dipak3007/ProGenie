@@ -14,12 +14,14 @@ import com.progenie.booking.BookingEvent;
 import com.progenie.booking.BookingReminderDue;
 import com.progenie.identity.OtpRequested;
 import com.progenie.identity.PasswordChanged;
-import com.progenie.notification.delivery.Channel;
-import com.progenie.notification.delivery.MessageTemplate;
-import com.progenie.notification.delivery.Messenger;
+import com.progenie.messaging.delivery.Channel;
+import com.progenie.messaging.delivery.MessageTemplate;
+import com.progenie.messaging.delivery.Messenger;
 import com.progenie.payment.PaymentDtos.PayoutPaid;
 import com.progenie.provider.GenieEvents.GenieVerificationDecided;
 import com.progenie.shared.config.AppProperties;
+import com.progenie.shared.config.QueryConstants;
+import com.progenie.shared.util.QueryUtil;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.context.event.EventListener;
@@ -195,16 +197,7 @@ class MessageListeners {
     // ------------------------------------------------------------------ helpers
 
     private BookingInfo booking(UUID bookingId) {
-        return jdbc.sql("""
-                SELECT b.booking_ref, s.name AS service, cu.full_name AS customer, gu.full_name AS genie,
-                       coalesce(b.address_snapshot ->> 'area', b.address_snapshot ->> 'city', '') AS area,
-                       b.total_amount, b.cancellation_fee, b.cancellation_fee_status, b.payment_method, b.payment_status
-                  FROM bookings b
-                  JOIN services s ON s.id = b.service_id
-                  JOIN users cu ON cu.id = b.customer_id
-                  JOIN users gu ON gu.id = b.genie_id
-                 WHERE b.id = :id
-                """)
+        return jdbc.sql(QueryUtil.get(QueryConstants.GET_MESSAGE_BOOKING_CONTEXT))
             .param("id", bookingId)
             .query(BookingInfo.class).optional().orElse(null);
     }

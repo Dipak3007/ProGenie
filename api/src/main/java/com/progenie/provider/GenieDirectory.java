@@ -7,7 +7,9 @@ import java.time.OffsetDateTime;
 import java.util.List;
 import java.util.UUID;
 
+import com.progenie.shared.config.QueryConstants;
 import com.progenie.shared.error.ApiException;
+import com.progenie.shared.util.QueryUtil;
 import com.progenie.shared.util.Times;
 import org.springframework.jdbc.core.simple.JdbcClient;
 import org.springframework.stereotype.Service;
@@ -43,16 +45,7 @@ public class GenieDirectory {
         record Row(UUID genieId, String genieName, String verificationStatus, String userStatus, Long serviceId,
                    String serviceName, Integer durationMinutes, BigDecimal price, int serviceRadiusKm) {
         }
-        Row row = jdbc.sql("""
-                SELECT gp.user_id AS genie_id, u.full_name AS genie_name, gp.verification_status, u.status AS user_status,
-                       s.id AS service_id, s.name AS service_name, s.duration_minutes,
-                       coalesce(gs.price_override, s.base_price) AS price, gp.service_radius_km
-                  FROM genie_profiles gp
-                  JOIN users u ON u.id = gp.user_id
-                  LEFT JOIN genie_services gs ON gs.genie_id = gp.user_id AND gs.service_id = :serviceId AND gs.is_active
-                  LEFT JOIN services s        ON s.id = gs.service_id AND s.is_active
-                 WHERE gp.user_id = :genieId
-                """)
+        Row row = jdbc.sql(QueryUtil.get(QueryConstants.GET_GENIE_BOOKABLE_OFFER))
             .param("genieId", genieId)
             .param("serviceId", serviceId)
             .query(Row.class)
@@ -70,12 +63,17 @@ public class GenieDirectory {
 
     /** True if the point is inside the Genie's service radius (straight-line, from their base location). */
     @Transactional(readOnly = true)
+    /** True if the Genie works in the given city (their service area). */
+    public boolean servesCity(UUID genieId, long cityId) {
+        return jdbc.sql(QueryUtil.get(QueryConstants.EXISTS_GENIE_SERVES_CITY))
+            .param("id", genieId)
+            .param("cityId", cityId)
+            .query(Boolean.class)
+            .single();
+    }
+
     public boolean servesLocation(UUID genieId, double lat, double lng) {
-        return jdbc.sql("""
-                SELECT coalesce(ST_DWithin(gp.base_location, ST_SetSRID(ST_MakePoint(:lng, :lat), 4326)::geography,
-                                           gp.service_radius_km * 1000), FALSE)
-                  FROM genie_profiles gp WHERE gp.user_id = :id
-                """)
+        return jdbc.sql(QueryUtil.get(QueryConstants.GET_GENIE_SERVES_LOCATION))
             .param("lng", lng).param("lat", lat).param("id", genieId)
             .query(Boolean.class)
             .optional()
@@ -84,7 +82,7 @@ public class GenieDirectory {
 
     @Transactional(readOnly = true)
     public List<Window> weeklyAvailability(UUID genieId) {
-        return jdbc.sql("SELECT day_of_week, start_time, end_time FROM genie_availability WHERE genie_id = :id")
+        return jdbc.sql(QueryUtil.get(QueryConstants.GET_GENIE_WEEKLY_AVAILABILITY))
             .param("id", genieId)
             .query(Window.class)
             .list();
@@ -94,10 +92,7 @@ public class GenieDirectory {
     public List<Interval> timeOff(UUID genieId, Instant from, Instant to) {
         record Row(OffsetDateTime startsAt, OffsetDateTime endsAt) {
         }
-        return jdbc.sql("""
-                SELECT starts_at, ends_at FROM genie_time_off
-                 WHERE genie_id = :id AND starts_at < :to AND ends_at > :from
-                """)
+        return jdbc.sql(QueryUtil.get(QueryConstants.GET_GENIE_TIME_OFF_BETWEEN))
             .param("id", genieId).param("from", Times.odt(from)).param("to", Times.odt(to))
             .query(Row.class)
             .list().stream()

@@ -18,6 +18,9 @@ RUN mvn -B -q package -DskipTests
 
 # ---- runtime: Java 25 + Caddy + Mailpit
 FROM eclipse-temurin:25-jre
+# The official image gives its caddy binary a file capability (to open ports 80/443 as non-root). Render refuses to
+# run binaries with file capabilities ("Operation not permitted"), and we only use the high port $PORT, so copy the
+# binary without it: `install` writes a fresh file, which drops the capability.
 COPY --from=caddy:2 /usr/bin/caddy /tmp/caddy
 COPY --from=axllent/mailpit:v1.32.0 /mailpit /usr/local/bin/mailpit
 WORKDIR /app

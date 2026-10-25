@@ -18,7 +18,9 @@ import com.progenie.booking.BookingDtos.HistoryDto;
 import com.progenie.booking.BookingDtos.PartyDto;
 import com.progenie.booking.domain.BookingStatus;
 import com.progenie.shared.config.AppProperties;
+import com.progenie.shared.config.QueryConstants;
 import com.progenie.shared.error.ApiException;
+import com.progenie.shared.util.QueryUtil;
 import com.progenie.shared.util.Times;
 import com.progenie.shared.web.PageResponse;
 import org.springframework.jdbc.core.simple.JdbcClient;
@@ -53,49 +55,13 @@ public class BookingQueryService {
                OffsetDateTime completedAt, OffsetDateTime cancelledAt) {
     }
 
-    private static final String DETAIL_SQL = """
-        SELECT b.id, b.booking_ref, b.status, b.customer_id, b.genie_id, b.service_id,
-               s.name AS service_name, c.name AS category_name, c.slug AS category_slug,
-               g.full_name AS genie_name, g.phone AS genie_phone, gp.avg_rating AS genie_rating,
-               cu.full_name AS customer_name, cu.phone AS customer_phone,
-               b.address_snapshot ->> 'label' AS addr_label, b.address_snapshot ->> 'line1' AS addr_line1,
-               b.address_snapshot ->> 'line2' AS addr_line2, b.address_snapshot ->> 'landmark' AS addr_landmark,
-               b.address_snapshot ->> 'area' AS addr_area, b.address_snapshot ->> 'city' AS addr_city,
-               b.address_snapshot ->> 'pincode' AS addr_pincode,
-               b.slot_start, b.slot_end, b.expires_at, b.notes, b.service_amount, b.extra_amount, b.extra_note,
-               b.distance_km, b.travel_fee, b.tip_amount, b.total_amount, b.commission_amount, b.genie_payout,
-               b.payment_method, b.payment_status, b.cancellation_fee, b.cancellation_fee_status, b.cancel_reason,
-               cb.role AS cancelled_by_role, b.rescheduled_count,
-               EXISTS (SELECT 1 FROM reviews r WHERE r.booking_id = b.id) AS reviewed,
-               b.created_at, b.accepted_at, b.started_at, b.completed_at, b.cancelled_at
-          FROM bookings b
-          JOIN services s            ON s.id = b.service_id
-          JOIN service_categories c  ON c.id = s.category_id
-          JOIN users g               ON g.id = b.genie_id
-          JOIN genie_profiles gp     ON gp.user_id = b.genie_id
-          JOIN users cu              ON cu.id = b.customer_id
-          LEFT JOIN users cb         ON cb.id = b.cancelled_by
-         WHERE b.id = :id
-        """;
-
-    private static final String SUMMARY_SELECT = """
-        SELECT b.id, b.booking_ref, b.status, s.name AS service_name, c.slug AS category_slug,
-               %s AS counterpart_name, b.slot_start, b.slot_end, b.total_amount, b.payment_method,
-               b.payment_status, b.address_snapshot ->> 'area' AS area, b.cancellation_fee_status,
-               EXISTS (SELECT 1 FROM reviews r WHERE r.booking_id = b.id) AS reviewed
-          FROM bookings b
-          JOIN services s           ON s.id = b.service_id
-          JOIN service_categories c ON c.id = s.category_id
-          JOIN users g              ON g.id = b.genie_id
-          JOIN users cu             ON cu.id = b.customer_id
-        """;
-
+    /** Status filter per list tab: keys of SQL fragments in sql_scripts.properties. */
     private static final Map<Scope, String> SCOPE_FILTER = Map.of(
-        Scope.ACTIVE, " AND b.status IN ('REQUESTED', 'ACCEPTED', 'IN_PROGRESS')",
-        Scope.REQUESTS, " AND b.status = 'REQUESTED'",
-        Scope.UPCOMING, " AND b.status IN ('ACCEPTED', 'IN_PROGRESS')",
-        Scope.PAST, " AND b.status IN ('COMPLETED', 'REJECTED', 'EXPIRED', 'CANCELLED')",
-        Scope.ALL, "");
+        Scope.ACTIVE, QueryConstants.FRAGMENT_BOOKING_SCOPE_ACTIVE,
+        Scope.REQUESTS, QueryConstants.FRAGMENT_BOOKING_SCOPE_REQUESTS,
+        Scope.UPCOMING, QueryConstants.FRAGMENT_BOOKING_SCOPE_UPCOMING,
+        Scope.PAST, QueryConstants.FRAGMENT_BOOKING_SCOPE_PAST,
+        Scope.ALL, QueryConstants.FRAGMENT_BOOKING_SCOPE_ALL);
 
     private final JdbcClient jdbc;
     private final AppProperties.Booking rules;
@@ -111,23 +77,28 @@ public class BookingQueryService {
 
     @Transactional(readOnly = true)
     public PageResponse<BookingSummaryDto> customerBookings(UUID customerId, Scope scope, int page, int size) {
-        return list("g.full_name", "b.customer_id = :owner", customerId, scope, page, size);
+        return list(QueryConstants.FRAGMENT_BOOKING_COUNTERPART_GENIE, QueryConstants.FRAGMENT_BOOKING_OWNER_CUSTOMER,
+            customerId, scope, page, size);
     }
 
     @Transactional(readOnly = true)
     public PageResponse<BookingSummaryDto> genieBookings(UUID genieId, Scope scope, int page, int size) {
-        return list("split_part(cu.full_name, ' ', 1)", "b.genie_id = :owner", genieId, scope, page, size);
+        return list(QueryConstants.FRAGMENT_BOOKING_COUNTERPART_CUSTOMER, QueryConstants.FRAGMENT_BOOKING_OWNER_GENIE,
+            genieId, scope, page, size);
     }
 
-    private PageResponse<BookingSummaryDto> list(String counterpart, String ownerClause, UUID ownerId, Scope scope,
+    /** {@code counterpart} and {@code owner} are fragment keys: whose name to show and whose bookings to list. */
+    private PageResponse<BookingSummaryDto> list(String counterpart, String owner, UUID ownerId, Scope scope,
                                                  int page, int size) {
-        String where = " WHERE " + ownerClause + SCOPE_FILTER.get(scope);
+        String scopeFilter = SCOPE_FILTER.get(scope);
         // Upcoming work is most useful soonest-first; history newest-first.
-        String order = scope == Scope.PAST || scope == Scope.ALL ? " ORDER BY b.slot_start DESC" : " ORDER BY b.slot_start ASC";
-        long total = jdbc.sql("SELECT count(*) FROM bookings b" + where).param("owner", ownerId)
+        String order = scope == Scope.PAST || scope == Scope.ALL
+            ? QueryConstants.FRAGMENT_BOOKING_ORDER_LATEST : QueryConstants.FRAGMENT_BOOKING_ORDER_SOONEST;
+        long total = jdbc.sql(QueryUtil.get(QueryConstants.COUNT_BOOKING_LIST, Map.of("owner", owner, "scope", scopeFilter)))
+            .param("owner", ownerId)
             .query(Long.class).single();
-        List<BookingSummaryDto> items = jdbc.sql(SUMMARY_SELECT.formatted(counterpart) + where + order
-                + " LIMIT :limit OFFSET :offset")
+        List<BookingSummaryDto> items = jdbc.sql(QueryUtil.get(QueryConstants.GET_BOOKING_LIST,
+                Map.of("counterpart", counterpart, "owner", owner, "scope", scopeFilter, "orderBy", order)))
             .param("owner", ownerId)
             .param("limit", PageResponse.clampSize(size))
             .param("offset", PageResponse.offset(page, size))
@@ -140,22 +111,13 @@ public class BookingQueryService {
     @Transactional(readOnly = true)
     public PageResponse<BookingSummaryDto> adminSearch(String status, String q, OffsetDateTime from, OffsetDateTime to,
                                                        int page, int size) {
-        String where = """
-             WHERE (CAST(:status AS varchar) IS NULL OR b.status = :status)
-               AND (CAST(:from AS timestamptz) IS NULL OR b.slot_start >= :from)
-               AND (CAST(:to AS timestamptz) IS NULL OR b.slot_start < :to)
-               AND (CAST(:q AS varchar) IS NULL OR b.booking_ref ILIKE :q OR g.full_name ILIKE :q OR cu.full_name ILIKE :q
-                    OR g.phone LIKE :q OR cu.phone LIKE :q)
-            """;
         String statusFilter = StringUtils.hasText(status) ? status.trim().toUpperCase() : null;
         String query = StringUtils.hasText(q) ? "%" + q.trim() + "%" : null;
-        long total = jdbc.sql("""
-                SELECT count(*) FROM bookings b JOIN users g ON g.id = b.genie_id JOIN users cu ON cu.id = b.customer_id
-                """ + where)
+        long total = jdbc.sql(QueryUtil.get(QueryConstants.COUNT_BOOKING_ADMIN_SEARCH))
             .param("status", statusFilter).param("from", from).param("to", to).param("q", query)
             .query(Long.class).single();
-        List<BookingSummaryDto> items = jdbc.sql(SUMMARY_SELECT.formatted("g.full_name || ' → ' || cu.full_name") + where
-                + " ORDER BY b.created_at DESC LIMIT :limit OFFSET :offset")
+        List<BookingSummaryDto> items = jdbc.sql(QueryUtil.get(QueryConstants.GET_BOOKING_ADMIN_SEARCH,
+                Map.of("counterpart", QueryConstants.FRAGMENT_BOOKING_COUNTERPART_BOTH)))
             .param("status", statusFilter).param("from", from).param("to", to).param("q", query)
             .param("limit", PageResponse.clampSize(size))
             .param("offset", PageResponse.offset(page, size))
@@ -168,7 +130,7 @@ public class BookingQueryService {
 
     @Transactional(readOnly = true)
     public BookingDetailDto detail(UUID bookingId, Viewer viewer, UUID viewerId) {
-        Row r = jdbc.sql(DETAIL_SQL).param("id", bookingId).query(Row.class).optional()
+        Row r = jdbc.sql(QueryUtil.get(QueryConstants.GET_BOOKING_DETAIL)).param("id", bookingId).query(Row.class).optional()
             .filter(row -> viewer == Viewer.ADMIN
                 || (viewer == Viewer.CUSTOMER && row.customerId().equals(viewerId))
                 || (viewer == Viewer.GENIE && row.genieId().equals(viewerId)))
@@ -263,11 +225,7 @@ public class BookingQueryService {
     }
 
     private List<HistoryDto> history(UUID bookingId) {
-        return jdbc.sql("""
-                SELECT h.from_status, h.to_status, coalesce(u.role, 'SYSTEM') AS actor_role, h.reason, h.changed_at
-                  FROM booking_status_history h LEFT JOIN users u ON u.id = h.changed_by
-                 WHERE h.booking_id = :id ORDER BY h.changed_at, h.id
-                """)
+        return jdbc.sql(QueryUtil.get(QueryConstants.GET_BOOKING_STATUS_HISTORY))
             .param("id", bookingId)
             .query(HistoryDto.class)
             .list();
@@ -279,10 +237,7 @@ public class BookingQueryService {
 
     @Transactional(readOnly = true)
     public ReviewableBooking reviewable(UUID customerId, UUID bookingId) {
-        ReviewableBooking b = jdbc.sql("""
-                SELECT id AS booking_id, genie_id, status, completed_at FROM bookings
-                 WHERE id = :id AND customer_id = :c
-                """)
+        ReviewableBooking b = jdbc.sql(QueryUtil.get(QueryConstants.GET_BOOKING_REVIEWABLE))
             .param("id", bookingId).param("c", customerId)
             .query(ReviewableBooking.class).optional()
             .orElseThrow(() -> ApiException.notFound("BOOKING_NOT_FOUND", "Booking not found"));
@@ -298,17 +253,14 @@ public class BookingQueryService {
     /** True if the customer has an unpaid late-cancellation fee (they must pay it before booking again). */
     @Transactional(readOnly = true)
     public boolean hasOutstandingFee(UUID customerId) {
-        return jdbc.sql("SELECT EXISTS (SELECT 1 FROM bookings WHERE customer_id = :c AND cancellation_fee_status = 'DUE')")
+        return jdbc.sql(QueryUtil.get(QueryConstants.EXISTS_BOOKING_OUTSTANDING_FEE))
             .param("c", customerId).query(Boolean.class).single();
     }
 
     /** Genie cancellations of accepted jobs within the look-back window (reliability check). */
     @Transactional(readOnly = true)
     public int recentGenieCancellations(UUID genieId, Duration window) {
-        return jdbc.sql("""
-                SELECT count(*) FROM bookings
-                 WHERE genie_id = :g AND cancelled_by = :g AND status = 'CANCELLED' AND cancelled_at > :since
-                """)
+        return jdbc.sql(QueryUtil.get(QueryConstants.COUNT_BOOKING_RECENT_GENIE_CANCELLATIONS))
             .param("g", genieId).param("since", Times.odt(clock.instant().minus(window)))
             .query(Integer.class).single();
     }

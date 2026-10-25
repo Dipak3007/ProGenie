@@ -7,6 +7,7 @@ import { LucideArrowLeft as ArrowLeft, LucideDynamicIcon } from '@lucide/angular
 import { API } from '../../core/api/api';
 import { TicketDetail } from '../../core/api/models';
 import { AuthStore } from '../../core/auth/auth-store';
+import { liveReload } from '../../core/live/live-stream';
 import { EmptyState, Skeleton } from '../../shared/ui/kit';
 import { TicketThread } from './ticket-thread';
 
@@ -51,4 +52,8 @@ export default class TicketPage {
   protected readonly base = computed(() => (this.auth.role() === 'GENIE' ? '/genie/tickets' : '/account/tickets'));
   protected readonly bookingBase = computed(() => (this.auth.role() === 'GENIE' ? '/genie/bookings' : '/account/bookings'));
   protected readonly ArrowLeft = ArrowLeft;
+
+  constructor() {
+    liveReload('ticket', (e) => e.ticketId === this.id(), () => this.ticket.reload());
+  }
 }

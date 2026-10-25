@@ -11,6 +11,9 @@ import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.ResponseStatus;
 import org.springframework.web.bind.annotation.RestController;
 
+import com.progenie.shared.config.QueryConstants;
+import com.progenie.shared.util.QueryUtil;
+
 /** "Contact Us" form. Messages land in contact_messages for the admin inbox. */
 @RestController
 public class ContactController {
@@ -32,10 +35,7 @@ public class ContactController {
     @PostMapping("/api/v1/contact")
     @ResponseStatus(HttpStatus.ACCEPTED)
     public void submit(@Valid @RequestBody ContactRequest req) {
-        jdbc.sql("""
-                INSERT INTO contact_messages (name, email, phone, subject, message)
-                VALUES (:name, :email, :phone, :subject, :message)
-                """)
+        jdbc.sql(QueryUtil.get(QueryConstants.INSERT_CONTACT_MESSAGE_CREATE))
             .param("name", req.name().trim())
             .param("email", req.email().trim().toLowerCase())
             .param("phone", req.phone())

@@ -2,8 +2,8 @@ package com.progenie.admin;
 
 import java.util.UUID;
 
-import com.progenie.notification.delivery.MessageAdmin;
-import com.progenie.notification.delivery.MessageAdmin.MessageDto;
+import com.progenie.messaging.delivery.MessageAdmin;
+import com.progenie.messaging.delivery.MessageAdmin.OutboxMessageDto;
 import com.progenie.shared.web.PageResponse;
 import org.springframework.http.HttpStatus;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -26,7 +26,7 @@ public class AdminMessagesController {
     }
 
     @GetMapping
-    public PageResponse<MessageDto> list(@RequestParam(required = false) String status,
+    public PageResponse<OutboxMessageDto> list(@RequestParam(required = false) String status,
                                          @RequestParam(required = false) String channel,
                                          @RequestParam(required = false) String q,
                                          @RequestParam(defaultValue = "0") int page,

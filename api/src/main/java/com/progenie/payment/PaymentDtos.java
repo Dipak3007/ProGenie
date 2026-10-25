@@ -10,6 +10,7 @@ import jakarta.validation.constraints.DecimalMin;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.NotNull;
 import jakarta.validation.constraints.Size;
+import org.jspecify.annotations.Nullable;
 
 /** Payment, wallet and payout requests and read models. */
 public final class PaymentDtos {
@@ -20,15 +21,15 @@ public final class PaymentDtos {
     /** What the app needs to open the gateway checkout. */
     /** {@code keyId}: the gateway's public key for the web checkout (Razorpay); null with the fake gateway. */
     public record PaymentOrderDto(UUID paymentId, String provider, String orderId, BigDecimal amount, String currency,
-                                  String purpose, String bookingRef, String keyId) {
+                                  String purpose, String bookingRef, @Nullable String keyId) {
     }
 
     public record ConfirmPaymentRequest(@NotBlank @Size(max = 100) String providerPaymentId,
                                         @NotBlank @Size(max = 200) String signature) {
     }
 
-    public record PaymentDto(UUID id, String purpose, String method, String provider, BigDecimal amount, String status,
-                             String failureReason, OffsetDateTime createdAt, BigDecimal refundedAmount) {
+    public record PaymentDto(UUID id, String purpose, String method, @Nullable String provider, BigDecimal amount, String status,
+                             @Nullable String failureReason, OffsetDateTime createdAt, BigDecimal refundedAmount) {
     }
 
     /** Published when money for a booking is received (cash or online). */
@@ -41,13 +42,13 @@ public final class PaymentDtos {
                             BigDecimal lifetimeEarnings, String currency) {
     }
 
-    public record LedgerLineDto(long id, String bookingRef, String account, String direction, BigDecimal amount,
-                                String description, OffsetDateTime createdAt) {
+    public record LedgerLineDto(long id, @Nullable String bookingRef, String account, String direction, BigDecimal amount,
+                                @Nullable String description, OffsetDateTime createdAt) {
     }
 
-    public record PayoutDto(UUID id, UUID genieId, String genieName, String upiId, LocalDate periodStart,
-                            LocalDate periodEnd, BigDecimal amount, String status, String reference,
-                            OffsetDateTime createdAt, OffsetDateTime paidAt) {
+    public record PayoutDto(UUID id, UUID genieId, String genieName, @Nullable String upiId, LocalDate periodStart,
+                            LocalDate periodEnd, BigDecimal amount, String status, @Nullable String reference,
+                            OffsetDateTime createdAt, @Nullable OffsetDateTime paidAt) {
     }
 
     public record GeneratePayoutsRequest(LocalDate periodEnd) {

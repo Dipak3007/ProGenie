@@ -15,6 +15,7 @@ import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.NotNull;
 import jakarta.validation.constraints.Pattern;
 import jakarta.validation.constraints.Size;
+import org.jspecify.annotations.Nullable;
 
 /** Requests and read models for the Genie's own onboarding and profile screens. */
 public final class GenieProfileDtos {
@@ -25,13 +26,13 @@ public final class GenieProfileDtos {
     /** Onboarding steps a Genie must finish before submitting for verification. */
     public enum Step { PROFILE, LOCATION, SERVICES, AVAILABILITY, ID_DOCUMENT, SELFIE, PAYOUT }
 
-    public record MyProfileDto(UUID id, String fullName, String phone, String email, String bio, int experienceYears,
-                               String verificationStatus, String verificationNote, String baseArea,
-                               Double baseLat, Double baseLng, int serviceRadiusKm, String payoutUpiId, boolean online,
+    public record MyProfileDto(UUID id, String fullName, String phone, @Nullable String email, @Nullable String bio, int experienceYears,
+                               String verificationStatus, @Nullable String verificationNote, @Nullable String baseArea,
+                               @Nullable Double baseLat, @Nullable Double baseLng, int serviceRadiusKm, @Nullable String payoutUpiId, boolean online,
                                BigDecimal avgRating, int ratingCount, int completedJobs, int cancellationCount,
-                               OffsetDateTime submittedAt, OffsetDateTime approvedAt,
+                               @Nullable OffsetDateTime submittedAt, @Nullable OffsetDateTime approvedAt,
                                List<MyServiceDto> services, List<AvailabilityDto> availability,
-                               List<DocumentDto> documents, List<Step> missingSteps, boolean canSubmit) {
+                               List<KycDocumentDto> documents, List<Step> missingSteps, boolean canSubmit) {
     }
 
     /** Flat row read from genie_profiles + users; lists are loaded separately. */
@@ -54,7 +55,7 @@ public final class GenieProfileDtos {
     }
 
     public record MyServiceDto(long serviceId, String name, String categoryName, BigDecimal basePrice,
-                               BigDecimal priceOverride, BigDecimal price, int durationMinutes) {
+                               @Nullable BigDecimal priceOverride, BigDecimal price, int durationMinutes) {
     }
 
     public record ServiceOfferRequest(@NotNull Long serviceId, @DecimalMin("1") BigDecimal priceOverride) {
@@ -69,15 +70,15 @@ public final class GenieProfileDtos {
     public record AvailabilityRequest(@NotNull @Size(min = 1, max = 21) List<@Valid AvailabilityDto> windows) {
     }
 
-    public record TimeOffDto(long id, OffsetDateTime startsAt, OffsetDateTime endsAt, String reason) {
+    public record TimeOffDto(long id, OffsetDateTime startsAt, OffsetDateTime endsAt, @Nullable String reason) {
     }
 
     public record TimeOffRequest(@NotNull OffsetDateTime startsAt, @NotNull OffsetDateTime endsAt,
                                  @Size(max = 200) String reason) {
     }
 
-    public record DocumentDto(UUID id, String docType, String maskedNumber, String status, String fileName,
-                              String contentType, Integer sizeBytes, String reviewNote, OffsetDateTime createdAt) {
+    public record KycDocumentDto(UUID id, String docType, @Nullable String maskedNumber, String status, @Nullable String fileName,
+                              @Nullable String contentType, @Nullable Integer sizeBytes, @Nullable String reviewNote, OffsetDateTime createdAt) {
     }
 
     public record OnlineRequest(boolean online) {

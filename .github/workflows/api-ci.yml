@@ -1,24 +1,47 @@
 name: api-ci
 
+# Unit tests (mvn test) and integration tests (mvn verify: *IT.java against PostgreSQL + PostGIS in Docker via
+# Testcontainers, with the migrations from ProGenie_DB_Scripts), plus the module-boundary check and the
+# OpenAPI contract check (web/openapi.json must match the API).
+#
+# Repository secret needed: DB_SCRIPTS_TOKEN, a fine-grained personal access token with read-only "Contents"
+# access to the ProGenie_DB_Scripts repository (it is private). See docs/LOCAL_SETUP.md, "Tests".
 on:
   push:
     branches: [main]
-    paths: ["api/**", ".github/workflows/api-ci.yml"]
+    paths: ["api/**", "web/openapi.json", ".github/workflows/api-ci.yml"]
   pull_request:
-    paths: ["api/**", ".github/workflows/api-ci.yml"]
+    paths: ["api/**", "web/openapi.json", ".github/workflows/api-ci.yml"]
 
 jobs:
   build:
     runs-on: ubuntu-latest
-    defaults:
-      run:
-        working-directory: api
+    timeout-minutes: 25
     steps:
       - uses: actions/checkout@v4
+        with:
+          path: ProGenie
+      - uses: actions/checkout@v4
+        with:
+          repository: ${{ github.repository_owner }}/ProGenie_DB_Scripts
+          token: ${{ secrets.DB_SCRIPTS_TOKEN }}
+          path: ProGenie_DB_Scripts
       - uses: actions/setup-java@v4
         with:
           distribution: temurin
           java-version: "25"
           cache: maven
-      - name: Build and test
+          cache-dependency-path: ProGenie/api/pom.xml
+      - name: Build, unit tests, integration tests
+        working-directory: ProGenie/api
+        env:
+          # ../../ProGenie_DB_Scripts does not exist here: both repositories sit side by side in the workspace
+          PROGENIE_DB_MIGRATIONS: filesystem:${{ github.workspace }}/ProGenie_DB_Scripts/migrations
         run: mvn -B verify
+      - name: Module diagram
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: spring-modulith-docs
+          path: ProGenie/api/target/spring-modulith-docs
+          if-no-files-found: ignore

@@ -4,12 +4,15 @@ import java.time.OffsetDateTime;
 import java.util.List;
 import java.util.UUID;
 
+import com.progenie.identity.domain.Role;
+import com.progenie.legal.LegalKind;
 import jakarta.validation.constraints.AssertTrue;
 import jakarta.validation.constraints.Email;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.NotNull;
 import jakarta.validation.constraints.Pattern;
 import jakarta.validation.constraints.Size;
+import org.jspecify.annotations.Nullable;
 
 /** Request/response records for the auth endpoints. */
 public final class AuthDtos {
@@ -40,8 +43,8 @@ public final class AuthDtos {
      * Result of a correct code. LOGIN: the usual access token and user (plus the refresh cookie).
      * RESET_PASSWORD: a single-use reset token. VERIFY_*: the updated user.
      */
-    public record OtpVerifyResponse(String purpose, String accessToken, Long expiresIn, UserDto user, String resetToken,
-                                    Long resetTokenExpiresIn) {
+    public record OtpVerifyResponse(String purpose, @Nullable String accessToken, @Nullable Long expiresIn, @Nullable UserDto user, @Nullable String resetToken,
+                                    @Nullable Long resetTokenExpiresIn) {
     }
 
     public record ResetPasswordRequest(@NotBlank String resetToken,
@@ -58,8 +61,8 @@ public final class AuthDtos {
      * @param pendingConsents      policy kinds the user must (re-)accept before booking, e.g. ["TERMS"]
      * @param deletionScheduledFor set while an account deletion is pending (the app offers "Cancel deletion")
      */
-    public record UserDto(UUID id, String fullName, String email, String phone, String role, boolean phoneVerified,
-                          boolean emailVerified, List<String> pendingConsents, OffsetDateTime deletionScheduledFor) {
+    public record UserDto(UUID id, String fullName, @Nullable String email, String phone, Role role, boolean phoneVerified,
+                          boolean emailVerified, List<LegalKind> pendingConsents, @Nullable OffsetDateTime deletionScheduledFor) {
     }
 
     public record AuthResponse(String accessToken, long expiresIn, UserDto user) {

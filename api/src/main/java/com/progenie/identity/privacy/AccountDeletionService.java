@@ -18,16 +18,19 @@ import com.progenie.identity.domain.User;
 import com.progenie.identity.repository.RefreshTokenRepository;
 import com.progenie.identity.repository.UserRepository;
 import com.progenie.identity.service.OtpService;
-import com.progenie.notification.delivery.Channel;
-import com.progenie.notification.delivery.MessageTemplate;
-import com.progenie.notification.delivery.Messenger;
-import com.progenie.notification.delivery.NotificationPreferences;
+import com.progenie.messaging.delivery.Channel;
+import com.progenie.messaging.delivery.MessageTemplate;
+import com.progenie.messaging.delivery.Messenger;
+import com.progenie.messaging.delivery.NotificationPreferences;
 import com.progenie.shared.config.AppProperties;
+import com.progenie.shared.config.QueryConstants;
 import com.progenie.shared.error.ApiException;
 import com.progenie.shared.jobs.JobLock;
 import com.progenie.shared.storage.FileStorage;
+import com.progenie.shared.util.QueryUtil;
 import com.progenie.shared.util.Times;
 import com.progenie.shared.web.PageResponse;
+import org.jspecify.annotations.Nullable;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.jdbc.core.simple.JdbcClient;
@@ -54,13 +57,13 @@ public class AccountDeletionService {
     public record Blocker(String code, String message) {
     }
 
-    public record DeletionStatus(UUID requestId, String status, OffsetDateTime requestedAt, OffsetDateTime scheduledFor,
+    public record DeletionStatus(@Nullable UUID requestId, String status, @Nullable OffsetDateTime requestedAt, @Nullable OffsetDateTime scheduledFor,
                                  List<Blocker> blockers) {
     }
 
-    public record DeletionRequestRow(UUID id, UUID userId, String fullName, String role, String status, String reason,
-                                     OffsetDateTime requestedAt, OffsetDateTime scheduledFor, OffsetDateTime completedAt,
-                                     String note) {
+    public record DeletionRequestRow(UUID id, UUID userId, String fullName, String role, String status, @Nullable String reason,
+                                     OffsetDateTime requestedAt, OffsetDateTime scheduledFor, @Nullable OffsetDateTime completedAt,
+                                     @Nullable String note) {
     }
 
     private final JdbcClient jdbc;
@@ -96,10 +99,7 @@ public class AccountDeletionService {
     public DeletionStatus status(UUID userId) {
         record Req(UUID id, String status, OffsetDateTime requestedAt, OffsetDateTime scheduledFor) {
         }
-        Req r = jdbc.sql("""
-                SELECT id, status, requested_at, scheduled_for FROM deletion_requests
-                 WHERE user_id = :u AND status = 'SCHEDULED'
-                """)
+        Req r = jdbc.sql(QueryUtil.get(QueryConstants.GET_DELETION_SCHEDULED))
             .param("u", userId).query(Req.class).optional().orElse(null);
         return new DeletionStatus(r == null ? null : r.id(), r == null ? "NONE" : r.status(),
             r == null ? null : r.requestedAt(), r == null ? null : r.scheduledFor(), blockers(userId));
@@ -117,16 +117,14 @@ public class AccountDeletionService {
                     + String.join("; ", blockers.stream().map(Blocker::message).toList()))
                 .with("blockers", blockers);
         }
-        boolean exists = jdbc.sql("SELECT EXISTS (SELECT 1 FROM deletion_requests WHERE user_id = :u AND status = 'SCHEDULED')")
+        boolean exists = jdbc.sql(QueryUtil.get(QueryConstants.EXISTS_DELETION_SCHEDULED))
             .param("u", userId).query(Boolean.class).single();
         if (exists) {
             return status(userId);
         }
         Instant when = clock.instant().plus(GRACE);
         String why = StringUtils.hasText(reason) ? reason.trim() : null;
-        UUID id = jdbc.sql("""
-                INSERT INTO deletion_requests (user_id, reason, scheduled_for) VALUES (:u, :r, :when) RETURNING id
-                """)
+        UUID id = jdbc.sql(QueryUtil.get(QueryConstants.INSERT_DELETION_REQUEST))
             .param("u", userId).param("r", why == null ? null : why.length() > 300 ? why.substring(0, 300) : why)
             .param("when", Times.odt(when)).query(UUID.class).single();
         messenger.toUser(userId, MessageTemplate.ACCOUNT_DELETION_SCHEDULED, Set.of(Channel.SMS, Channel.EMAIL),
@@ -138,10 +136,7 @@ public class AccountDeletionService {
 
     @Transactional
     public void cancel(UUID userId) {
-        int rows = jdbc.sql("""
-                UPDATE deletion_requests SET status = 'CANCELLED', cancelled_at = now()
-                 WHERE user_id = :u AND status = 'SCHEDULED'
-                """)
+        int rows = jdbc.sql(QueryUtil.get(QueryConstants.UPDATE_DELETION_CANCEL))
             .param("u", userId).update();
         if (rows == 0) {
             throw ApiException.notFound("NO_DELETION_REQUEST", "There is no pending deletion");
@@ -152,13 +147,8 @@ public class AccountDeletionService {
     @Transactional(readOnly = true)
     public PageResponse<DeletionRequestRow> adminList(String status, int page, int size) {
         String s = StringUtils.hasText(status) ? status.trim().toUpperCase(Locale.ROOT) : null;
-        String where = " WHERE (CAST(:s AS varchar) IS NULL OR d.status = :s)";
-        long total = jdbc.sql("SELECT count(*) FROM deletion_requests d" + where).param("s", s).query(Long.class).single();
-        List<DeletionRequestRow> items = jdbc.sql("""
-                SELECT d.id, d.user_id, u.full_name, u.role, d.status, d.reason, d.requested_at, d.scheduled_for,
-                       d.completed_at, d.note
-                  FROM deletion_requests d JOIN users u ON u.id = d.user_id
-                """ + where + " ORDER BY d.requested_at DESC LIMIT :limit OFFSET :offset")
+        long total = jdbc.sql(QueryUtil.get(QueryConstants.COUNT_DELETION_ADMIN_LIST)).param("s", s).query(Long.class).single();
+        List<DeletionRequestRow> items = jdbc.sql(QueryUtil.get(QueryConstants.GET_DELETION_ADMIN_LIST))
             .param("s", s).param("limit", PageResponse.clampSize(size)).param("offset", PageResponse.offset(page, size))
             .query(DeletionRequestRow.class).list();
         return new PageResponse<>(items, Math.max(page, 0), PageResponse.clampSize(size), total);
@@ -166,44 +156,34 @@ public class AccountDeletionService {
 
     List<Blocker> blockers(UUID userId) {
         List<Blocker> out = new ArrayList<>();
-        long upcoming = count("""
-                SELECT count(*) FROM bookings WHERE (customer_id = :u OR genie_id = :u)
-                   AND status IN ('REQUESTED', 'ACCEPTED', 'IN_PROGRESS')""", userId);
+        long upcoming = count(QueryConstants.COUNT_DELETION_UPCOMING_BOOKINGS, userId);
         if (upcoming > 0) {
             out.add(new Blocker("UPCOMING_BOOKINGS", upcoming + " booking" + (upcoming == 1 ? " is" : "s are") + " still upcoming"));
         }
-        long tickets = count("""
-                SELECT count(*) FROM tickets t LEFT JOIN bookings b ON b.id = t.booking_id
-                 WHERE (t.raised_by = :u OR b.customer_id = :u OR b.genie_id = :u)
-                   AND t.status IN ('OPEN', 'IN_REVIEW', 'AWAITING_REPLY')""", userId);
+        long tickets = count(QueryConstants.COUNT_DELETION_OPEN_TICKETS, userId);
         if (tickets > 0) {
             out.add(new Blocker("OPEN_TICKETS", tickets + " reported problem" + (tickets == 1 ? " is" : "s are") + " still open"));
         }
-        long unpaid = count("""
-                SELECT count(*) FROM bookings WHERE customer_id = :u
-                   AND ((status = 'COMPLETED' AND payment_status = 'UNPAID') OR cancellation_fee_status = 'DUE')""", userId);
+        long unpaid = count(QueryConstants.COUNT_DELETION_UNPAID, userId);
         if (unpaid > 0) {
             out.add(new Blocker("UNPAID", "you have " + unpaid + " unpaid amount" + (unpaid == 1 ? "" : "s")));
         }
-        BigDecimal wallet = jdbc.sql("""
-                SELECT coalesce(sum(CASE direction WHEN 'C' THEN amount ELSE -amount END), 0) FROM ledger_entries
-                 WHERE genie_id = :u AND account IN ('GENIE_EARNINGS', 'TIPS', 'GENIE_CASH', 'PAYOUT', 'SETTLEMENT')
-                """)
+        BigDecimal wallet = jdbc.sql(QueryUtil.get(QueryConstants.GET_DELETION_GENIE_BALANCE))
             .param("u", userId).query(BigDecimal.class).single();
         if (wallet.signum() != 0) {
             out.add(new Blocker("WALLET_NOT_SETTLED", wallet.signum() > 0
                 ? "ProGenie still owes you ₹" + wallet + " (it is paid in the next weekly payout)"
                 : "you owe ₹" + wallet.negate() + " in commission; settle it with ProGenie"));
         }
-        long payouts = count("SELECT count(*) FROM payouts WHERE genie_id = :u AND status = 'PENDING'", userId);
+        long payouts = count(QueryConstants.COUNT_DELETION_PENDING_PAYOUTS, userId);
         if (payouts > 0) {
             out.add(new Blocker("PAYOUT_PENDING", "a payout to you is still being processed"));
         }
         return out;
     }
 
-    private long count(String sql, UUID userId) {
-        return jdbc.sql(sql).param("u", userId).query(Long.class).single();
+    private long count(String queryKey, UUID userId) {
+        return jdbc.sql(QueryUtil.get(queryKey)).param("u", userId).query(Long.class).single();
     }
 
     // ------------------------------------------------------------------ the job
@@ -216,21 +196,18 @@ public class AccountDeletionService {
         }
         record Due(UUID id, UUID userId) {
         }
-        List<Due> due = jdbc.sql("""
-                SELECT id, user_id FROM deletion_requests WHERE status = 'SCHEDULED' AND scheduled_for <= now()
-                 ORDER BY scheduled_for LIMIT 50 FOR UPDATE SKIP LOCKED
-                """).query(Due.class).list();
+        List<Due> due = jdbc.sql(QueryUtil.get(QueryConstants.LOCK_DELETION_DUE)).query(Due.class).list();
         for (Due d : due) {
             List<Blocker> blockers = blockers(d.userId());
             if (!blockers.isEmpty()) {
                 String note = String.join("; ", blockers.stream().map(Blocker::message).toList());
-                jdbc.sql("UPDATE deletion_requests SET status = 'BLOCKED', note = :n WHERE id = :id")
+                jdbc.sql(QueryUtil.get(QueryConstants.UPDATE_DELETION_BLOCKED))
                     .param("n", note.length() > 300 ? note.substring(0, 300) : note).param("id", d.id()).update();
                 log.warn("Deletion of {} blocked at run time: {}", d.userId(), note);
                 continue;
             }
             anonymise(d.userId());
-            jdbc.sql("UPDATE deletion_requests SET status = 'DONE', completed_at = now() WHERE id = :id")
+            jdbc.sql(QueryUtil.get(QueryConstants.UPDATE_DELETION_DONE))
                 .param("id", d.id()).update();
             log.info("Account {} deleted (anonymised)", d.userId());
         }
@@ -245,25 +222,21 @@ public class AccountDeletionService {
         refreshTokens.revokeAllForUser(userId, null, now);
         preferences.deleteAll(userId);
         otps.deleteAllFor(userId);
-        List<String> exportFiles = jdbc.sql("SELECT file_key FROM data_export_jobs WHERE user_id = :u AND file_key IS NOT NULL")
+        List<String> exportFiles = jdbc.sql(QueryUtil.get(QueryConstants.GET_DELETION_EXPORT_FILE_KEYS))
             .param("u", userId).query(String.class).list();
         exportFiles.forEach(storage::delete);
-        for (String sql : List.of(
-            "DELETE FROM data_export_jobs WHERE user_id = :u",
-            "DELETE FROM password_reset_tokens WHERE user_id = :u",
-            "DELETE FROM favourites WHERE customer_id = :u",
-            "DELETE FROM notifications WHERE user_id = :u",
-            "DELETE FROM addresses WHERE user_id = :u",
-            "UPDATE outbound_messages SET destination = '[deleted]', body = '[deleted]', params = '{}'::jsonb WHERE user_id = :u",
-            """
-            UPDATE bookings SET address_snapshot = jsonb_build_object('area', address_snapshot ->> 'area',
-                       'city', address_snapshot ->> 'city', 'pincode', address_snapshot ->> 'pincode'),
-                   customer_location = NULL, notes = NULL
-             WHERE customer_id = :u""",
+        for (String queryKey : List.of(
+            QueryConstants.DELETE_DELETION_EXPORT_JOBS,
+            QueryConstants.DELETE_DELETION_RESET_TOKENS,
+            QueryConstants.DELETE_DELETION_FAVOURITES,
+            QueryConstants.DELETE_DELETION_NOTIFICATIONS,
+            QueryConstants.DELETE_DELETION_ADDRESSES,
+            QueryConstants.UPDATE_DELETION_REDACT_MESSAGES,
+            QueryConstants.UPDATE_DELETION_TRIM_BOOKING_ADDRESSES,
             // a Genie leaves the directory; KYC files are removed 30 days later by the retention job
-            "UPDATE genie_profiles SET bio = NULL, payout_upi_id = NULL, is_online = FALSE, verification_status = 'SUSPENDED', updated_at = now() WHERE user_id = :u",
-            "DELETE FROM genie_locations WHERE genie_id = :u")) {
-            jdbc.sql(sql).param("u", userId).update();
+            QueryConstants.UPDATE_DELETION_RETIRE_GENIE_PROFILE,
+            QueryConstants.DELETE_DELETION_GENIE_LOCATION)) {
+            jdbc.sql(QueryUtil.get(queryKey)).param("u", userId).update();
         }
     }
 }

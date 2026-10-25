@@ -1,4 +1,4 @@
-import { ChangeDetectionStrategy, Component, computed, input, linkedSignal, signal } from '@angular/core';
+import { ChangeDetectionStrategy, Component, computed, inject, input, linkedSignal, signal } from '@angular/core';
 import { httpResource } from '@angular/common/http';
 import { CurrencyPipe } from '@angular/common';
 import { RouterLink } from '@angular/router';
@@ -12,6 +12,7 @@ import { CategoryDetail, GenieCard as GenieCardModel, GenieSort } from '../../co
 import { CategoryVisual } from '../../shared/ui/category-visual';
 import { GenieCard } from '../../shared/ui/genie-card';
 import { categoryIcon } from '../../shared/ui/icons';
+import { CityStore } from '../../core/city/city-store';
 
 /** /services/:slug: the services in a category and the Genies who offer them. */
 @Component({
@@ -75,7 +76,7 @@ import { categoryIcon } from '../../shared/ui/icons';
         <section aria-labelledby="genies-heading">
           <div class="flex flex-wrap items-center justify-between gap-3">
             <div>
-              <h2 id="genies-heading" class="text-2xl font-bold">Available Genies</h2>
+              <h2 id="genies-heading" class="text-2xl font-bold">Available Genies{{ city.city() ? ' in ' + city.city()!.name : '' }}</h2>
               @if (selectedService(); as ss) {
                 <p class="mt-1 flex flex-wrap items-center gap-2 text-sm text-muted">
                   Offering <span class="chip">{{ ss.name }}</span>
@@ -122,10 +123,13 @@ export default class CategoryPage {
   /** Optional ?service=<id> (from search results). */
   readonly service = input<string | undefined>(undefined);
 
+  protected readonly city = inject(CityStore);
   protected readonly sort = signal<GenieSort>('RATING');
   protected readonly serviceFilter = linkedSignal<number | null>(() => (this.service() ? Number(this.service()) : null));
   protected readonly detail = httpResource<CategoryDetail>(() => `${API}/categories/${encodeURIComponent(this.slug())}`);
-  protected readonly genies = httpResource<GenieCardModel[]>(() => geniesUrl(this.slug(), this.sort(), 20, this.serviceFilter()));
+  protected readonly genies = httpResource<GenieCardModel[]>(() =>
+    this.city.loading() ? undefined : geniesUrl(this.slug(), this.sort(), 20, this.serviceFilter(), this.city.slug()),
+  );
   protected readonly selectedService = computed(() => this.detail.value()?.services.find((s) => s.id === this.serviceFilter()) ?? null);
 
   protected toggleService(id: number): void {

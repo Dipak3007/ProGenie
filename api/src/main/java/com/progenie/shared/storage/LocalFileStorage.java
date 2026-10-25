@@ -6,19 +6,34 @@ import java.io.UncheckedIOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.StandardCopyOption;
+import java.time.Clock;
+import java.time.Duration;
+import java.time.Instant;
 
 import com.progenie.shared.config.AppProperties;
 import com.progenie.shared.error.ApiException;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.stereotype.Component;
 
-/** Stores files under {@code progenie.storage.local-dir}. Keys can never escape that folder. */
+/**
+ * Stores files under {@code progenie.storage.local-dir}. Keys can never escape that folder. Download links are
+ * signed {@code /api/v1/files/...} paths served by {@link FileLinkController}. The default adapter; on a cloud
+ * container the folder is lost on restart, so the SIT uses {@link S3FileStorage}.
+ */
 @Component
+@ConditionalOnProperty(name = "progenie.storage.type", havingValue = "local", matchIfMissing = true)
 public class LocalFileStorage implements FileStorage {
 
     private final Path root;
+    private final LinkSigner signer;
+    private final Duration linkTtl;
+    private final Clock clock;
 
-    public LocalFileStorage(AppProperties props) {
+    public LocalFileStorage(AppProperties props, LinkSigner signer, Clock clock) {
         this.root = Path.of(props.storage().localDir()).toAbsolutePath().normalize();
+        this.signer = signer;
+        this.linkTtl = props.storage().linkTtl() == null ? Duration.ofMinutes(5) : props.storage().linkTtl();
+        this.clock = clock;
     }
 
     @Override
@@ -43,6 +58,19 @@ public class LocalFileStorage implements FileStorage {
         } catch (IOException e) {
             throw new UncheckedIOException("Could not read " + key, e);
         }
+    }
+
+    @Override
+    public boolean exists(String key) {
+        return Files.isRegularFile(resolve(key));
+    }
+
+    @Override
+    public FileLink link(String key, String fileName, String contentType, boolean inline) {
+        resolve(key); // reject bad keys now, not when the link is opened
+        Instant expires = clock.instant().plus(linkTtl);
+        String token = signer.sign(new LinkSigner.Target(key, fileName, contentType, inline, expires.getEpochSecond()));
+        return new FileLink(FileLinkController.PATH + token, expires);
     }
 
     @Override

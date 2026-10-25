@@ -25,7 +25,8 @@ import { BookingDetail, Payment, Receipt, Slot, StartCode } from '../../core/api
 import { SupportApi } from '../../core/api/support-api';
 import { ReportDialog } from '../support/report-dialog';
 import { ConfirmService, ToastService } from '../../core/ui/feedback';
-import { inr, saveBlob, telLink } from '../../shared/format';
+import { liveReload } from '../../core/live/live-stream';
+import { inr, downloadLink, telLink } from '../../shared/format';
 import { Avatar } from '../../shared/ui/avatar';
 import { PriceSummary, Timeline } from '../../shared/ui/booking-parts';
 import { Dialog } from '../../shared/ui/dialog';
@@ -431,6 +432,16 @@ export default class BookingDetailPage {
 
   protected readonly tel = computed(() => telLink(this.detail.value()?.genie.phone));
 
+  constructor() {
+    // The Genie accepting, starting or completing shows up here at once (live stream)
+    liveReload('booking', (e) => e.bookingId === this.id(), () => {
+      this.detail.reload();
+      this.paymentsRes.reload();
+      this.receiptsRes.reload();
+    });
+    liveReload('ticket', (e) => e.bookingId === this.id(), () => this.detail.reload());
+  }
+
   protected can(action: string): boolean {
     return this.detail.value()?.allowedActions.includes(action as never) ?? false;
   }
@@ -457,8 +468,8 @@ export default class BookingDetailPage {
   }
 
   protected downloadReceipt(r: Receipt): void {
-    this.support.receiptPdf(r.id).subscribe({
-      next: (blob) => saveBlob(blob, `${r.kind === 'CREDIT_NOTE' ? 'credit-note' : 'receipt'}-${r.number.replace(/\//g, '-')}.pdf`),
+    this.support.receiptLink(r.id).subscribe({
+      next: (link) => downloadLink(link.url),
       error: (err) => this.toast.error(errorMessage(err, 'Could not download the receipt.')),
     });
   }

@@ -3,6 +3,7 @@ package com.progenie.support;
 import java.util.UUID;
 
 import com.progenie.shared.security.CurrentUser;
+import com.progenie.shared.storage.FileStorage;
 import com.progenie.shared.web.PageResponse;
 import com.progenie.support.TicketService.AttachmentDto;
 import com.progenie.support.TicketService.FileContent;
@@ -80,6 +81,11 @@ public class TicketController {
     @ResponseStatus(HttpStatus.CREATED)
     public AttachmentDto photo(@PathVariable UUID id, @RequestPart("file") MultipartFile file) {
         return tickets.addPhoto(id, CurrentUser.id(), CurrentUser.role(), file);
+    }
+
+    @GetMapping("/api/v1/tickets/{id}/attachments/{attachmentId}/link")
+    public FileStorage.FileLink photoLink(@PathVariable UUID id, @PathVariable UUID attachmentId) {
+        return tickets.photoLink(id, attachmentId, CurrentUser.id(), CurrentUser.role());
     }
 
     @GetMapping("/api/v1/tickets/{id}/attachments/{attachmentId}")

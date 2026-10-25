@@ -4,7 +4,9 @@ import java.time.Clock;
 import java.time.Instant;
 import java.util.UUID;
 
+import com.progenie.shared.config.QueryConstants;
 import com.progenie.shared.ratelimit.RateLimiter;
+import com.progenie.shared.util.QueryUtil;
 import com.progenie.shared.util.Times;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -42,7 +44,7 @@ class LoginGuard {
             return null;
         }
         Instant until = clock.instant().plus(props.loginLockDuration());
-        jdbc.sql("UPDATE users SET password_locked_until = :until WHERE id = :id")
+        jdbc.sql(QueryUtil.get(QueryConstants.UPDATE_USER_PASSWORD_LOCKED_UNTIL))
             .param("until", Times.odt(until)).param("id", userId).update();
         rateLimiter.reset(key(userId));
         log.warn("Password login locked for user {} until {}", userId, until);

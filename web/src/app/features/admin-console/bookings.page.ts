@@ -5,6 +5,7 @@ import { LucideCalendarDays as CalendarDays, LucideDynamicIcon, LucideSearch as 
 
 import { API, query } from '../../core/api/api';
 import { BookingSummary, Page } from '../../core/api/models';
+import { liveReload } from '../../core/live/live-stream';
 import { addDays, statusMeta } from '../../shared/format';
 import { BookingRow } from '../../shared/ui/booking-parts';
 import { EmptyState, PageHead, Pager, Skeleton } from '../../shared/ui/kit';
@@ -84,6 +85,10 @@ export default class AdminBookingsPage {
       size: 15,
     })}`;
   });
+
+  constructor() {
+    liveReload('booking', () => true, () => this.list.reload());
+  }
 
   protected label(status: string): string {
     return statusMeta(status).label;

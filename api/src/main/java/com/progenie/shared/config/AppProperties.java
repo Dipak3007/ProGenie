@@ -45,7 +45,26 @@ public record AppProperties(String timezone, Jwt jwt, Cookie cookie, Cors cors,
     public record Payments(String gateway, String webhookSecret, String currency) {
     }
 
-    /** KYC files. {@code localDir} is used by the local-disk storage adapter (S3 adapter comes later). */
-    public record Storage(String localDir, long maxUploadBytes) {
+    /**
+     * Uploaded and generated files (KYC, ticket photos, receipts, data exports).
+     * {@code type}: {@code local} (disk under {@code localDir}, the default) or {@code s3} (any S3-compatible store:
+     * Supabase Storage, SeaweedFS, AWS S3). Downloads use short-lived links valid for {@code linkTtl}.
+     */
+    public record Storage(String type, String localDir, long maxUploadBytes, Duration linkTtl, String linkSecret, S3 s3) {
+
+        public boolean isS3() {
+            return "s3".equalsIgnoreCase(type);
+        }
+    }
+
+    /**
+     * S3-compatible bucket. {@code endpoint} without the bucket, e.g. https://abc.supabase.co/storage/v1/s3 or
+     * http://localhost:8333. {@code pathStyle}: bucket in the path (Supabase, SeaweedFS) instead of the host name.
+     * {@code publicEndpoint}: the address browsers use for download links, when it differs from the one the API
+     * uses (Docker: the API talks to http://s3:8333, the browser to http://localhost:8333). Empty = same.
+     * {@code createBucket}: create the bucket at start-up if it is missing (local SeaweedFS).
+     */
+    public record S3(String endpoint, String publicEndpoint, String region, String bucket, String accessKey,
+                     String secretKey, boolean pathStyle, boolean createBucket) {
     }
 }

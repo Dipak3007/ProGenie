@@ -216,7 +216,7 @@ const TIPS = [0, 20, 50, 100];
                     <dl class="space-y-2">
                       <div class="flex justify-between"><dt class="text-muted">Service price</dt><dd>{{ q.serviceAmount | currency: 'INR' }}</dd></div>
                       <div class="flex justify-between">
-                        <dt class="text-muted">Travel ({{ q.distanceKm | number: '1.1-1' }} km)</dt>
+                        <dt class="text-muted">Travel ({{ q.distanceMethod === 'ROAD' ? '' : '≈ ' }}{{ q.distanceKm | number: '1.1-1' }} km{{ q.distanceMethod === 'ROAD' ? ' by road' : '' }})</dt>
                         <dd>{{ q.travelFee > 0 ? (q.travelFee | currency: 'INR') : 'Free' }}</dd>
                       </div>
                       @if (q.tipAmount > 0) {

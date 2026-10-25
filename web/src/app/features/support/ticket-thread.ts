@@ -1,6 +1,7 @@
-import { ChangeDetectionStrategy, Component, DestroyRef, computed, effect, inject, input, output, signal, untracked } from '@angular/core';
+import { ChangeDetectionStrategy, Component, computed, effect, inject, input, output, signal, untracked } from '@angular/core';
 import { DatePipe } from '@angular/common';
 import { FormsModule } from '@angular/forms';
+import { firstValueFrom } from 'rxjs';
 import {
   LucideCamera as Camera,
   LucideCheck as Check,
@@ -14,7 +15,7 @@ import { TicketDetail, TicketMessage } from '../../core/api/models';
 import { SupportApi } from '../../core/api/support-api';
 import { AuthStore } from '../../core/auth/auth-store';
 import { ConfirmService, ToastService } from '../../core/ui/feedback';
-import { TICKET_CATEGORY_LABEL } from '../../shared/format';
+import { TICKET_CATEGORY_LABEL, openInNewTab } from '../../shared/format';
 import { Avatar } from '../../shared/ui/avatar';
 import { Spinner } from '../../shared/ui/kit';
 import { StatusBadge } from '../../shared/ui/status-badge';
@@ -104,7 +105,7 @@ import { StatusBadge } from '../../shared/ui/status-badge';
           <div class="mt-3 flex flex-wrap gap-3">
             @for (a of t.attachments; track a.id) {
               @if (photoUrls()[a.id]; as url) {
-                <a [href]="url" target="_blank" rel="noopener" class="block size-24 overflow-hidden rounded-2xl ring-1 ring-line">
+                <a [href]="url" target="_blank" rel="noopener" class="block size-24 overflow-hidden rounded-2xl ring-1 ring-line" (click)="openPhoto($event, a.id)">
                   <img [src]="url" [alt]="a.fileName ?? 'Photo'" class="size-full object-cover" />
                 </a>
               } @else {
@@ -155,7 +156,6 @@ export class TicketThread {
   private readonly auth = inject(AuthStore);
   private readonly toast = inject(ToastService);
   private readonly confirm = inject(ConfirmService);
-  private readonly destroyRef = inject(DestroyRef);
 
   protected readonly categoryLabel = TICKET_CATEGORY_LABEL;
   protected readonly busy = signal(false);
@@ -171,20 +171,26 @@ export class TicketThread {
   });
 
   constructor() {
-    // Photos are private: fetch each one with the login token and show it through an object URL.
+    // Photos are private: each one is shown from a short-lived link (presigned URL), asked for with the login token.
     effect(() => {
       const t = this.ticket();
       untracked(() => {
         for (const a of t.attachments) {
           if (this.photoUrls()[a.id]) continue;
-          this.api.photo(t.id, a.id).subscribe({
-            next: (blob) => this.photoUrls.update((m) => ({ ...m, [a.id]: URL.createObjectURL(blob) })),
+          this.api.photoLink(t.id, a.id).subscribe({
+            next: (link) => this.photoUrls.update((m) => ({ ...m, [a.id]: link.url })),
             error: () => undefined,
           });
         }
       });
     });
-    this.destroyRef.onDestroy(() => Object.values(this.photoUrls()).forEach((u) => URL.revokeObjectURL(u)));
+  }
+
+  /** The thumbnail's link may have expired by now: open the full photo from a fresh one. */
+  protected openPhoto(event: MouseEvent, attachmentId: string): void {
+    event.preventDefault();
+    const ticketId = this.ticket().id;
+    openInNewTab(firstValueFrom(this.api.photoLink(ticketId, attachmentId)).then((l) => l.url), () => undefined);
   }
 
   protected roleLabel(role: string): string {

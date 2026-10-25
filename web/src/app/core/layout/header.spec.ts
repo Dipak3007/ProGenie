@@ -18,10 +18,16 @@ describe('Header', () => {
     return Array.from(el.querySelectorAll('nav[aria-label="Main"] a')).map((a) => a.textContent!.trim());
   }
 
-  it('shows the public links to guests', async () => {
+  it('shows the public links and the city switcher to guests', async () => {
     const fixture = TestBed.createComponent(Header);
+    TestBed.tick();
+    TestBed.inject(HttpTestingController)
+      .expectOne('/api/v1/cities')
+      .flush([{ id: 1, slug: 'ahmedabad', name: 'Ahmedabad', state: 'Gujarat', lat: 23.02, lng: 72.57, radiusKm: 35 }]);
     await fixture.whenStable();
-    expect(links(fixture.nativeElement)).toEqual(['Home', 'Services', 'Become a Genie']);
+    const el = fixture.nativeElement as HTMLElement;
+    expect(links(el)).toEqual(['Home', 'Services', 'Become a Genie']);
+    expect(el.querySelector('pg-city-switcher button')?.textContent).toContain('Ahmedabad');
   });
 
   it('adapts the links to the role and shows the unread count', async () => {

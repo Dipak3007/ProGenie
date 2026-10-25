@@ -8,7 +8,6 @@ import {
   LucideChevronDown as ChevronDown,
   LucideDynamicIcon,
   LucideLogOut as LogOut,
-  LucideMapPin as MapPin,
   LucideMenu as Menu,
   LucideUser as User,
   LucideX as X,
@@ -18,6 +17,7 @@ import { Role } from '../api/models';
 import { AuthStore } from '../auth/auth-store';
 import { NotificationStore } from '../notifications/notification-store';
 import { Logo } from '../../shared/ui/logo';
+import { CitySwitcher } from './city-switcher';
 import { IST } from '../../shared/format';
 
 interface Link {
@@ -83,7 +83,7 @@ const MENU: Record<Role, Link[]> = {
 /** Sticky, frosted header. Full nav on md+ screens; a slide-down menu on phones. Links adapt to the user's role. */
 @Component({
   selector: 'pg-header',
-  imports: [RouterLink, RouterLinkActive, DatePipe, LucideDynamicIcon, Logo],
+  imports: [RouterLink, RouterLinkActive, DatePipe, LucideDynamicIcon, Logo, CitySwitcher],
   changeDetection: ChangeDetectionStrategy.OnPush,
   host: { '(document:click)': 'onDocumentClick($event)', '(document:keydown.escape)': 'closePopovers()' },
   template: `
@@ -91,9 +91,9 @@ const MENU: Record<Role, Link[]> = {
       <div class="container-page flex h-[calc(var(--header-h)-1px)] items-center justify-between gap-3">
         <a routerLink="/" aria-label="ProGenie home" class="shrink-0"><pg-logo tone="dark" [size]="36" /></a>
 
-        <span class="hidden items-center gap-1 rounded-full bg-white/10 px-3 py-1 text-xs font-medium text-brand-mist xl:inline-flex">
-          <svg [lucideIcon]="MapPin" [size]="14" aria-hidden="true"></svg> Ahmedabad
-        </span>
+        @if (showCity()) {
+          <pg-city-switcher class="hidden sm:block" />
+        }
 
         <nav class="ml-auto hidden items-center gap-1 md:flex" aria-label="Main">
           @for (link of links(); track link.path) {
@@ -205,6 +205,9 @@ const MENU: Record<Role, Link[]> = {
       @if (open()) {
         <nav id="mobile-menu" class="max-h-[calc(100dvh-var(--header-h))] overflow-y-auto border-t border-white/10 bg-navy md:hidden" aria-label="Mobile">
           <div class="container-page flex flex-col gap-1 py-4">
+            @if (showCity()) {
+              <pg-city-switcher variant="inline" class="mb-3 sm:hidden" />
+            }
             @for (link of links(); track link.path) {
               <a [routerLink]="link.path" class="rounded-xl px-4 py-3 text-base font-medium text-brand-mist hover:bg-white/10">{{ link.label }}</a>
             }
@@ -238,11 +241,12 @@ export class Header {
 
   protected readonly links = computed(() => LINKS[this.auth.role() ?? 'GUEST']);
   protected readonly menu = computed(() => (this.auth.role() ? MENU[this.auth.role()!] : []));
+  /** Guests and customers browse by city; a Genie's city is their base location, admins see every city. */
+  protected readonly showCity = computed(() => (this.auth.role() ?? 'CUSTOMER') === 'CUSTOMER');
   protected readonly roleLabel = computed(() => ({ CUSTOMER: 'Customer', GENIE: 'Genie', ADMIN: 'Administrator' })[this.auth.role() ?? 'CUSTOMER']);
 
   protected readonly Menu = Menu;
   protected readonly X = X;
-  protected readonly MapPin = MapPin;
   protected readonly UserIcon = User;
   protected readonly LogOut = LogOut;
   protected readonly Bell = Bell;

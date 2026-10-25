@@ -1,4 +1,4 @@
-import { ChangeDetectionStrategy, Component, computed, inject, input, signal } from '@angular/core';
+import { ChangeDetectionStrategy, Component, computed, effect, inject, input, signal, untracked } from '@angular/core';
 import { httpResource } from '@angular/common/http';
 import { CurrencyPipe, DatePipe, DecimalPipe } from '@angular/common';
 import { Router, RouterLink } from '@angular/router';
@@ -12,25 +12,12 @@ import {
 
 import { API, ApiClient, errorMessage } from '../../core/api/api';
 import { CustomerApi } from '../../core/api/customer-api';
-import { GenieCard as GenieCardModel, GenieDetail, GenieService, PriceBreakdown } from '../../core/api/models';
+import { Area, GenieCard as GenieCardModel, GenieDetail, GenieService, PriceBreakdown } from '../../core/api/models';
+import { CityStore } from '../../core/city/city-store';
 import { AuthStore } from '../../core/auth/auth-store';
 import { ToastService } from '../../core/ui/feedback';
 import { Avatar } from '../../shared/ui/avatar';
 import { CategoryVisual } from '../../shared/ui/category-visual';
-
-/** Ahmedabad areas for the price estimate until customers have saved addresses. */
-const AREAS = [
-  { name: 'Navrangpura', lat: 23.0365, lng: 72.5611 },
-  { name: 'Satellite', lat: 23.03, lng: 72.517 },
-  { name: 'Bopal', lat: 23.0333, lng: 72.4639 },
-  { name: 'Maninagar', lat: 22.9962, lng: 72.6031 },
-  { name: 'Vastrapur', lat: 23.0395, lng: 72.529 },
-  { name: 'Prahlad Nagar', lat: 23.012, lng: 72.5108 },
-  { name: 'Gota', lat: 23.103, lng: 72.541 },
-  { name: 'Chandkheda', lat: 23.109, lng: 72.585 },
-  { name: 'Thaltej', lat: 23.049, lng: 72.508 },
-  { name: 'Nikol', lat: 23.047, lng: 72.669 },
-];
 
 @Component({
   selector: 'pg-genie-profile-page',
@@ -148,9 +135,9 @@ const AREAS = [
             <h2 class="text-xl font-bold">Price estimate</h2>
             @if (selected(); as s) {
               <p class="mt-1 text-sm text-muted">{{ s.name }}</p>
-              <label class="label mt-4" for="area">Your area</label>
+              <label class="label mt-4" for="area">Your area{{ detail.value()?.genie?.cityName ? ' in ' + detail.value()!.genie.cityName : '' }}</label>
               <select id="area" class="field" [value]="areaIndex()" (change)="areaIndex.set(+$any($event.target).value); estimate()">
-                @for (a of areas; track a.name; let i = $index) {
+                @for (a of areas(); track a.name; let i = $index) {
                   <option [value]="i">{{ a.name }}</option>
                 }
               </select>
@@ -159,7 +146,7 @@ const AREAS = [
                 <dl class="mt-5 space-y-2 text-sm">
                   <div class="flex justify-between"><dt class="text-muted">Service</dt><dd>{{ q.serviceAmount | currency: 'INR' }}</dd></div>
                   <div class="flex justify-between">
-                    <dt class="text-muted">Travel ({{ q.distanceKm | number: '1.1-1' }} km)</dt>
+                    <dt class="text-muted">Travel ({{ q.distanceMethod === 'ROAD' ? '' : '≈ ' }}{{ q.distanceKm | number: '1.1-1' }} km{{ q.distanceMethod === 'ROAD' ? ' by road' : '' }})</dt>
                     <dd>{{ q.travelFee > 0 ? (q.travelFee | currency: 'INR') : 'Free' }}</dd>
                   </div>
                   <div class="flex justify-between border-t border-line pt-2 text-base font-semibold">
@@ -213,7 +200,22 @@ export default class GenieProfilePage {
   protected readonly areaIndex = signal(0);
   protected readonly quote = signal<PriceBreakdown | null>(null);
   protected readonly quoteError = signal<string | null>(null);
-  protected readonly areas = AREAS;
+  private readonly cities = inject(CityStore);
+  /** Served areas of the Genie's city (data: serviceable_pincodes), used as sample locations for the estimate. */
+  private readonly cityAreas = httpResource<Area[]>(() => {
+    const slug = this.detail.value()?.genie.citySlug;
+    return slug ? `${API}/cities/${encodeURIComponent(slug)}/areas` : undefined;
+  });
+  protected readonly areas = computed(() => {
+    const list = (this.cityAreas.value() ?? [])
+      .filter((a) => a.lat !== null && a.lng !== null)
+      .map((a) => ({ name: `${a.area ?? 'Area'} · ${a.pincode}`, lat: a.lat!, lng: a.lng! }));
+    const city = this.cities.bySlug(this.detail.value()?.genie.citySlug);
+    if (!list.length && city?.lat != null && city.lng != null) {
+      return [{ name: `${city.name} centre`, lat: city.lat, lng: city.lng }];
+    }
+    return list;
+  });
   protected readonly initials = computed(() =>
     (this.detail.value()?.genie.fullName ?? '')
       .split(' ')
@@ -221,6 +223,13 @@ export default class GenieProfilePage {
       .slice(0, 2)
       .join(''),
   );
+
+  constructor() {
+    // The areas arrive after the profile: price the chosen service once they do.
+    effect(() => {
+      if (this.areas().length) untracked(() => this.estimate());
+    });
+  }
 
   protected readonly BadgeCheck = BadgeCheck;
   protected readonly MapPin = MapPin;
@@ -238,7 +247,8 @@ export default class GenieProfilePage {
   protected estimate(): void {
     const service = this.selected();
     if (!service) return;
-    const area = AREAS[this.areaIndex()];
+    const area = this.areas()[this.areaIndex()] ?? this.areas()[0];
+    if (!area) return;
     this.quoteError.set(null);
     this.api.estimate(this.id(), service.serviceId, area.lat, area.lng).subscribe({
       next: (q) => this.quote.set(q),

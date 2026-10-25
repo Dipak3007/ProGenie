@@ -1,5 +1,6 @@
 package com.progenie.shared.config;
 
+import jakarta.servlet.DispatcherType;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.http.HttpMethod;
@@ -36,14 +37,18 @@ public class SecurityConfig {
             .cors(Customizer.withDefaults())
             .sessionManagement(s -> s.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
             .authorizeHttpRequests(auth -> auth
+                // the async dispatch of a live stream (SseEmitter) continues a request that was already authorized
+                .dispatcherTypeMatchers(DispatcherType.ASYNC).permitAll()
                 .requestMatchers("/error", "/actuator/health/**", "/actuator/info",
                         "/v3/api-docs/**", "/swagger-ui/**", "/swagger-ui.html").permitAll()
                 .requestMatchers(HttpMethod.POST, "/api/v1/auth/**", "/api/v1/contact",
                         "/api/v1/payments/webhook/**",                      // verified by HMAC signature
                         "/api/v1/webhooks/**").permitAll()                  // verified by a shared token
                 .requestMatchers(HttpMethod.GET, "/api/v1/legal/**").permitAll()
+                .requestMatchers(HttpMethod.GET, "/api/v1/files/*").permitAll()         // signed, expiring download links
                 .requestMatchers(HttpMethod.GET, "/api/v1/cities/**", "/api/v1/categories/**",
-                        "/api/v1/genies/**", "/api/v1/pricing/**", "/api/v1/search").permitAll()
+                        "/api/v1/genies/**", "/api/v1/pricing/**", "/api/v1/search",
+                        "/api/v1/serviceability", "/api/v1/serviceability/**").permitAll()
                 .requestMatchers("/api/v1/admin/**").hasRole("ADMIN")
                 .requestMatchers("/api/v1/genie/**").hasRole("GENIE")
                 .requestMatchers("/api/v1/bookings/**", "/api/v1/payments/**",

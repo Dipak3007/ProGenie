@@ -10,6 +10,7 @@ import { API, errorMessage } from '../../core/api/api';
 import { BookingDetail, Payment, RefundRequest, Slot, TicketAction, TicketDetail } from '../../core/api/models';
 import { AuthStore } from '../../core/auth/auth-store';
 import { ConfirmService, ToastService } from '../../core/ui/feedback';
+import { liveReload } from '../../core/live/live-stream';
 import { Dialog } from '../../shared/ui/dialog';
 import { EmptyState, Skeleton, Spinner } from '../../shared/ui/kit';
 import { SlotPicker } from '../../shared/ui/slot-picker';
@@ -220,6 +221,10 @@ export default class AdminTicketPage {
   protected readonly redoSlot = signal<Slot | null>(null);
   protected strikeReason = '';
   protected note = '';
+
+  constructor() {
+    liveReload('ticket', (e) => e.ticketId === this.id(), () => this.ticket.reload());
+  }
 
   protected isOpen(t: TicketDetail): boolean {
     return OPEN.includes(t.status);

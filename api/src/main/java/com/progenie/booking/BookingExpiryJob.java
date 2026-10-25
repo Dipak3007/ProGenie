@@ -6,7 +6,9 @@ import java.util.UUID;
 
 import com.progenie.booking.domain.Booking;
 import com.progenie.booking.domain.BookingStatus;
+import com.progenie.shared.config.QueryConstants;
 import com.progenie.shared.jobs.JobLock;
+import com.progenie.shared.util.QueryUtil;
 import com.progenie.shared.util.Times;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -44,13 +46,7 @@ class BookingExpiryJob {
         if (!lock.tryAcquire("booking-expiry")) {
             return;
         }
-        List<UUID> due = jdbc.sql("""
-                SELECT id FROM bookings
-                 WHERE status = 'REQUESTED' AND expires_at <= :now
-                 ORDER BY expires_at
-                 LIMIT :batch
-                 FOR UPDATE SKIP LOCKED
-                """)
+        List<UUID> due = jdbc.sql(QueryUtil.get(QueryConstants.LOCK_BOOKING_EXPIRED_REQUESTS))
             .param("now", Times.odt(clock.instant()))
             .param("batch", BATCH)
             .query(UUID.class)

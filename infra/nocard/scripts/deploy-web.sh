@@ -23,4 +23,11 @@ fi
 cp "$root/infra/nocard/cloudflare/_headers" dist/web/browser/_headers
 
 cd "$root/infra/nocard/cloudflare"
-npx --yes wrangler@4 deploy --var "BACKEND_URL:$backend" "$@"
+deploy() { npx --yes wrangler@4 deploy --var "BACKEND_URL:$backend" "$@"; }
+if ! deploy "$@"; then
+  # On the very first deploy Cloudflare can answer "This Worker does not exist" (code 10007) for a few seconds
+  # right after creating it. The second attempt then finds it.
+  echo "Deploy failed; trying once more in 20 seconds..."
+  sleep 20
+  deploy "$@"
+fi

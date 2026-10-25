@@ -15,14 +15,17 @@ import java.util.Locale;
 import java.util.UUID;
 
 import com.progenie.shared.config.AppProperties;
+import com.progenie.shared.config.QueryConstants;
 import com.progenie.shared.error.ApiException;
 import com.progenie.shared.storage.FileStorage;
 import com.progenie.shared.util.FileTypes;
+import com.progenie.shared.util.QueryUtil;
 import com.progenie.shared.util.Times;
 import com.progenie.shared.web.PageResponse;
 import com.progenie.support.TicketEvents.TicketRaised;
 import com.progenie.support.TicketEvents.TicketReplied;
 import com.progenie.support.TicketEvents.TicketResolved;
+import org.jspecify.annotations.Nullable;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.context.ApplicationEventPublisher;
@@ -51,30 +54,30 @@ public class TicketService {
     public record RaiseRequest(String category, String subject, String description) {
     }
 
-    public record TicketSummary(UUID id, String ticketRef, String type, UUID bookingId, String bookingRef, String category,
+    public record TicketSummary(UUID id, String ticketRef, String type, @Nullable UUID bookingId, @Nullable String bookingRef, String category,
                                 String priority, String status, String subject, UUID raisedBy, String raisedByName,
-                                String raisedByRole, String assignedToName, OffsetDateTime firstResponseDue,
+                                String raisedByRole, @Nullable String assignedToName, OffsetDateTime firstResponseDue,
                                 OffsetDateTime resolutionDue, boolean overdue, OffsetDateTime createdAt,
                                 OffsetDateTime updatedAt) {
     }
 
-    public record MessageDto(long id, UUID authorId, String authorName, String authorRole, String body, boolean internal,
+    public record TicketMessageDto(long id, @Nullable UUID authorId, String authorName, String authorRole, String body, boolean internal,
                              OffsetDateTime createdAt) {
     }
 
-    public record AttachmentDto(UUID id, String fileName, String contentType, int sizeBytes, UUID uploadedBy,
+    public record AttachmentDto(UUID id, @Nullable String fileName, String contentType, int sizeBytes, UUID uploadedBy,
                                 OffsetDateTime createdAt) {
     }
 
     /** {@code can*} flags tell the app which buttons to show for the viewer. */
-    public record TicketDetail(UUID id, String ticketRef, String type, UUID bookingId, String bookingRef, String serviceName,
-                               UUID customerId, String customerName, UUID genieId, String genieName, String category,
+    public record TicketDetail(UUID id, String ticketRef, String type, @Nullable UUID bookingId, @Nullable String bookingRef, @Nullable String serviceName,
+                               @Nullable UUID customerId, @Nullable String customerName, @Nullable UUID genieId, @Nullable String genieName, String category,
                                String priority, String status, String subject, String description, UUID raisedBy,
-                               String raisedByName, String raisedByRole, UUID assignedTo, String assignedToName,
+                               String raisedByName, String raisedByRole, @Nullable UUID assignedTo, @Nullable String assignedToName,
                                OffsetDateTime firstResponseDue, OffsetDateTime resolutionDue, boolean overdue,
-                               OffsetDateTime firstRespondedAt, OffsetDateTime resolvedAt, OffsetDateTime closedAt,
-                               String resolutionActions, String resolutionNote, UUID refundId, UUID redoBookingId,
-                               String redoBookingRef, OffsetDateTime createdAt, List<MessageDto> messages,
+                               @Nullable OffsetDateTime firstRespondedAt, @Nullable OffsetDateTime resolvedAt, @Nullable OffsetDateTime closedAt,
+                               @Nullable String resolutionActions, @Nullable String resolutionNote, @Nullable UUID refundId, @Nullable UUID redoBookingId,
+                               @Nullable String redoBookingRef, OffsetDateTime createdAt, List<TicketMessageDto> messages,
                                List<AttachmentDto> attachments, boolean canReply, boolean canAddPhotos,
                                boolean canAccept, boolean canReopen) {
     }
@@ -96,22 +99,6 @@ public class TicketService {
     record BookingParties(UUID id, String bookingRef, UUID customerId, UUID genieId, String status,
                           OffsetDateTime slotStart, OffsetDateTime slotEnd, OffsetDateTime acceptedAt) {
     }
-
-    static final String OVERDUE_SQL = """
-        (t.status IN ('OPEN', 'IN_REVIEW', 'AWAITING_REPLY')
-         AND (t.resolution_due < now() OR (t.first_responded_at IS NULL AND t.first_response_due < now())))""";
-
-    static final String SUMMARY_SELECT = """
-        SELECT t.id, t.ticket_ref, t.type, t.booking_id, b.booking_ref, t.category, t.priority, t.status, t.subject,
-               t.raised_by, ru.full_name AS raised_by_name, t.raised_by_role, au.full_name AS assigned_to_name,
-               t.first_response_due, t.resolution_due,
-        """ + OVERDUE_SQL + """
-         AS overdue, t.created_at, t.updated_at
-          FROM tickets t
-          LEFT JOIN bookings b ON b.id = t.booking_id
-          JOIN users ru ON ru.id = t.raised_by
-          LEFT JOIN users au ON au.id = t.assigned_to
-        """;
 
     private final JdbcClient jdbc;
     private final FileStorage storage;
@@ -139,10 +126,7 @@ public class TicketService {
         }
         String subject = required(req.subject(), 150, "subject");
         String description = required(req.description(), 2000, "description");
-        BookingParties b = jdbc.sql("""
-                SELECT id, booking_ref, customer_id, genie_id, status, slot_start, slot_end, accepted_at FROM bookings
-                 WHERE id = :id FOR UPDATE
-                """)
+        BookingParties b = jdbc.sql(QueryUtil.get(QueryConstants.LOCK_TICKET_BOOKING_FOR_RAISE))
             .param("id", bookingId).query(BookingParties.class).optional()
             .filter(x -> userId.equals(x.customerId()) || userId.equals(x.genieId()))
             .orElseThrow(() -> ApiException.notFound("BOOKING_NOT_FOUND", "Booking not found"));
@@ -154,9 +138,7 @@ public class TicketService {
             throw ApiException.unprocessable("REPORT_WINDOW_CLOSED",
                 "Problems can be reported up to 7 days after the booking. Please use Contact Us");
         }
-        boolean hasOpen = jdbc.sql("""
-                SELECT EXISTS (SELECT 1 FROM tickets WHERE booking_id = :b AND status IN ('OPEN', 'IN_REVIEW', 'AWAITING_REPLY'))
-                """)
+        boolean hasOpen = jdbc.sql(QueryUtil.get(QueryConstants.EXISTS_TICKET_OPEN_FOR_BOOKING))
             .param("b", bookingId).query(Boolean.class).single();
         if (hasOpen) {
             throw ApiException.conflict("TICKET_ALREADY_OPEN", "There is already an open report for this booking");
@@ -183,15 +165,10 @@ public class TicketService {
 
     private UUID insert(String type, UUID bookingId, UUID userId, String role, TicketCategory category, String subject,
                         String description, Instant now) {
-        long seq = jdbc.sql("SELECT nextval('ticket_ref_seq')").query(Long.class).single();
+        long seq = jdbc.sql(QueryUtil.get(QueryConstants.GET_TICKET_NEXT_REF)).query(Long.class).single();
         String ref = "PGT-%d-%06d".formatted(LocalDate.ofInstant(now, zone).getYear(), seq);
         try {
-            return jdbc.sql("""
-                    INSERT INTO tickets (ticket_ref, type, booking_id, raised_by, raised_by_role, category, priority,
-                                         subject, description, first_response_due, resolution_due)
-                    VALUES (:ref, :type, :b, :u, :role, :cat, :prio, :subject, :desc, :frd, :rd)
-                    RETURNING id
-                    """)
+            return jdbc.sql(QueryUtil.get(QueryConstants.INSERT_TICKET_CREATE))
                 .param("ref", ref).param("type", type).param("b", bookingId).param("u", userId).param("role", role)
                 .param("cat", category.name()).param("prio", category.priority()).param("subject", subject)
                 .param("desc", description).param("frd", Times.odt(now.plus(category.firstResponse)))
@@ -206,15 +183,10 @@ public class TicketService {
 
     @Transactional(readOnly = true)
     public PageResponse<TicketSummary> mine(UUID userId, String status, int page, int size) {
-        String where = """
-             WHERE (t.raised_by = :u OR b.customer_id = :u OR b.genie_id = :u)
-               AND (CAST(:status AS varchar) IS NULL OR t.status = :status
-                    OR (:status = 'ACTIVE' AND t.status IN ('OPEN', 'IN_REVIEW', 'AWAITING_REPLY')))
-            """;
         String s = StringUtils.hasText(status) ? status.trim().toUpperCase(Locale.ROOT) : null;
-        long total = jdbc.sql("SELECT count(*) FROM tickets t LEFT JOIN bookings b ON b.id = t.booking_id" + where)
+        long total = jdbc.sql(QueryUtil.get(QueryConstants.COUNT_TICKET_MINE))
             .param("u", userId).param("status", s).query(Long.class).single();
-        List<TicketSummary> items = jdbc.sql(SUMMARY_SELECT + where + " ORDER BY t.updated_at DESC LIMIT :limit OFFSET :offset")
+        List<TicketSummary> items = jdbc.sql(QueryUtil.get(QueryConstants.GET_TICKET_MINE))
             .param("u", userId).param("status", s)
             .param("limit", PageResponse.clampSize(size)).param("offset", PageResponse.offset(page, size))
             .query(TicketSummary.class).list();
@@ -237,34 +209,10 @@ public class TicketService {
                    OffsetDateTime closedAt, String resolutionActions, String resolutionNote, UUID refundId,
                    UUID redoBookingId, String redoBookingRef, OffsetDateTime createdAt) {
         }
-        Row r = jdbc.sql("""
-                SELECT t.id, t.ticket_ref, t.type, t.booking_id, b.booking_ref, s.name AS service_name,
-                       b.customer_id, cu.full_name AS customer_name, b.genie_id, gu.full_name AS genie_name,
-                       t.category, t.priority, t.status, t.subject, t.description, t.raised_by,
-                       ru.full_name AS raised_by_name, t.raised_by_role, t.assigned_to, au.full_name AS assigned_to_name,
-                       t.first_response_due, t.resolution_due,
-                """ + OVERDUE_SQL + """
-                 AS overdue, t.first_responded_at, t.resolved_at, t.closed_at, t.resolution_actions,
-                       t.resolution_note, t.refund_id, t.redo_booking_id, rb.booking_ref AS redo_booking_ref, t.created_at
-                  FROM tickets t
-                  LEFT JOIN bookings b ON b.id = t.booking_id
-                  LEFT JOIN services s ON s.id = b.service_id
-                  LEFT JOIN users cu ON cu.id = b.customer_id
-                  LEFT JOIN users gu ON gu.id = b.genie_id
-                  JOIN users ru ON ru.id = t.raised_by
-                  LEFT JOIN users au ON au.id = t.assigned_to
-                  LEFT JOIN bookings rb ON rb.id = t.redo_booking_id
-                 WHERE t.id = :id
-                """)
+        Row r = jdbc.sql(QueryUtil.get(QueryConstants.GET_TICKET_DETAIL))
             .param("id", ticketId).query(Row.class).single();
-        List<MessageDto> messages = jdbc.sql("""
-                SELECT m.id, m.author_id, coalesce(u.full_name, 'ProGenie') AS author_name, m.author_role, m.body,
-                       m.internal, m.created_at
-                  FROM ticket_messages m LEFT JOIN users u ON u.id = m.author_id
-                 WHERE m.ticket_id = :id AND (:admin OR NOT m.internal)
-                 ORDER BY m.created_at, m.id
-                """)
-            .param("id", ticketId).param("admin", admin).query(MessageDto.class).list();
+        List<TicketMessageDto> messages = jdbc.sql(QueryUtil.get(QueryConstants.GET_TICKET_MESSAGES))
+            .param("id", ticketId).param("admin", admin).query(TicketMessageDto.class).list();
         List<AttachmentDto> attachments = attachments(ticketId);
         Instant now = clock.instant();
         boolean raiser = viewerId.equals(t.raisedBy());
@@ -315,7 +263,7 @@ public class TicketService {
         if (!t.isOpen()) {
             throw ApiException.unprocessable("TICKET_CLOSED", "Photos can only be added while the report is open");
         }
-        int count = jdbc.sql("SELECT count(*) FROM ticket_attachments WHERE ticket_id = :t").param("t", ticketId)
+        int count = jdbc.sql(QueryUtil.get(QueryConstants.COUNT_TICKET_ATTACHMENTS)).param("t", ticketId)
             .query(Integer.class).single();
         if (count >= MAX_PHOTOS) {
             throw ApiException.unprocessable("TOO_MANY_PHOTOS", "A report can have at most " + MAX_PHOTOS + " photos");
@@ -341,10 +289,7 @@ public class TicketService {
         storage.put(key, new ByteArrayInputStream(bytes), bytes.length, type);
         String name = file.getOriginalFilename() == null ? null
             : file.getOriginalFilename().replaceAll("[^A-Za-z0-9._ -]", "_");
-        jdbc.sql("""
-                INSERT INTO ticket_attachments (id, ticket_id, uploaded_by, file_key, file_name, content_type, size_bytes)
-                VALUES (:id, :t, :u, :k, :n, :ct, :size)
-                """)
+        jdbc.sql(QueryUtil.get(QueryConstants.INSERT_TICKET_ATTACHMENT))
             .param("id", id).param("t", ticketId).param("u", userId).param("k", key)
             .param("n", name == null ? null : name.length() > 200 ? name.substring(0, 200) : name)
             .param("ct", type).param("size", bytes.length)
@@ -364,7 +309,7 @@ public class TicketService {
         }
         record Att(String fileKey, String fileName, String contentType) {
         }
-        Att a = jdbc.sql("SELECT file_key, file_name, content_type FROM ticket_attachments WHERE id = :id AND ticket_id = :t")
+        Att a = jdbc.sql(QueryUtil.get(QueryConstants.GET_TICKET_ATTACHMENT))
             .param("id", attachmentId).param("t", ticketId).query(Att.class).optional()
             .orElseThrow(() -> ApiException.notFound("FILE_NOT_FOUND", "Photo not found"));
         try (InputStream in = storage.get(a.fileKey())) {
@@ -372,6 +317,21 @@ public class TicketService {
         } catch (IOException e) {
             throw new UncheckedIOException(e);
         }
+    }
+
+    /** A short-lived link to a photo (presigned URL on S3), shown inline. Same access rule as {@link #photo}. */
+    @Transactional(readOnly = true)
+    public FileStorage.FileLink photoLink(UUID ticketId, UUID attachmentId, UUID userId, String role) {
+        Ticket t = load(ticketId);
+        if (!"ADMIN".equals(role) && !t.isParty(userId)) {
+            throw ApiException.notFound("TICKET_NOT_FOUND", "Report not found");
+        }
+        record Att(String fileKey, String fileName, String contentType) {
+        }
+        Att a = jdbc.sql(QueryUtil.get(QueryConstants.GET_TICKET_ATTACHMENT))
+            .param("id", attachmentId).param("t", ticketId).query(Att.class).optional()
+            .orElseThrow(() -> ApiException.notFound("FILE_NOT_FOUND", "Photo not found"));
+        return storage.link(a.fileKey(), a.fileName(), a.contentType(), true);
     }
 
     /** The person who raised it is happy with the resolution. */
@@ -384,7 +344,7 @@ public class TicketService {
         if (!"RESOLVED".equals(t.status())) {
             throw ApiException.unprocessable("INVALID_STATE", "Only a resolved report can be accepted");
         }
-        jdbc.sql("UPDATE tickets SET status = 'CLOSED', closed_at = now(), updated_at = now(), version = version + 1 WHERE id = :id")
+        jdbc.sql(QueryUtil.get(QueryConstants.UPDATE_TICKET_ACCEPT))
             .param("id", ticketId).update();
         addMessage(ticketId, null, "SYSTEM", "The resolution was accepted and the report closed.", false);
         return detail(ticketId, userId, role);
@@ -402,10 +362,7 @@ public class TicketService {
         }
         String text = required(reason, 2000, "reason");
         try {
-            jdbc.sql("""
-                    UPDATE tickets SET status = 'IN_REVIEW', closed_at = NULL, updated_at = now(), version = version + 1
-                     WHERE id = :id
-                    """)
+            jdbc.sql(QueryUtil.get(QueryConstants.UPDATE_TICKET_REOPEN))
                 .param("id", ticketId).update();
         } catch (DuplicateKeyException e) {
             throw ApiException.conflict("TICKET_ALREADY_OPEN", "There is already an open report for this booking");
@@ -419,40 +376,33 @@ public class TicketService {
     // ------------------------------------------------------------------ helpers shared with TicketAdminService
 
     Ticket load(UUID ticketId) {
-        return find(ticketId, "");
+        return find(ticketId, QueryConstants.GET_TICKET_BY_ID);
     }
 
     Ticket lock(UUID ticketId) {
-        return find(ticketId, " FOR UPDATE OF t");
+        return find(ticketId, QueryConstants.LOCK_TICKET_BY_ID);
     }
 
-    private Ticket find(UUID ticketId, String lock) {
-        return jdbc.sql("""
-                SELECT t.id, t.ticket_ref, t.type, t.booking_id, b.booking_ref, b.customer_id, b.genie_id, t.raised_by,
-                       t.raised_by_role, t.category, t.priority, t.status, t.subject, t.first_responded_at, t.resolved_at,
-                       t.version
-                  FROM tickets t LEFT JOIN bookings b ON b.id = t.booking_id
-                 WHERE t.id = :id""" + lock)
+    /** {@code queryKey}: {@link QueryConstants#GET_TICKET_BY_ID} or {@link QueryConstants#LOCK_TICKET_BY_ID}. */
+    private Ticket find(UUID ticketId, String queryKey) {
+        return jdbc.sql(QueryUtil.get(queryKey))
             .param("id", ticketId).query(Ticket.class).optional()
             .orElseThrow(() -> ApiException.notFound("TICKET_NOT_FOUND", "Report not found"));
     }
 
     void addMessage(UUID ticketId, UUID authorId, String role, String body, boolean internal) {
-        jdbc.sql("""
-                INSERT INTO ticket_messages (ticket_id, author_id, author_role, body, internal)
-                VALUES (:t, :a, :r, :b, :i)
-                """)
+        jdbc.sql(QueryUtil.get(QueryConstants.INSERT_TICKET_MESSAGE))
             .param("t", ticketId).param("a", authorId).param("r", role).param("b", body).param("i", internal)
             .update();
     }
 
     void setStatus(UUID ticketId, String status) {
-        jdbc.sql("UPDATE tickets SET status = :s, updated_at = now(), version = version + 1 WHERE id = :id")
+        jdbc.sql(QueryUtil.get(QueryConstants.UPDATE_TICKET_STATUS))
             .param("s", status).param("id", ticketId).update();
     }
 
     void touch(UUID ticketId) {
-        jdbc.sql("UPDATE tickets SET updated_at = now() WHERE id = :id").param("id", ticketId).update();
+        jdbc.sql(QueryUtil.get(QueryConstants.UPDATE_TICKET_TOUCH)).param("id", ticketId).update();
     }
 
     void publishResolved(Ticket t, String outcome, String actions, String note) {
@@ -466,10 +416,7 @@ public class TicketService {
     }
 
     List<AttachmentDto> attachments(UUID ticketId) {
-        return jdbc.sql("""
-                SELECT id, file_name, content_type, size_bytes, uploaded_by, created_at FROM ticket_attachments
-                 WHERE ticket_id = :t ORDER BY created_at
-                """)
+        return jdbc.sql(QueryUtil.get(QueryConstants.GET_TICKET_ATTACHMENTS))
             .param("t", ticketId).query(AttachmentDto.class).list();
     }
 

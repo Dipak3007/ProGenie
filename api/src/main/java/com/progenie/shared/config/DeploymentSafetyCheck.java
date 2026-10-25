@@ -85,6 +85,17 @@ public class DeploymentSafetyCheck implements ApplicationListener<ApplicationEnv
             out.add("PROGENIE_PAYMENT_GATEWAY: the fake gateway is not allowed in production");
         }
 
+        String storage = env.getProperty("progenie.storage.type", "local");
+        if (storage.equalsIgnoreCase("s3")) {
+            for (String key : List.of("endpoint", "bucket", "access-key", "secret-key")) {
+                if (blank(env, "progenie.storage.s3." + key)) {
+                    out.add("S3_" + key.replace('-', '_').toUpperCase(Locale.ROOT) + ": required when PROGENIE_STORAGE_TYPE=s3");
+                }
+            }
+        } else if (prod) {
+            out.add("PROGENIE_STORAGE_TYPE: local disk is not allowed in production (files are lost on restart); use s3");
+        }
+
         boolean usesMsg91 = false;
         for (String channel : List.of("sms", "whatsapp", "email")) {
             String provider = env.getProperty("progenie.messaging." + channel + "-provider", "mailpit");

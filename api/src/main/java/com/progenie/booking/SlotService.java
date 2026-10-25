@@ -11,11 +11,13 @@ import java.util.List;
 import java.util.UUID;
 
 import com.progenie.booking.SlotCalculator.Slot;
-import com.progenie.provider.GenieDirectory;
 import com.progenie.provider.GenieDirectory.Interval;
 import com.progenie.provider.GenieDirectory.Window;
+import com.progenie.provider.GenieDirectory;
 import com.progenie.shared.config.AppProperties;
+import com.progenie.shared.config.QueryConstants;
 import com.progenie.shared.error.ApiException;
+import com.progenie.shared.util.QueryUtil;
 import com.progenie.shared.util.Times;
 import org.springframework.jdbc.core.simple.JdbcClient;
 import org.springframework.stereotype.Service;
@@ -105,12 +107,7 @@ public class SlotService {
     private List<Interval> activeBookings(UUID genieId, Instant from, Instant to, UUID excludeBookingId) {
         record Row(OffsetDateTime slotStart, OffsetDateTime slotEnd) {
         }
-        return jdbc.sql("""
-                SELECT slot_start, slot_end FROM bookings
-                 WHERE genie_id = :g AND status IN ('REQUESTED', 'ACCEPTED', 'IN_PROGRESS')
-                   AND slot_start < :to AND slot_end > :from
-                   AND (CAST(:exclude AS uuid) IS NULL OR id <> :exclude)
-                """)
+        return jdbc.sql(QueryUtil.get(QueryConstants.GET_BOOKING_ACTIVE_SLOTS))
             .param("g", genieId)
             .param("from", Times.odt(from))
             .param("to", Times.odt(to))

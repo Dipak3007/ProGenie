@@ -5,6 +5,9 @@ import org.springframework.stereotype.Component;
 import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
 
+import com.progenie.shared.config.QueryConstants;
+import com.progenie.shared.util.QueryUtil;
+
 /**
  * Makes a scheduled job run on only one API replica at a time, using a PostgreSQL
  * transaction-level advisory lock (released automatically at commit/rollback).
@@ -22,7 +25,7 @@ public class JobLock {
     /** Must be called inside the job's transaction. Returns false if another replica holds the lock. */
     @Transactional(propagation = Propagation.MANDATORY)
     public boolean tryAcquire(String jobName) {
-        Boolean acquired = jdbc.sql("SELECT pg_try_advisory_xact_lock(hashtext(:name))")
+        Boolean acquired = jdbc.sql(QueryUtil.get(QueryConstants.LOCK_JOB_ADVISORY))
             .param("name", "progenie-job:" + jobName)
             .query(Boolean.class)
             .single();

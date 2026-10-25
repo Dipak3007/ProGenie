@@ -4,6 +4,7 @@ import { LucideBriefcase as Briefcase } from '@lucide/angular';
 
 import { API, query } from '../../core/api/api';
 import { BookingSummary, Page } from '../../core/api/models';
+import { liveReload } from '../../core/live/live-stream';
 import { BookingRow } from '../../shared/ui/booking-parts';
 import { EmptyState, PageHead, Pager, Skeleton, TabItem, Tabs } from '../../shared/ui/kit';
 import { GenieStore } from './genie-store';
@@ -52,6 +53,10 @@ export default class GenieJobsPage {
     { value: 'ALL', label: 'All' },
   ]);
   protected readonly list = httpResource<Page<BookingSummary>>(() => `${API}/genie/bookings${query({ scope: this.scope(), page: this.page$(), size: 10 })}`);
+
+  constructor() {
+    liveReload('booking', () => true, () => this.list.reload());
+  }
 
   protected setScope(scope: Scope): void {
     this.scope.set(scope);
