@@ -17,7 +17,7 @@ import { Consent, DeletionStatus, ExportJob, MessageCategory, NotificationPrefer
 import { SupportApi } from '../../core/api/support-api';
 import { AuthStore } from '../../core/auth/auth-store';
 import { ConfirmService, ToastService } from '../../core/ui/feedback';
-import { saveBlob } from '../../shared/format';
+import { downloadLink } from '../../shared/format';
 import { PageHead, Skeleton, Spinner } from '../../shared/ui/kit';
 import { StatusBadge } from '../../shared/ui/status-badge';
 
@@ -290,8 +290,8 @@ export default class SettingsPage implements OnInit {
   }
 
   protected download(job: ExportJob): void {
-    this.api.exportFile(job.id).subscribe({
-      next: (blob) => saveBlob(blob, `progenie-data-${(job.readyAt ?? job.requestedAt).slice(0, 10)}.zip`),
+    this.api.exportLink(job.id).subscribe({
+      next: (link) => downloadLink(link.url),
       error: (err) => this.toast.error(errorMessage(err, 'This export has expired. Please request a new one.')),
     });
   }

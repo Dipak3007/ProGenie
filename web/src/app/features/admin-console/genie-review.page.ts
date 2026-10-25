@@ -3,6 +3,7 @@ import { httpResource } from '@angular/common/http';
 import { CurrencyPipe, DatePipe, DecimalPipe, LowerCasePipe } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { RouterLink } from '@angular/router';
+import { firstValueFrom } from 'rxjs';
 import {
   LucideArrowLeft as ArrowLeft,
   LucideCheck as Check,
@@ -18,7 +19,7 @@ import { API, errorMessage } from '../../core/api/api';
 import { AdminApi } from '../../core/api/admin-api';
 import { AdminGenieDetail, Decision, GenieDocument, Wallet } from '../../core/api/models';
 import { ConfirmService, ToastService } from '../../core/ui/feedback';
-import { DAY_NAMES, hhmm, humanize, inr, statusMeta } from '../../shared/format';
+import { DAY_NAMES, hhmm, humanize, inr, openInNewTab, statusMeta } from '../../shared/format';
 import { Avatar } from '../../shared/ui/avatar';
 import { Dialog } from '../../shared/ui/dialog';
 import { EmptyState, Skeleton, Spinner } from '../../shared/ui/kit';
@@ -115,7 +116,7 @@ const DECISION_TEXT: Record<Decision, { label: string; tone: 'primary' | 'danger
               <p class="text-xs font-semibold uppercase tracking-wider text-muted">Bio</p>
               <p class="mt-1 text-sm">{{ p.bio || '—' }}</p>
             </div>
-            <div><p class="text-xs font-semibold uppercase tracking-wider text-muted">Experience</p><p class="mt-1 font-semibold">{{ p.experienceYears ?? 0 }} years</p></div>
+            <div><p class="text-xs font-semibold uppercase tracking-wider text-muted">Experience</p><p class="mt-1 font-semibold">{{ p.experienceYears }} years</p></div>
             <div><p class="text-xs font-semibold uppercase tracking-wider text-muted">Base</p><p class="mt-1 font-semibold">{{ p.baseArea ?? '—' }} · {{ p.serviceRadiusKm }} km radius</p></div>
             <div><p class="text-xs font-semibold uppercase tracking-wider text-muted">Payout UPI</p><p class="mt-1 font-semibold">{{ p.payoutUpiId ?? '—' }}</p></div>
             <div>
@@ -344,19 +345,9 @@ export default class AdminGenieReviewPage {
   }
 
   protected view(doc: GenieDocument): void {
-    const tab = window.open('', '_blank');
-    this.api.documentFile(doc.id).subscribe({
-      next: (blob) => {
-        const url = URL.createObjectURL(blob);
-        if (tab) tab.location.href = url;
-        else window.location.assign(url);
-        setTimeout(() => URL.revokeObjectURL(url), 60_000);
-      },
-      error: (err) => {
-        tab?.close();
-        this.toast.error(errorMessage(err, 'Could not open the file.'));
-      },
-    });
+    openInNewTab(firstValueFrom(this.api.documentLink(doc.id)).then((l) => l.url), (err) =>
+      this.toast.error(errorMessage(err, 'Could not open the file.')),
+    );
   }
 
   protected async clearFlag(): Promise<void> {

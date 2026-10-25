@@ -14,6 +14,7 @@ import { API, query } from '../../core/api/api';
 import { Category, SearchHit } from '../../core/api/models';
 import { CategoryVisual } from '../../shared/ui/category-visual';
 import { categoryIcon } from '../../shared/ui/icons';
+import { CityStore } from '../../core/city/city-store';
 
 @Component({
   selector: 'pg-services-page',
@@ -24,7 +25,7 @@ import { categoryIcon } from '../../shared/ui/icons';
       <img src="/images/hero/interiors.webp" alt="" class="absolute inset-0 size-full object-cover" />
       <div class="absolute inset-0 bg-linear-to-r from-navy via-navy/90 to-navy/50"></div>
       <div class="container-page relative py-14 sm:py-20">
-        <p class="text-sm font-semibold uppercase tracking-widest text-gold">Ahmedabad</p>
+        <p class="text-sm font-semibold uppercase tracking-widest text-gold">{{ city.city()?.name ?? 'India' }}</p>
         <h1 class="mt-2 text-4xl font-extrabold sm:text-6xl">All services</h1>
         <p class="mt-3 max-w-xl text-brand-mist">12 categories, 60 services, every one done by an admin-verified Genie.</p>
         <form class="mt-6 max-w-xl" role="search" (submit)="$event.preventDefault(); applySearch()">
@@ -117,6 +118,7 @@ export default class ServicesPage {
   /** ?q= from the URL (home page search or this page's box). */
   readonly q = input<string | undefined>(undefined);
   private readonly router = inject(Router);
+  protected readonly city = inject(CityStore);
   protected readonly term = linkedSignal(() => this.q() ?? '');
 
   protected readonly categories = httpResource<Category[]>(() => `${API}/categories`);

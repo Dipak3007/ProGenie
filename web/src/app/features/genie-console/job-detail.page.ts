@@ -19,6 +19,7 @@ import { GenieApi } from '../../core/api/genie-api';
 import { BookingDetail } from '../../core/api/models';
 import { ReportDialog } from '../support/report-dialog';
 import { ConfirmService, ToastService } from '../../core/ui/feedback';
+import { liveReload } from '../../core/live/live-stream';
 import { inr, mapsLink, telLink } from '../../shared/format';
 import { Avatar } from '../../shared/ui/avatar';
 import { PriceSummary, Timeline } from '../../shared/ui/booking-parts';
@@ -230,6 +231,10 @@ export default class JobDetailPage {
   protected readonly reportOpen = signal(false);
 
   /** Accepted, and the slot ended less than 7 days ago. */
+  constructor() {
+    liveReload('booking', (e) => e.bookingId === this.id(), () => this.detail.reload());
+  }
+
   protected canReport(b: BookingDetail): boolean {
     return !!b.acceptedAt && Date.now() <= new Date(b.slotEnd).getTime() + 7 * 24 * 3600 * 1000;
   }

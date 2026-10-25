@@ -6,14 +6,15 @@ import { LucideDynamicIcon, LucidePencil as Pencil, LucidePlus as Plus } from '@
 
 import { API, errorMessage, query } from '../../core/api/api';
 import { AdminApi } from '../../core/api/admin-api';
-import { AdminCategory, AdminService, CityPricing } from '../../core/api/models';
+import { AdminCategory, AdminService } from '../../core/api/models';
+import { AdminCities } from './cities-panel';
 import { ToastService } from '../../core/ui/feedback';
 import { Dialog } from '../../shared/ui/dialog';
 import { PageHead, Spinner, TabItem, Tabs } from '../../shared/ui/kit';
 import { categoryIcon } from '../../shared/ui/icons';
 import { StatusBadge } from '../../shared/ui/status-badge';
 
-type Tab = 'services' | 'categories' | 'pricing';
+type Tab = 'services' | 'categories' | 'cities';
 
 function slugify(text: string): string {
   return text
@@ -26,10 +27,10 @@ function slugify(text: string): string {
 
 @Component({
   selector: 'pg-admin-catalog-page',
-  imports: [CurrencyPipe, FormsModule, LucideDynamicIcon, Dialog, PageHead, Spinner, StatusBadge, Tabs],
+  imports: [AdminCities, CurrencyPipe, FormsModule, LucideDynamicIcon, Dialog, PageHead, Spinner, StatusBadge, Tabs],
   changeDetection: ChangeDetectionStrategy.OnPush,
   template: `
-    <pg-page-head title="Catalog & pricing" subtitle="Categories and services customers can book, and each city's commission and travel fees.">
+    <pg-page-head title="Catalog & pricing" subtitle="Categories and services customers can book, and the cities we serve: PIN codes, go-live, commission and travel fees.">
       @if (tab() === 'services') {
         <button type="button" class="btn-primary" (click)="editService(null)"><svg [lucideIcon]="Plus" [size]="18" aria-hidden="true"></svg> New service</button>
       } @else if (tab() === 'categories') {
@@ -101,45 +102,8 @@ function slugify(text: string): string {
           }
         </div>
       }
-      @case ('pricing') {
-        <div class="mt-5 space-y-4">
-          @for (c of cities.value() ?? []; track c.cityId) {
-            <form class="card p-5" (ngSubmit)="savePricing(c)">
-              <div class="flex flex-wrap items-center justify-between gap-2">
-                <h2 class="text-lg font-bold">{{ c.name }}, {{ c.state }}</h2>
-                <pg-status [status]="c.active ? 'ACTIVE' : 'INACTIVE'" [label]="c.active ? 'Live' : 'Coming soon'" [tone]="c.active ? 'success' : 'neutral'" />
-              </div>
-              <div class="mt-4 grid gap-4 sm:grid-cols-2 lg:grid-cols-5">
-                <div>
-                  <label class="label" [for]="'cr-' + c.cityId">Commission (%)</label>
-                  <input [id]="'cr-' + c.cityId" [name]="'cr-' + c.cityId" type="number" step="0.5" min="0" max="50" class="field" [ngModel]="percent(c)" (ngModelChange)="c.commissionRate = +$event / 100" />
-                </div>
-                <div>
-                  <label class="label" [for]="'fk-' + c.cityId">Free travel up to (km)</label>
-                  <input [id]="'fk-' + c.cityId" [name]="'fk-' + c.cityId" type="number" step="0.5" min="0" class="field" [(ngModel)]="c.travelFreeKm" />
-                </div>
-                <div>
-                  <label class="label" [for]="'bf-' + c.cityId">Base travel fee (₹)</label>
-                  <input [id]="'bf-' + c.cityId" [name]="'bf-' + c.cityId" type="number" min="0" class="field" [(ngModel)]="c.travelBaseFee" />
-                </div>
-                <div>
-                  <label class="label" [for]="'pk-' + c.cityId">Per extra km (₹)</label>
-                  <input [id]="'pk-' + c.cityId" [name]="'pk-' + c.cityId" type="number" min="0" class="field" [(ngModel)]="c.travelPerKm" />
-                </div>
-                <div>
-                  <label class="label" [for]="'cap-' + c.cityId">Travel fee cap (₹)</label>
-                  <input [id]="'cap-' + c.cityId" [name]="'cap-' + c.cityId" type="number" min="0" class="field" [(ngModel)]="c.travelFeeCap" />
-                </div>
-              </div>
-              <div class="mt-4 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-                <p class="text-sm text-muted">
-                  Example, 6 km away: travel {{ example(c) | currency: 'INR' : 'symbol' : '1.0-0' }} · commission on a ₹500 job {{ c.commissionRate * 500 | currency: 'INR' : 'symbol' : '1.0-2' }}
-                </p>
-                <button type="submit" class="btn-primary" [disabled]="savingCity() === c.cityId">Save {{ c.name }}</button>
-              </div>
-            </form>
-          }
-        </div>
+      @case ('cities') {
+        <pg-admin-cities />
       }
     }
 
@@ -235,16 +199,14 @@ export default class AdminCatalogPage {
   protected readonly tabs: TabItem<Tab>[] = [
     { value: 'services', label: 'Services' },
     { value: 'categories', label: 'Categories' },
-    { value: 'pricing', label: 'City pricing' },
+    { value: 'cities', label: 'Cities & pricing' },
   ];
 
   protected readonly categoryFilter = signal<number | null>(null);
   protected readonly categories = httpResource<AdminCategory[]>(() => `${API}/admin/categories`);
   protected readonly services = httpResource<AdminService[]>(() => `${API}/admin/services${query({ categoryId: this.categoryFilter() })}`);
-  protected readonly cities = httpResource<CityPricing[]>(() => (this.tab() === 'pricing' ? `${API}/admin/cities` : undefined));
 
   protected readonly saving = signal(false);
-  protected readonly savingCity = signal<number | null>(null);
   protected readonly serviceOpen = signal(false);
   protected readonly categoryOpen = signal(false);
   protected serviceForm = this.blankService();
@@ -327,40 +289,6 @@ export default class AdminCatalogPage {
         error: (err) => {
           this.saving.set(false);
           this.toast.error(errorMessage(err));
-        },
-      });
-  }
-
-  /** The API stores the rate as a fraction (0.05); admins edit a percentage (5). */
-  protected percent(c: CityPricing): number {
-    return Math.round(Number(c.commissionRate) * 10000) / 100;
-  }
-
-  protected example(c: CityPricing): number {
-    const d = 6;
-    if (d <= Number(c.travelFreeKm)) return 0;
-    return Math.min(Number(c.travelBaseFee) + Number(c.travelPerKm) * (d - Number(c.travelFreeKm)), Number(c.travelFeeCap));
-  }
-
-  protected savePricing(c: CityPricing): void {
-    this.savingCity.set(c.cityId);
-    this.api
-      .savePricing(c.cityId, {
-        commissionRate: Number(c.commissionRate),
-        travelFreeKm: Number(c.travelFreeKm),
-        travelBaseFee: Number(c.travelBaseFee),
-        travelPerKm: Number(c.travelPerKm),
-        travelFeeCap: Number(c.travelFeeCap),
-      })
-      .subscribe({
-        next: () => {
-          this.savingCity.set(null);
-          this.toast.success(`${c.name} pricing saved. New quotes use it immediately.`);
-        },
-        error: (err) => {
-          this.savingCity.set(null);
-          this.toast.error(errorMessage(err));
-          this.cities.reload();
         },
       });
   }

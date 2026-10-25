@@ -19,6 +19,7 @@ import {
 
 import { API } from '../../core/api/api';
 import { ContactMessage, OutboundMessage, Page, QueueItem, TicketSummary } from '../../core/api/models';
+import { liveReload } from '../../core/live/live-stream';
 import { ConsoleShell, NavItem } from '../../shared/ui/kit';
 
 /** Badge counts for the admin sidebar (pending verifications, new messages, open complaints, failed messages). */
@@ -81,5 +82,7 @@ export default class AdminConsolePage {
 
   constructor() {
     this.counts.refresh();
+    liveReload('ticket', () => true, () => this.counts.refresh());
+    liveReload('notification', (e) => e.type === 'GENIE_SUBMITTED', () => this.counts.refresh());
   }
 }

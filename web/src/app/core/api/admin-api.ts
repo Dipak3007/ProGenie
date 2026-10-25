@@ -6,23 +6,27 @@ import { API } from './api';
 import { LEGAL_SLUG } from './account-api';
 import {
   AdminCategory,
+  AdminCity,
   AdminGenieDetail,
+  AdminPincode,
   AdminService,
   BookingDetail,
   CategoryRequest,
-  CityPricing,
+  CityRequest,
   ContactMessage,
   Decision,
+  FileLink,
   LegalDocument,
   LegalDraftRequest,
   LegalKind,
   Payout,
+  PincodeRequest,
+  PricingRequest,
   Refund,
   RefundRequest,
   ResolveTicketRequest,
-  TicketDetail,
-  PricingRequest,
   ServiceRequest,
+  TicketDetail,
   Wallet,
 } from './models';
 
@@ -45,8 +49,8 @@ export class AdminApi {
     return this.http.post<void>(`${this.base}/genie-documents/${docId}/review`, { approve, note });
   }
 
-  documentFile(docId: string): Observable<Blob> {
-    return this.http.get(`${this.base}/genie-documents/${docId}/file`, { responseType: 'blob' });
+  documentLink(docId: string): Observable<FileLink> {
+    return this.http.get<FileLink>(`${this.base}/genie-documents/${docId}/link`);
   }
 
   settle(genieId: string, amount: number, reference: string): Observable<Wallet> {
@@ -80,8 +84,31 @@ export class AdminApi {
       : this.http.put<AdminService>(`${this.base}/services/${id}`, body);
   }
 
-  savePricing(cityId: number, body: PricingRequest): Observable<CityPricing> {
-    return this.http.put<CityPricing>(`${this.base}/cities/${cityId}/pricing`, body);
+  savePricing(cityId: number, body: PricingRequest): Observable<AdminCity> {
+    return this.http.put<AdminCity>(`${this.base}/cities/${cityId}/pricing`, body);
+  }
+
+  // --- cities: opening one is data only (create → PIN codes → pricing → switch on)
+  saveCity(id: number | null, body: CityRequest): Observable<AdminCity> {
+    return id === null
+      ? this.http.post<AdminCity>(`${this.base}/cities`, body)
+      : this.http.put<AdminCity>(`${this.base}/cities/${id}`, body);
+  }
+
+  setCityActive(id: number, active: boolean): Observable<AdminCity> {
+    return this.http.put<AdminCity>(`${this.base}/cities/${id}/status`, { active });
+  }
+
+  pincodes(cityId: number): Observable<AdminPincode[]> {
+    return this.http.get<AdminPincode[]>(`${this.base}/cities/${cityId}/pincodes`);
+  }
+
+  savePincode(cityId: number, pincode: string, body: PincodeRequest): Observable<AdminPincode> {
+    return this.http.put<AdminPincode>(`${this.base}/cities/${cityId}/pincodes/${encodeURIComponent(pincode)}`, body);
+  }
+
+  deletePincode(cityId: number, pincode: string): Observable<void> {
+    return this.http.delete<void>(`${this.base}/cities/${cityId}/pincodes/${encodeURIComponent(pincode)}`);
   }
 
   // --- finance

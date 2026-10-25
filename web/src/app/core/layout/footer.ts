@@ -1,6 +1,7 @@
-import { ChangeDetectionStrategy, Component } from '@angular/core';
+import { ChangeDetectionStrategy, Component, inject } from '@angular/core';
 import { RouterLink } from '@angular/router';
 
+import { CityStore } from '../city/city-store';
 import { Logo } from '../../shared/ui/logo';
 
 @Component({
@@ -40,7 +41,11 @@ import { Logo } from '../../shared/ui/logo';
         </div>
         <div>
           <h2 class="font-sans text-sm font-semibold uppercase tracking-widest text-white">Now serving</h2>
-          <p class="mt-4 text-sm">Ahmedabad, Gujarat</p>
+          <ul class="mt-4 space-y-2 text-sm">
+            @for (c of cities.cities(); track c.id) {
+              <li>{{ c.name }}, {{ c.state }}</li>
+            }
+          </ul>
         </div>
       </div>
       <div class="border-t border-white/10">
@@ -57,4 +62,5 @@ import { Logo } from '../../shared/ui/logo';
 })
 export class Footer {
   protected readonly year = new Date().getFullYear();
+  protected readonly cities = inject(CityStore);
 }

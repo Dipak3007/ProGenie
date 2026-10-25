@@ -3,7 +3,13 @@ import { Injectable, inject } from '@angular/core';
 import { Observable } from 'rxjs';
 
 import { API } from './api';
-import { RaiseTicketRequest, Role, TicketAttachment, TicketDetail } from './models';
+import {
+  FileLink,
+  RaiseTicketRequest,
+  Role,
+  TicketAttachment,
+  TicketDetail,
+} from './models';
 
 /** "Report a problem" and privacy requests, for customers, Genies and (for photos) admins. */
 @Injectable({ providedIn: 'root' })
@@ -33,8 +39,8 @@ export class SupportApi {
     return this.http.post<TicketAttachment>(`${API}/tickets/${id}/attachments`, form);
   }
 
-  photo(id: string, attachmentId: string): Observable<Blob> {
-    return this.http.get(`${API}/tickets/${id}/attachments/${attachmentId}`, { responseType: 'blob' });
+  photoLink(id: string, attachmentId: string): Observable<FileLink> {
+    return this.http.get<FileLink>(`${API}/tickets/${id}/attachments/${attachmentId}/link`);
   }
 
   accept(id: string): Observable<TicketDetail> {
@@ -45,7 +51,7 @@ export class SupportApi {
     return this.http.post<TicketDetail>(`${API}/tickets/${id}/reopen`, { body });
   }
 
-  receiptPdf(id: string): Observable<Blob> {
-    return this.http.get(`${API}/receipts/${id}/pdf`, { responseType: 'blob' });
+  receiptLink(id: string): Observable<FileLink> {
+    return this.http.get<FileLink>(`${API}/receipts/${id}/link`);
   }
 }

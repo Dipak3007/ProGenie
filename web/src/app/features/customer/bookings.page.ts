@@ -5,6 +5,7 @@ import { LucideCalendarDays as CalendarDays } from '@lucide/angular';
 
 import { API, query } from '../../core/api/api';
 import { BookingSummary, Page } from '../../core/api/models';
+import { liveReload } from '../../core/live/live-stream';
 import { BookingRow } from '../../shared/ui/booking-parts';
 import { EmptyState, PageHead, Pager, Skeleton, TabItem, Tabs } from '../../shared/ui/kit';
 
@@ -57,6 +58,10 @@ export default class BookingsPage {
   ];
 
   protected readonly list = httpResource<Page<BookingSummary>>(() => `${API}/bookings${query({ scope: this.scope(), page: this.page$(), size: 10 })}`);
+
+  constructor() {
+    liveReload('booking', () => true, () => this.list.reload());
+  }
 
   protected setScope(scope: Scope): void {
     this.scope.set(scope);

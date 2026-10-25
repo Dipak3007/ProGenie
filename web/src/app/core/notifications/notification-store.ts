@@ -1,23 +1,26 @@
 import { HttpClient } from '@angular/common/http';
 import { DestroyRef, Injectable, effect, inject, signal } from '@angular/core';
+import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { Router } from '@angular/router';
 import { Observable, tap } from 'rxjs';
 
 import { API } from '../api/api';
 import { AppNotification, Page } from '../api/models';
 import { AuthStore } from '../auth/auth-store';
+import { LiveStream } from '../live/live-stream';
 
 const POLL_MS = 45_000;
 
 /**
- * Unread count for the bell, polled while someone is logged in (and refreshed when the tab regains focus).
- * A push channel (SSE/WebSocket) can replace polling later without touching the components.
+ * Unread count and latest notifications for the bell. Updated by the live stream (a "notification" push);
+ * polled every 45 s only while the stream is down, and refreshed when the tab regains focus.
  */
 @Injectable({ providedIn: 'root' })
 export class NotificationStore {
   private readonly http = inject(HttpClient);
   private readonly auth = inject(AuthStore);
   private readonly router = inject(Router);
+  private readonly live = inject(LiveStream);
 
   readonly unread = signal(0);
   readonly latest = signal<AppNotification[]>([]);
@@ -31,10 +34,24 @@ export class NotificationStore {
       this.stop();
     });
 
+    this.live
+      .on('notification')
+      .pipe(takeUntilDestroyed())
+      .subscribe(() => {
+        this.refreshCount();
+        if (this.latest().length) this.loadLatest();
+      });
+    // Catch up on anything missed while the stream was down
+    effect(() => {
+      if (this.live.connected()) this.refreshCount();
+    });
+
     effect(() => {
       if (this.auth.isLoggedIn()) {
         this.refreshCount();
-        this.timer ??= setInterval(() => this.refreshCount(), POLL_MS);
+        this.timer ??= setInterval(() => {
+          if (!this.live.connected()) this.refreshCount();
+        }, POLL_MS);
       } else {
         this.stop();
         this.unread.set(0);

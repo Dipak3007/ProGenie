@@ -22,6 +22,7 @@ import { Category, GenieCard as GenieCardModel } from '../../core/api/models';
 import { CategoryVisual } from '../../shared/ui/category-visual';
 import { GenieCard } from '../../shared/ui/genie-card';
 import { categoryIcon } from '../../shared/ui/icons';
+import { CityStore } from '../../core/city/city-store';
 import { ContactSection } from './contact-section';
 
 @Component({
@@ -34,7 +35,7 @@ import { ContactSection } from './contact-section';
       <div class="container-page grid items-center gap-12 py-14 sm:py-20 lg:grid-cols-[1.05fr_1fr] lg:gap-10 lg:py-12 lg:short:py-8 lg:tiny:py-6">
         <div>
           <span class="chip bg-white/10 text-gold">
-            <svg [lucideIcon]="MapPin" [size]="14" aria-hidden="true"></svg> Now live in Ahmedabad
+            <svg [lucideIcon]="MapPin" [size]="14" aria-hidden="true"></svg> Now live in {{ city.liveNames() || 'India' }}
           </span>
           <h1 class="mt-5 text-[2.6rem] font-extrabold leading-[1.02] sm:text-6xl lg:text-7xl lg:short:mt-4 lg:short:text-6xl lg:tiny:text-[3.25rem]">
             Your wish,<br />
@@ -280,9 +281,10 @@ import { ContactSection } from './contact-section';
 })
 export default class HomePage {
   private readonly router = inject(Router);
+  protected readonly city = inject(CityStore);
 
   protected readonly categories = httpResource<Category[]>(() => `${API}/categories`);
-  protected readonly topGenies = httpResource<GenieCardModel[]>(() => geniesUrl(undefined, 'RATING', 6));
+  protected readonly topGenies = httpResource<GenieCardModel[]>(() => (this.city.loading() ? undefined : geniesUrl(undefined, 'RATING', 6, null, this.city.slug())));
 
   protected readonly query = signal('');
   protected readonly matches = computed(() => {

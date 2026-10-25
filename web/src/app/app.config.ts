@@ -20,7 +20,7 @@ export const appConfig: ApplicationConfig = {
       withInMemoryScrolling({ scrollPositionRestoration: 'top', anchorScrolling: 'enabled' }),
     ),
     provideHttpClient(withFetch(), withInterceptors([authInterceptor])),
-    // Show every date and time in India time (trial city: Ahmedabad), whatever the device's time zone.
+    // Show every date and time in India time (ProGenie serves India only), whatever the device's time zone.
     { provide: DATE_PIPE_DEFAULT_OPTIONS, useValue: { timezone: '+0530' } },
     // Restore the session (refresh cookie → access token) before the first route is resolved.
     provideAppInitializer(() => inject(AuthStore).restoreSession()),

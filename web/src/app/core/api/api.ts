@@ -63,9 +63,10 @@ export class ApiClient {
   }
 }
 
-export function geniesUrl(category?: string, sort: GenieSort = 'RATING', limit = 12, serviceId?: number | null): string {
+/** Genie list URL. city is a slug (e.g. 'ahmedabad'): only Genies working there are listed. */
+export function geniesUrl(category?: string, sort: GenieSort = 'RATING', limit = 12, serviceId?: number | null, city?: string | null): string {
   const params = new HttpParams({
-    fromObject: { sort, limit, ...(category ? { category } : {}), ...(serviceId ? { serviceId } : {}) },
+    fromObject: { sort, limit, ...(city ? { city } : {}), ...(category ? { category } : {}), ...(serviceId ? { serviceId } : {}) },
   });
   return `${API}/genies?${params.toString()}`;
 }

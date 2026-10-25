@@ -7,6 +7,7 @@ import { LucideChevronRight as ChevronRight, LucideDynamicIcon, LucideLifeBuoy a
 import { API, query } from '../../core/api/api';
 import { Page, TicketSummary } from '../../core/api/models';
 import { AuthStore } from '../../core/auth/auth-store';
+import { liveReload } from '../../core/live/live-stream';
 import { TICKET_CATEGORY_LABEL } from '../../shared/format';
 import { EmptyState, PageHead, Pager, Skeleton, TabItem, Tabs } from '../../shared/ui/kit';
 import { StatusBadge } from '../../shared/ui/status-badge';
@@ -59,6 +60,10 @@ export default class TicketsPage {
   protected readonly page = signal(0);
   protected readonly base = computed(() => (this.auth.role() === 'GENIE' ? '/genie/tickets' : '/account/tickets'));
   protected readonly list = httpResource<Page<TicketSummary>>(() => `${API}/tickets${query({ status: this.status(), page: this.page(), size: 20 })}`);
+
+  constructor() {
+    liveReload('ticket', () => true, () => this.list.reload());
+  }
 
   protected setStatus(value: string): void {
     this.status.set(value);

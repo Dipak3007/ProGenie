@@ -7,6 +7,7 @@ import { LucideAlarmClock as AlarmClock, LucideDynamicIcon, LucideLifeBuoy as Li
 
 import { API, query } from '../../core/api/api';
 import { Page, TicketSummary } from '../../core/api/models';
+import { liveReload } from '../../core/live/live-stream';
 import { TICKET_CATEGORY_LABEL } from '../../shared/format';
 import { EmptyState, PageHead, Pager, Skeleton, TabItem, Tabs } from '../../shared/ui/kit';
 import { StatusBadge } from '../../shared/ui/status-badge';
@@ -113,6 +114,10 @@ export default class AdminTicketsPage {
       size: 20,
     })}`;
   });
+
+  constructor() {
+    liveReload('ticket', () => true, () => this.list.reload());
+  }
 
   protected setTab(value: string): void {
     this.tab.set(value);
