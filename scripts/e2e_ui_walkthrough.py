@@ -25,6 +25,7 @@ os.makedirs(OUT, exist_ok=True)
 PW = "ProGenie@123"
 problems = []
 checks = 0
+INFLIGHT = {}
 
 
 def ok(cond, msg):
@@ -55,6 +56,28 @@ def watch(page, label):
             problems.append(f"[{label}] console error: {m.text[:200]}")
     page.on("console", on_console)
     page.on("pageerror", lambda e: problems.append(f"[{label}] page error: {e}"))
+    # Requests still running, minus the live-update stream (it stays open for the whole visit)
+    inflight = set()
+    INFLIGHT[id(page)] = inflight
+    page.on("request", lambda r: "/api/v1/stream" not in r.url and inflight.add(r))
+    page.on("requestfinished", lambda r: inflight.discard(r))
+    page.on("requestfailed", lambda r: inflight.discard(r))
+
+
+def settle(page, quiet_ms=500, timeout_ms=20000):
+    """Like wait_for_load_state("networkidle"), which never fires while the live stream is open."""
+    page.wait_for_load_state("load")
+    inflight = INFLIGHT.get(id(page), set())
+    end = time.time() + timeout_ms / 1000
+    calm_since = None
+    while time.time() < end:
+        if not inflight:
+            calm_since = calm_since or time.time()
+            if (time.time() - calm_since) * 1000 >= quiet_ms:
+                return
+        else:
+            calm_since = None
+        page.wait_for_timeout(100)
 
 
 def overflow(page, label):
@@ -97,7 +120,7 @@ def download(page, click):
 
 
 def login(page, who):
-    page.goto(BASE + "/login"); page.wait_for_load_state("networkidle")
+    page.goto(BASE + "/login"); settle(page)
     for attempt in range(3):
         page.fill("#identifier", who)
         page.locator("input[type=password]").fill(PW)
@@ -108,8 +131,8 @@ def login(page, who):
         except Exception:
             if attempt == 2:
                 raise
-            page.reload(); page.wait_for_load_state("networkidle")
-    page.wait_for_load_state("networkidle")
+            page.reload(); settle(page)
+    settle(page)
 
 
 import atexit
@@ -133,18 +156,18 @@ with sync_playwright() as p:
         cctx = browser.new_context(**phone)
         cctx.set_default_timeout(12000); cp = cctx.new_page(); watch(cp, "customer"); PAGES.append(cp)
         login(cp, "customer@example.com")
-        cp.goto(BASE + "/services/electrician"); cp.wait_for_load_state("networkidle")
+        cp.goto(BASE + "/services/electrician"); settle(cp)
         cp.get_by_role("button", name=re.compile("Fan installation")).first.click()
         cp.wait_for_timeout(600)
         ok(has(cp, "Offering"), "category page filters Genies by service")
-        cp.goto(BASE + "/genies/1af855e6-31a8-5caa-bffa-6f864b9644ff"); cp.wait_for_load_state("networkidle")
+        cp.goto(BASE + "/genies/1af855e6-31a8-5caa-bffa-6f864b9644ff"); settle(cp)
         cp.get_by_role("button", name=re.compile("Fan installation")).click()
         cp.wait_for_selector("h1 button[aria-pressed]")
         if cp.locator("h1 button[aria-label='Save to favourites']").count():
             cp.locator("h1 button[aria-label='Save to favourites']").click()
         cp.wait_for_timeout(500)
         cp.get_by_role("button", name="Choose a time").click()
-        cp.wait_for_url(re.compile(r"/book/")); cp.wait_for_load_state("networkidle")
+        cp.wait_for_url(re.compile(r"/book/")); settle(cp)
         cp.wait_for_selector("[role=option]:not([disabled])")
         shot(cp, "phone-checkout-top", full=False)
         from datetime import datetime, timezone, timedelta
@@ -165,25 +188,36 @@ with sync_playwright() as p:
         ok("Total" in body and "Travel" in body, "live quote shows travel fee and total")
         overflow(cp, "phone checkout")
         shot(cp, "phone-checkout-full")
+
+        # The Genie is already looking at their dashboard when the request is sent (2B exit gate: live updates)
+        print("GENIE waits on the dashboard (live updates)")
+        gctx = browser.new_context(**desktop)
+        gp = gctx.new_page(); watch(gp, "genie"); PAGES.append(gp)
+        login(gp, "genie@example.com")
+        gp.wait_for_url(re.compile(r"/genie$")); settle(gp)
+        gp.wait_for_timeout(1500)  # the live stream connects after login
+
         cp.locator("div.sticky button.btn-gold").click()
         cp.wait_for_url(re.compile(r"/account/bookings/[0-9a-f-]{36}"), timeout=15000)
         booking_url = cp.url
         booking_id = booking_url.rsplit("/", 1)[1]
-        cp.wait_for_load_state("networkidle")
+        settle(cp)
         ok(has(cp, "Waiting for"), "new booking shows 'Waiting for … to accept'")
         shot(cp, "phone-booking-requested")
         overflow(cp, "phone booking detail")
 
         # ------------------------------------------------------------ Genie accepts on desktop
         print("GENIE (desktop)")
-        gctx = browser.new_context(**desktop)
-        gp = gctx.new_page(); watch(gp, "genie"); PAGES.append(gp)
-        login(gp, "genie@example.com")
-        gp.wait_for_url(re.compile(r"/genie$")); gp.wait_for_load_state("networkidle")
+        try:
+            gp.wait_for_selector(f"a[href$='/genie/bookings/{booking_id}']", timeout=10000)
+            appeared = True
+        except Exception:
+            appeared = False
+        ok(appeared, "the new request appears on the Genie's open dashboard without a refresh (live stream)")
         ok(has(gp, "New requests"), "Genie dashboard lists new requests")
         ok(gp.locator("button[aria-label*='unread']").count() == 1, "bell shows unread notification count")
         shot(gp, "desktop-genie-dashboard")
-        gp.goto(BASE + f"/genie/bookings/{booking_id}"); gp.wait_for_load_state("networkidle")
+        gp.goto(BASE + f"/genie/bookings/{booking_id}"); settle(gp)
         ok(has(gp, "full address and phone number appear once you accept"), "address is masked before accepting")
         ok(gp.locator("pg-console-shell a[aria-current=page]").first.inner_text().strip().startswith("Jobs"), "sidebar highlights Jobs on a job page")
         gp.get_by_role("button", name="Accept job").click()
@@ -193,8 +227,7 @@ with sync_playwright() as p:
 
         # ------------------------------------------------------------ customer start code
         print("CUSTOMER start code")
-        cp.reload(); cp.wait_for_load_state("networkidle")
-        ok(has(cp, "Confirmed"), "customer sees Confirmed")
+        ok(has(cp, "Confirmed", timeout=10000), "customer's open booking page turns Confirmed without a refresh (live stream)")
         cp.get_by_role("button", name="Show start code").click()
         cp.wait_for_timeout(800)
         cp.wait_for_selector("p[aria-live=polite].font-display")
@@ -219,7 +252,7 @@ with sync_playwright() as p:
 
         # ------------------------------------------------------------ customer pays online + reviews
         print("CUSTOMER pay + review")
-        cp.reload(); cp.wait_for_load_state("networkidle")
+        cp.reload(); settle(cp)
         ok(has(cp, "Payment of"), "customer is asked to pay after completion")
         cp.get_by_role("button", name=re.compile(r"^Pay ₹")).first.click()
         cp.wait_for_selector("text=Test checkout")
@@ -235,7 +268,7 @@ with sync_playwright() as p:
         shot(cp, "phone-booking-completed")
 
         print("CUSTOMER receipt + report a problem")
-        cp.reload(); cp.wait_for_load_state("networkidle")
+        cp.reload(); settle(cp)
         ok(has(cp, "Receipts"), "paid booking lists a receipt")
         name, size = download(cp, lambda: cp.locator("button[aria-label^='Download ']").first.click())
         ok(name.endswith(".pdf") and size > 1000, f"receipt PDF downloads ({name}, {size} bytes)")
@@ -245,7 +278,7 @@ with sync_playwright() as p:
         cp.fill("#rp-desc", "The second fan wobbles and makes a clicking sound at speed 5. Please send someone to fix it or refund part of it.")
         shot(cp, "phone-report-dialog", full=False)
         cp.locator("dialog[open] button[type=submit]").click()
-        cp.wait_for_url(re.compile(r"/account/tickets/[0-9a-f-]{36}"), timeout=15000); cp.wait_for_load_state("networkidle")
+        cp.wait_for_url(re.compile(r"/account/tickets/[0-9a-f-]{36}"), timeout=15000); settle(cp)
         ticket_url = cp.url
         ticket_id = ticket_url.rsplit("/", 1)[1]
         ok(has(cp, "One fan wobbles"), "report opens as a ticket thread")
@@ -255,40 +288,71 @@ with sync_playwright() as p:
         ok(cp.locator("pg-ticket-thread img").count() == 1, "photo attached to the report and shown")
         overflow(cp, "phone ticket")
         shot(cp, "phone-ticket-open")
-        cp.goto(BASE + "/account/bookings"); cp.wait_for_load_state("networkidle")
+        cp.goto(BASE + "/account/bookings"); settle(cp)
         cp.get_by_role("tab", name="Past").click(); cp.wait_for_timeout(600)
         ok(has(cp, "Fan installation"), "booking listed under Past")
         shot(cp, "phone-bookings-list")
         overflow(cp, "phone bookings list")
-        cp.goto(BASE + "/account/favourites"); cp.wait_for_load_state("networkidle")
+        cp.goto(BASE + "/account/favourites"); settle(cp)
         ok(has(cp, "Ravi Patel"), "favourite Genie saved")
-        cp.goto(BASE + "/account/addresses"); cp.wait_for_load_state("networkidle")
+        print("CUSTOMER city switcher, PIN code check and a PIN-code-driven address")
+        cp.get_by_role("button", name="Open menu").click()
+        menu = cp.locator("#mobile-menu")
+        try:
+            menu.get_by_text("Ahmedabad, Gujarat").first.wait_for(timeout=8000)   # the list renders after the menu opens
+        except Exception:
+            pass
+        ok(menu.get_by_text("Ahmedabad, Gujarat").count() >= 1, "phone menu lists the live cities")
+        menu.locator("input[name=pincode]").fill("400001"); menu.get_by_role("button", name="Check").click()
+        ok(has(cp, "Not in 400001 yet"), "header PIN code check: 400001 is not served")
+        menu.locator("input[name=pincode]").fill("380009"); menu.get_by_role("button", name="Check").click()
+        ok(has(cp, "We serve 380009"), "header PIN code check: 380009 is served")
+        shot(cp, "phone-city-switcher", full=False)
+        cp.get_by_role("button", name="Close menu").click()
+        cp.goto(BASE + "/account/addresses"); settle(cp)
         cp.get_by_role("button", name="Add address").first.click()
         cp.wait_for_selector(".leaflet-container")
+        cp.fill("#a-pin", "400001")
+        ok(has(cp, "We don't serve 400001 yet"), "address form refuses an unserved PIN code")
+        ok(cp.get_by_role("button", name="Save address").is_disabled(), "cannot save with an unserved PIN code")
+        cp.fill("#a-pin", "380054")
+        ok(has(cp, "Bodakdev, Ahmedabad"), "the PIN code tells the city and area")
+        ok(cp.input_value("#a-area") == "Bodakdev", "area filled in from the PIN code")
+        ok(has(cp, "Pin moved to 380054"), "a typed PIN code moves the map pin there")
+        ok(cp.locator(".leaflet-marker-icon").count() == 1, "the pin is on the map before tapping it")
+        cp.context.grant_permissions(["geolocation"], origin=BASE)
+        cp.context.set_geolocation({"latitude": 23.0291, "longitude": 72.5192})
+        cp.get_by_role("button", name="Use my location").click()
+        ok(has(cp, "PIN code 380015 filled in from the map"), "moving the pin fills in its PIN code")
+        ok(cp.input_value("#a-pin") == "380015", "PIN code field updated from the pin")
+        ok(cp.input_value("#a-area") == "Satellite", "area follows the new PIN code (it was filled in by us)")
+        cp.fill("#a-pin", "380054")
+        ok(has(cp, "Pin moved to 380054"), "typing a PIN code again moves the pin back")
         cp.locator(".leaflet-container").click(position={"x": 150, "y": 120})
-        cp.fill("#a-line1", "12, Sunrise Park"); cp.fill("#a-area", "Bodakdev"); cp.fill("#a-pin", "380054")
+        ok(has(cp, "The pin is in 380054"), "a small adjustment keeps the PIN code")
+        cp.fill("#a-line1", "12, Sunrise Park")
         cp.get_by_role("button", name="Work", exact=True).click()
         shot(cp, "phone-address-form", full=False)
         cp.get_by_role("button", name="Save address").click(); cp.wait_for_timeout(1200)
         ok(has(cp, "Sunrise Park"), "new address saved with a map pin")
-        cp.goto(BASE + "/notifications"); cp.wait_for_load_state("networkidle")
+        cp.goto(BASE + "/notifications"); settle(cp)
         ok(has(cp, "accepted"), "notifications page lists booking updates")
         shot(cp, "phone-notifications")
-        cp.goto(BASE + "/services?q=fan"); cp.wait_for_load_state("networkidle")
+        cp.goto(BASE + "/services?q=fan"); settle(cp)
         ok(has(cp, "Results for") and has(cp, "Fan installation"), "service search returns results")
         overflow(cp, "phone search")
 
         # Genie reply + wallet
         print("GENIE reviews + wallet")
-        gp.goto(BASE + "/genie/reviews"); gp.wait_for_load_state("networkidle")
+        gp.goto(BASE + "/genie/reviews"); settle(gp)
         gp.get_by_role("button", name="Reply").first.click()
         gp.locator("textarea").first.fill("Thank you! Happy to help anytime.")
         gp.get_by_role("button", name="Post reply").click(); gp.wait_for_timeout(1000)
         ok(has(gp, "Your reply"), "Genie replied to the review")
-        gp.goto(BASE + "/genie/wallet"); gp.wait_for_load_state("networkidle")
+        gp.goto(BASE + "/genie/wallet"); settle(gp)
         ok(has(gp, "Job earnings"), "wallet shows ledger entries")
         shot(gp, "desktop-genie-wallet")
-        gp.goto(BASE + "/genie/availability"); gp.wait_for_load_state("networkidle")
+        gp.goto(BASE + "/genie/availability"); settle(gp)
         shot(gp, "desktop-genie-availability")
 
         # ------------------------------------------------------------ new Genie onboarding
@@ -296,7 +360,7 @@ with sync_playwright() as p:
         nctx = browser.new_context(**phone)
         np_ = nctx.new_page(); watch(np_, "new-genie"); PAGES.append(np_)
         phone_no = "9" + str(int(time.time()))[-9:]
-        np_.goto(BASE + "/register?role=GENIE"); np_.wait_for_load_state("networkidle")
+        np_.goto(BASE + "/register?role=GENIE"); settle(np_)
         np_.fill("#fullName", "Kiran Shah")
         np_.fill("#phone", phone_no)
         np_.fill("#password", PW)
@@ -309,11 +373,11 @@ with sync_playwright() as p:
         code = mail_code(sms_to)
         ok(code is not None, "verification code arrived by SMS (Mailpit)")
         np_.fill("#otp-code", code or "000000")
-        np_.wait_for_url(re.compile(r"/genie"), timeout=15000); np_.wait_for_load_state("networkidle")
+        np_.wait_for_url(re.compile(r"/genie"), timeout=15000); settle(np_)
         ok(not has(np_, "Verify now", timeout=1500), "no verify-phone banner once verified")
         ok(has(np_, "Finish your profile"), "new Genie sees the get-verified checklist")
         shot(np_, "phone-new-genie-dashboard")
-        np_.goto(BASE + "/genie/onboarding"); np_.wait_for_load_state("networkidle")
+        np_.goto(BASE + "/genie/onboarding"); settle(np_)
         np_.fill("#bio", "Ten years of plumbing work across Ahmedabad. Clean, quick and fairly priced.")
         np_.fill("#exp", "10")
         np_.fill("#upi", "kiran.shah@okaxis")
@@ -349,38 +413,62 @@ with sync_playwright() as p:
         actx = browser.new_context(**desktop)
         ap = actx.new_page(); watch(ap, "admin"); PAGES.append(ap)
         login(ap, "admin@progenie.in")
-        ap.wait_for_url(re.compile(r"/admin$")); ap.wait_for_load_state("networkidle")
+        ap.wait_for_url(re.compile(r"/admin$")); settle(ap)
         ap.wait_for_selector("pg-column-chart svg")
         ok(has(ap, "GMV"), "admin overview KPIs render")
         ap.locator("pg-column-chart g[tabindex]").nth(20).hover(); ap.wait_for_timeout(300)
         ok(ap.locator("pg-column-chart [role=status]").count() >= 1, "chart tooltip on hover")
         shot(ap, "desktop-admin-overview")
-        ap.goto(BASE + "/admin/genies"); ap.wait_for_load_state("networkidle")
-        ap.get_by_text("Kiran Shah").click(); ap.wait_for_load_state("networkidle")
+        ap.goto(BASE + "/admin/genies"); settle(ap)
+        ap.get_by_text("Kiran Shah").click(); settle(ap)
         ok(has(ap, "Documents"), "admin opens the Genie review page")
         ap.get_by_role("button", name=re.compile("^Approve Aadhaar", re.I)).click(); ap.wait_for_timeout(800)
         ap.locator("aside").get_by_role("button", name="Approve").click()
         ap.locator("dialog[open] form button[type=submit]").click(); ap.wait_for_timeout(1500)
         ok(has(ap, "Approved"), "admin approved the new Genie")
         shot(ap, "desktop-admin-genie-review")
-        ap.goto(BASE + "/admin/bookings"); ap.wait_for_load_state("networkidle")
-        ap.locator("pg-booking-row").first.click(); ap.wait_for_load_state("networkidle")
+        ap.goto(BASE + "/admin/bookings"); settle(ap)
+        ap.locator("pg-booking-row").first.click(); settle(ap)
         ok(has(ap, "Timeline"), "admin booking detail with timeline")
-        ap.goto(BASE + "/admin/finance"); ap.wait_for_load_state("networkidle")
+        ap.goto(BASE + "/admin/finance"); settle(ap)
         shot(ap, "desktop-admin-finance")
-        ap.goto(BASE + "/admin/catalog"); ap.wait_for_load_state("networkidle")
-        ap.get_by_role("tab", name="City pricing").click(); ap.wait_for_timeout(700)
+        ap.goto(BASE + "/admin/catalog"); settle(ap)
+        ap.get_by_role("tab", name="Cities & pricing").click(); ap.wait_for_timeout(900)
         ok(ap.locator("input[id^=cr-]").first.input_value() in ("5", "5.0"), "commission shown as a percentage (5)")
+        ok(has(ap, "20 active PIN codes"), "Ahmedabad shows its PIN codes")
         shot(ap, "desktop-admin-pricing")
-        ap.goto(BASE + "/admin/users"); ap.wait_for_load_state("networkidle")
-        ap.goto(BASE + "/admin/inbox"); ap.wait_for_load_state("networkidle")
+        print("ADMIN opens a second city as data")
+        city = f"Testpur {int(time.time()) % 100000}"
+        ap.get_by_role("button", name="New city").click()
+        ap.fill("#ct-name", city); ap.fill("#ct-state", "Gujarat")
+        ap.wait_for_selector("dialog[open] .leaflet-container")
+        ap.locator("dialog[open] .leaflet-container").click(position={"x": 200, "y": 140})
+        ap.get_by_role("button", name="Create city (switched off)").click(); ap.wait_for_timeout(1500)
+        card = ap.locator("pg-admin-cities section", has=ap.get_by_role("heading", name=f"{city}, Gujarat"))
+        ok(card.count() == 1 and "Switched off" in card.inner_text(), "new city created, switched off")
+        pin = "39" + str(int(time.time()) % 9000 + 1000)
+        card.locator("input[name=pincode]").fill(pin); card.locator("input[name=area]").fill("Test Nagar")
+        card.get_by_role("button", name="Add", exact=True).click(); ap.wait_for_timeout(1200)
+        ok(pin in card.inner_text(), f"PIN code {pin} added to the new city")
+        card.get_by_role("button", name="Switch on").click()
+        ap.locator("dialog[open] form button[type=submit]").click(); ap.wait_for_timeout(1200)
+        ok("Live" in card.inner_text(), "new city switched on")
+        shot(ap, "desktop-admin-cities")
+        overflow(ap, "admin cities")
+        with urllib.request.urlopen(BASE + f"/api/v1/serviceability?pincode={pin}") as r:
+            ok(json.load(r)["serviceable"], "its PIN code is served right away (no release)")
+        card.get_by_role("button", name="Switch off").click()
+        ap.locator("dialog[open] form button[type=submit]").click(); ap.wait_for_timeout(1200)
+        ok("Switched off" in card.inner_text(), "and switched off again")
+        ap.goto(BASE + "/admin/users"); settle(ap)
+        ap.goto(BASE + "/admin/inbox"); settle(ap)
 
         print("ADMIN complaint → split partial refund")
-        ap.goto(BASE + "/admin/tickets"); ap.wait_for_load_state("networkidle")
+        ap.goto(BASE + "/admin/tickets"); settle(ap)
         ok(has(ap, "One fan wobbles"), "the report is in the admin complaints queue")
         ok(ap.locator("pg-console-shell a[href='/admin/tickets']").first.inner_text().strip().endswith("1"), "Complaints badge counts open reports")
         shot(ap, "desktop-admin-tickets")
-        ap.get_by_text("One fan wobbles").click(); ap.wait_for_load_state("networkidle")
+        ap.get_by_text("One fan wobbles").click(); settle(ap)
         ap.get_by_role("button", name="Take it").click(); ap.wait_for_timeout(800)
         ok(has(ap, "With ProGenie") or has(ap, "With "), "admin took the complaint")
         ap.locator("input[name=internal]").check()
@@ -402,22 +490,22 @@ with sync_playwright() as p:
         shot(ap, "desktop-admin-resolve-dialog", full=False)
         ap.locator("dialog[open] button[type=submit]").click(); ap.wait_for_timeout(2000)
         ok(has(ap, "How we resolved it"), "complaint resolved with refund and warning")
-        ap.goto(BASE + f"/admin/bookings/{booking_id}"); ap.wait_for_load_state("networkidle")
+        ap.goto(BASE + f"/admin/bookings/{booking_id}"); settle(ap)
         ok(has(ap, "Genie ₹150.00") and has(ap, "ProGenie ₹50.00"), "admin booking page shows the refund split")
         ok(has(ap, "Credit note", timeout=10000), "credit note listed on the admin booking page")
         shot(ap, "desktop-admin-booking-money")
 
         print("CUSTOMER accepts the resolution")
-        cp.goto(ticket_url); cp.wait_for_load_state("networkidle")
+        cp.goto(ticket_url); settle(cp)
         ok(has(cp, "Sorry about the fan") and not has(cp, "Checked the photo", timeout=500), "customer sees the reply but not the internal note")
         cp.get_by_role("button", name=re.compile("happy with this")).click(); cp.wait_for_timeout(1000)
         ok(has(cp, "Closed"), "customer accepted and the report is closed")
-        cp.goto(booking_url); cp.wait_for_load_state("networkidle")
+        cp.goto(booking_url); settle(cp)
         ok(has(cp, "Partly refunded") and has(cp, "Credit note"), "booking shows the partial refund and credit note")
         shot(cp, "phone-booking-refunded")
 
         print("CUSTOMER settings & privacy")
-        cp.goto(BASE + "/account/privacy"); cp.wait_for_load_state("networkidle")
+        cp.goto(BASE + "/account/privacy"); settle(cp)
         cp.wait_for_selector("tbody input[type=checkbox]")
         cp.locator("tbody input[type=checkbox]").last.click()
         cp.get_by_role("button", name="Save preferences").click(); cp.wait_for_timeout(800)
@@ -439,21 +527,21 @@ with sync_playwright() as p:
         code = mail_code("customer@example.com", set(before))
         ok(code is not None, "login code arrived by email")
         op.fill("#otp-code", code or "000000")
-        op.wait_for_url(lambda u: "/login" not in u, timeout=15000); op.wait_for_load_state("networkidle")
-        op.goto(BASE + "/account/bookings"); op.wait_for_load_state("networkidle")
+        op.wait_for_url(lambda u: "/login" not in u, timeout=15000); settle(op)
+        op.goto(BASE + "/account/bookings"); settle(op)
         ok("/account/bookings" in op.url and has(op, "My bookings"), "logged in with a one-time code (bookings open)")
         octx.close()
 
         print("ADMIN messages, deletions, policies")
-        ap.goto(BASE + "/admin/messages"); ap.wait_for_load_state("networkidle")
+        ap.goto(BASE + "/admin/messages"); settle(ap)
         ap.get_by_role("tab", name="Sent").click(); ap.wait_for_timeout(800)
         ok(ap.locator("pg-status").count() > 0, "sent messages are listed")
         shot(ap, "desktop-admin-messages")
-        ap.goto(BASE + "/admin/deletions"); ap.wait_for_load_state("networkidle")
+        ap.goto(BASE + "/admin/deletions"); settle(ap)
         ok(has(ap, "Account deletions"), "deletion requests page loads")
-        ap.goto(BASE + "/admin/legal"); ap.wait_for_load_state("networkidle")
+        ap.goto(BASE + "/admin/legal"); settle(ap)
         ok(has(ap, "Version 1 in force"), "policies list shows the versions in force")
-        ap.goto(BASE + "/admin/legal/privacy"); ap.wait_for_load_state("networkidle")
+        ap.goto(BASE + "/admin/legal/privacy"); settle(ap)
         ap.wait_for_selector("textarea[name=body]")
         ap.locator("textarea[name=body]").press("Control+End")
         ap.locator("textarea[name=body]").type("\n\n## Photos in complaints\n\nPhotos you add to a report are kept for **2 years**, then deleted.")
@@ -463,22 +551,22 @@ with sync_playwright() as p:
         shot(ap, "desktop-admin-legal-editor")
         ap.get_by_role("button", name="Publish…").click()
         ap.locator("dialog[open]").get_by_role("button", name="Publish", exact=True).click()
-        ap.wait_for_url(re.compile(r"/admin/legal$"), timeout=15000); ap.wait_for_load_state("networkidle")
+        ap.wait_for_url(re.compile(r"/admin/legal$"), timeout=15000); settle(ap)
         ok(has(ap, "Version 2 in force"), "Privacy Policy v2 published")
 
         print("CUSTOMER must accept the new policy")
-        cp.goto(BASE + "/account/bookings"); cp.wait_for_load_state("networkidle")
-        cp.reload(); cp.wait_for_load_state("networkidle")
+        cp.goto(BASE + "/account/bookings"); settle(cp)
+        cp.reload(); settle(cp)
         ok(has(cp, "We've updated our policies"), "consent dialog appears after a policy change")
         shot(cp, "phone-consent-dialog", full=False)
         cp.locator("dialog[open] input[name=agree]").check()
         cp.get_by_role("button", name="Accept and continue").click(); cp.wait_for_timeout(1200)
         ok(not has(cp, "We've updated our policies", timeout=1500), "consent dialog closes after accepting")
-        cp.goto(BASE + "/legal/privacy"); cp.wait_for_load_state("networkidle")
+        cp.goto(BASE + "/legal/privacy"); settle(cp)
         ok(has(cp, "Photos in complaints") and has(cp, "Earlier versions"), "public policy page shows v2 and older versions")
         overflow(cp, "phone legal page")
         shot(cp, "phone-legal-privacy")
-        ap.goto(BASE + "/admin/legal/refunds"); ap.wait_for_load_state("networkidle")
+        ap.goto(BASE + "/admin/legal/refunds"); settle(ap)
         ok(ap.locator("input[name=re]").count() == 0 and has(ap, "part of the Terms"), "refund policy editor explains it is accepted via the Terms")
 
         # tablet sweep for overflow on key pages
@@ -488,7 +576,7 @@ with sync_playwright() as p:
         for path in ["/admin", "/admin/genies", "/admin/bookings", "/admin/users", "/admin/catalog", "/admin/finance", "/admin/inbox",
                      "/admin/tickets", f"/admin/tickets/{ticket_id}", f"/admin/bookings/{booking_id}", "/admin/messages", "/admin/legal",
                      "/admin/legal/privacy", "/admin/deletions", "/admin/settings"]:
-            tp.goto(BASE + path); tp.wait_for_load_state("networkidle"); tp.wait_for_timeout(300)
+            tp.goto(BASE + path); settle(tp); tp.wait_for_timeout(300)
             overflow(tp, f"tablet {path}")
         shot(tp, "tablet-admin-overview")
 
@@ -499,7 +587,7 @@ with sync_playwright() as p:
         for path in ["/", "/services", "/services/electrician", "/genies/1af855e6-31a8-5caa-bffa-6f864b9644ff", "/book/1af855e6-31a8-5caa-bffa-6f864b9644ff",
                      "/account/bookings", booking_url.replace(BASE, ""), "/account/addresses", "/account/favourites", "/account/profile", "/notifications",
                      "/account/tickets", ticket_url.replace(BASE, ""), "/account/privacy", "/legal/terms", "/legal/privacy"]:
-            sp.goto(BASE + path); sp.wait_for_load_state("networkidle"); sp.wait_for_timeout(400)
+            sp.goto(BASE + path); settle(sp); sp.wait_for_timeout(400)
             overflow(sp, f"360 {path}")
         shot(sp, "360-booking-detail")
         s2 = sctx.new_page(); watch(s2, "360-genie")
@@ -507,14 +595,14 @@ with sync_playwright() as p:
         login(s2, "genie@example.com")
         for path in ["/genie", "/genie/jobs", f"/genie/bookings/{booking_id}", "/genie/onboarding", "/genie/availability", "/genie/wallet", "/genie/reviews",
                      "/genie/tickets", f"/genie/tickets/{ticket_id}", "/genie/privacy"]:
-            s2.goto(BASE + path); s2.wait_for_load_state("networkidle"); s2.wait_for_timeout(400)
+            s2.goto(BASE + path); settle(s2); s2.wait_for_timeout(400)
             overflow(s2, f"360 {path}")
         shot(s2, "360-genie-dashboard")
         # guest pages at 360
         gctx2 = browser.new_context(viewport={"width": 360, "height": 740}, is_mobile=True, has_touch=True, **IN)
         g2 = gctx2.new_page(); watch(g2, "360-guest")
         for path in ["/login", "/forgot-password", "/register", "/register?role=GENIE", "/legal/genie-agreement"]:
-            g2.goto(BASE + path); g2.wait_for_load_state("networkidle"); g2.wait_for_timeout(300)
+            g2.goto(BASE + path); settle(g2); g2.wait_for_timeout(300)
             overflow(g2, f"360 {path}")
         g2.goto(BASE + "/login"); g2.get_by_role("tab", name="One-time code").click(); g2.wait_for_timeout(200)
         shot(g2, "360-login-code")

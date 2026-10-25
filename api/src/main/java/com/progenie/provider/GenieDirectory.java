@@ -63,6 +63,15 @@ public class GenieDirectory {
 
     /** True if the point is inside the Genie's service radius (straight-line, from their base location). */
     @Transactional(readOnly = true)
+    /** True if the Genie works in the given city (their service area). */
+    public boolean servesCity(UUID genieId, long cityId) {
+        return jdbc.sql(QueryUtil.get(QueryConstants.EXISTS_GENIE_SERVES_CITY))
+            .param("id", genieId)
+            .param("cityId", cityId)
+            .query(Boolean.class)
+            .single();
+    }
+
     public boolean servesLocation(UUID genieId, double lat, double lng) {
         return jdbc.sql(QueryUtil.get(QueryConstants.GET_GENIE_SERVES_LOCATION))
             .param("lng", lng).param("lat", lat).param("id", genieId)

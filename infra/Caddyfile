@@ -11,7 +11,9 @@
 }
 
 {$SITE_ADDRESS} {
-	encode zstd gzip
+	# Compress everything except the live-update stream (it must reach the browser event by event)
+	@compressible not path /api/v1/stream
+	encode @compressible zstd gzip
 
 	header {
 		Strict-Transport-Security "max-age=31536000"

@@ -8,6 +8,7 @@ import com.progenie.shared.config.QueryConstants;
 import com.progenie.shared.error.ApiException;
 import com.progenie.shared.util.QueryUtil;
 import com.progenie.shared.web.PageResponse;
+import org.jspecify.annotations.Nullable;
 import org.springframework.jdbc.core.simple.JdbcClient;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -19,8 +20,8 @@ public class SupportInboxService {
 
     private static final Set<String> STATUSES = Set.of("NEW", "IN_PROGRESS", "RESOLVED");
 
-    public record ContactMessageDto(long id, String name, String email, String phone, String subject, String message,
-                                    String status, OffsetDateTime createdAt, OffsetDateTime resolvedAt) {
+    public record ContactMessageDto(long id, String name, String email, @Nullable String phone, String subject, String message,
+                                    String status, OffsetDateTime createdAt, @Nullable OffsetDateTime resolvedAt) {
     }
 
     private final JdbcClient jdbc;

@@ -4,7 +4,7 @@ import java.util.List;
 import java.util.UUID;
 
 import com.progenie.legal.LegalDocuments;
-import com.progenie.legal.LegalDocuments.DocumentDto;
+import com.progenie.legal.LegalDocuments.LegalDocumentDto;
 import com.progenie.legal.LegalDocuments.DraftRequest;
 import com.progenie.legal.LegalKind;
 import com.progenie.shared.security.CurrentUser;
@@ -31,12 +31,12 @@ public class AdminLegalController {
     }
 
     @GetMapping
-    public List<DocumentDto> list() {
+    public List<LegalDocumentDto> list() {
         return documents.adminList();
     }
 
     @PutMapping("/{kind}/draft")
-    public DocumentDto saveDraft(@PathVariable String kind, @RequestBody DraftRequest req) {
+    public LegalDocumentDto saveDraft(@PathVariable String kind, @RequestBody DraftRequest req) {
         return documents.saveDraft(LegalKind.parse(kind), req, CurrentUser.id());
     }
 
@@ -47,7 +47,7 @@ public class AdminLegalController {
     }
 
     @PostMapping("/{id}/publish")
-    public DocumentDto publish(@PathVariable UUID id) {
+    public LegalDocumentDto publish(@PathVariable UUID id) {
         return documents.publish(id);
     }
 }

@@ -25,6 +25,7 @@ import com.progenie.shared.web.PageResponse;
 import com.progenie.support.TicketEvents.TicketRaised;
 import com.progenie.support.TicketEvents.TicketReplied;
 import com.progenie.support.TicketEvents.TicketResolved;
+import org.jspecify.annotations.Nullable;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.context.ApplicationEventPublisher;
@@ -53,30 +54,30 @@ public class TicketService {
     public record RaiseRequest(String category, String subject, String description) {
     }
 
-    public record TicketSummary(UUID id, String ticketRef, String type, UUID bookingId, String bookingRef, String category,
+    public record TicketSummary(UUID id, String ticketRef, String type, @Nullable UUID bookingId, @Nullable String bookingRef, String category,
                                 String priority, String status, String subject, UUID raisedBy, String raisedByName,
-                                String raisedByRole, String assignedToName, OffsetDateTime firstResponseDue,
+                                String raisedByRole, @Nullable String assignedToName, OffsetDateTime firstResponseDue,
                                 OffsetDateTime resolutionDue, boolean overdue, OffsetDateTime createdAt,
                                 OffsetDateTime updatedAt) {
     }
 
-    public record MessageDto(long id, UUID authorId, String authorName, String authorRole, String body, boolean internal,
+    public record TicketMessageDto(long id, @Nullable UUID authorId, String authorName, String authorRole, String body, boolean internal,
                              OffsetDateTime createdAt) {
     }
 
-    public record AttachmentDto(UUID id, String fileName, String contentType, int sizeBytes, UUID uploadedBy,
+    public record AttachmentDto(UUID id, @Nullable String fileName, String contentType, int sizeBytes, UUID uploadedBy,
                                 OffsetDateTime createdAt) {
     }
 
     /** {@code can*} flags tell the app which buttons to show for the viewer. */
-    public record TicketDetail(UUID id, String ticketRef, String type, UUID bookingId, String bookingRef, String serviceName,
-                               UUID customerId, String customerName, UUID genieId, String genieName, String category,
+    public record TicketDetail(UUID id, String ticketRef, String type, @Nullable UUID bookingId, @Nullable String bookingRef, @Nullable String serviceName,
+                               @Nullable UUID customerId, @Nullable String customerName, @Nullable UUID genieId, @Nullable String genieName, String category,
                                String priority, String status, String subject, String description, UUID raisedBy,
-                               String raisedByName, String raisedByRole, UUID assignedTo, String assignedToName,
+                               String raisedByName, String raisedByRole, @Nullable UUID assignedTo, @Nullable String assignedToName,
                                OffsetDateTime firstResponseDue, OffsetDateTime resolutionDue, boolean overdue,
-                               OffsetDateTime firstRespondedAt, OffsetDateTime resolvedAt, OffsetDateTime closedAt,
-                               String resolutionActions, String resolutionNote, UUID refundId, UUID redoBookingId,
-                               String redoBookingRef, OffsetDateTime createdAt, List<MessageDto> messages,
+                               @Nullable OffsetDateTime firstRespondedAt, @Nullable OffsetDateTime resolvedAt, @Nullable OffsetDateTime closedAt,
+                               @Nullable String resolutionActions, @Nullable String resolutionNote, @Nullable UUID refundId, @Nullable UUID redoBookingId,
+                               @Nullable String redoBookingRef, OffsetDateTime createdAt, List<TicketMessageDto> messages,
                                List<AttachmentDto> attachments, boolean canReply, boolean canAddPhotos,
                                boolean canAccept, boolean canReopen) {
     }
@@ -210,8 +211,8 @@ public class TicketService {
         }
         Row r = jdbc.sql(QueryUtil.get(QueryConstants.GET_TICKET_DETAIL))
             .param("id", ticketId).query(Row.class).single();
-        List<MessageDto> messages = jdbc.sql(QueryUtil.get(QueryConstants.GET_TICKET_MESSAGES))
-            .param("id", ticketId).param("admin", admin).query(MessageDto.class).list();
+        List<TicketMessageDto> messages = jdbc.sql(QueryUtil.get(QueryConstants.GET_TICKET_MESSAGES))
+            .param("id", ticketId).param("admin", admin).query(TicketMessageDto.class).list();
         List<AttachmentDto> attachments = attachments(ticketId);
         Instant now = clock.instant();
         boolean raiser = viewerId.equals(t.raisedBy());
@@ -316,6 +317,21 @@ public class TicketService {
         } catch (IOException e) {
             throw new UncheckedIOException(e);
         }
+    }
+
+    /** A short-lived link to a photo (presigned URL on S3), shown inline. Same access rule as {@link #photo}. */
+    @Transactional(readOnly = true)
+    public FileStorage.FileLink photoLink(UUID ticketId, UUID attachmentId, UUID userId, String role) {
+        Ticket t = load(ticketId);
+        if (!"ADMIN".equals(role) && !t.isParty(userId)) {
+            throw ApiException.notFound("TICKET_NOT_FOUND", "Report not found");
+        }
+        record Att(String fileKey, String fileName, String contentType) {
+        }
+        Att a = jdbc.sql(QueryUtil.get(QueryConstants.GET_TICKET_ATTACHMENT))
+            .param("id", attachmentId).param("t", ticketId).query(Att.class).optional()
+            .orElseThrow(() -> ApiException.notFound("FILE_NOT_FOUND", "Photo not found"));
+        return storage.link(a.fileKey(), a.fileName(), a.contentType(), true);
     }
 
     /** The person who raised it is happy with the resolution. */

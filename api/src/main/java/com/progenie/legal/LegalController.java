@@ -3,7 +3,7 @@ package com.progenie.legal;
 import java.util.List;
 
 import com.progenie.legal.LegalDocuments.CompanyDto;
-import com.progenie.legal.LegalDocuments.DocumentDto;
+import com.progenie.legal.LegalDocuments.LegalDocumentDto;
 import com.progenie.legal.LegalDocuments.VersionDto;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
@@ -28,7 +28,7 @@ public class LegalController {
     }
 
     @GetMapping("/{kind}")
-    public DocumentDto current(@PathVariable String kind) {
+    public LegalDocumentDto current(@PathVariable String kind) {
         return documents.current(LegalKind.parse(kind));
     }
 
@@ -38,7 +38,7 @@ public class LegalController {
     }
 
     @GetMapping("/{kind}/versions/{version}")
-    public DocumentDto version(@PathVariable String kind, @PathVariable int version) {
+    public LegalDocumentDto version(@PathVariable String kind, @PathVariable int version) {
         return documents.version(LegalKind.parse(kind), version);
     }
 }

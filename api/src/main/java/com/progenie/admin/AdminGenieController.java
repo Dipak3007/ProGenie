@@ -8,11 +8,12 @@ import com.progenie.payment.PayoutService;
 import com.progenie.payment.WalletService;
 import com.progenie.provider.GenieDocumentService;
 import com.progenie.provider.GenieProfileController;
-import com.progenie.provider.GenieVerificationService;
 import com.progenie.provider.GenieVerificationService.AdminGenieDetailDto;
 import com.progenie.provider.GenieVerificationService.Decision;
 import com.progenie.provider.GenieVerificationService.QueueItemDto;
+import com.progenie.provider.GenieVerificationService;
 import com.progenie.shared.security.CurrentUser;
+import com.progenie.shared.storage.FileStorage;
 import com.progenie.shared.web.PageResponse;
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.NotNull;
@@ -84,6 +85,11 @@ public class AdminGenieController {
     @ResponseStatus(HttpStatus.NO_CONTENT)
     public void reviewDocument(@PathVariable UUID docId, @Valid @RequestBody DocumentReviewRequest req) {
         verification.reviewDocument(docId, CurrentUser.id(), req.approve(), req.note());
+    }
+
+    @GetMapping("/genie-documents/{docId}/link")
+    public FileStorage.FileLink documentLink(@PathVariable UUID docId, @RequestParam(defaultValue = "true") boolean inline) {
+        return documents.link(documents.find(docId, null), inline);
     }
 
     @GetMapping("/genie-documents/{docId}/file")

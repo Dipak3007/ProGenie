@@ -21,10 +21,10 @@ import java.util.UUID;
 import java.util.zip.ZipEntry;
 import java.util.zip.ZipOutputStream;
 
-import com.progenie.notification.NotificationService;
-import com.progenie.notification.delivery.Channel;
-import com.progenie.notification.delivery.MessageTemplate;
-import com.progenie.notification.delivery.Messenger;
+import com.progenie.messaging.NotificationService;
+import com.progenie.messaging.delivery.Channel;
+import com.progenie.messaging.delivery.MessageTemplate;
+import com.progenie.messaging.delivery.Messenger;
 import com.progenie.shared.config.AppProperties;
 import com.progenie.shared.config.QueryConstants;
 import com.progenie.shared.error.ApiException;
@@ -32,6 +32,7 @@ import com.progenie.shared.jobs.JobLock;
 import com.progenie.shared.storage.FileStorage;
 import com.progenie.shared.util.QueryUtil;
 import com.progenie.shared.util.Times;
+import org.jspecify.annotations.Nullable;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.jdbc.core.simple.JdbcClient;
@@ -50,8 +51,8 @@ public class DataExportService {
     static final Duration LINK_LIFETIME = Duration.ofDays(7);
     private static final DateTimeFormatter DATE = DateTimeFormatter.ofPattern("d MMM yyyy", Locale.ENGLISH);
 
-    public record ExportJobDto(UUID id, String status, Long sizeBytes, OffsetDateTime requestedAt, OffsetDateTime readyAt,
-                               OffsetDateTime expiresAt, String error) {
+    public record ExportJobDto(UUID id, String status, @Nullable Long sizeBytes, OffsetDateTime requestedAt, @Nullable OffsetDateTime readyAt,
+                               @Nullable OffsetDateTime expiresAt, @Nullable String error) {
     }
 
     private final JdbcClient jdbc;
@@ -117,6 +118,21 @@ public class DataExportService {
         } catch (IOException e) {
             throw new UncheckedIOException(e);
         }
+    }
+
+    /** A short-lived link to a ready export (presigned URL on S3). */
+    @Transactional(readOnly = true)
+    public FileStorage.FileLink link(UUID userId, UUID jobId) {
+        record Row(String status, String fileKey, OffsetDateTime expiresAt, OffsetDateTime readyAt) {
+        }
+        Row r = jdbc.sql(QueryUtil.get(QueryConstants.GET_EXPORT_DOWNLOAD))
+            .param("id", jobId).param("u", userId).query(Row.class).optional()
+            .orElseThrow(() -> ApiException.notFound("EXPORT_NOT_FOUND", "Export not found"));
+        if (!"READY".equals(r.status()) || r.expiresAt() == null || r.expiresAt().toInstant().isBefore(clock.instant())) {
+            throw ApiException.unprocessable("EXPORT_NOT_AVAILABLE", "This export is not available (it may have expired)");
+        }
+        String date = r.readyAt().atZoneSameInstant(zone).toLocalDate().toString();
+        return storage.link(r.fileKey(), "progenie-data-" + date + ".zip", "application/zip", false);
     }
 
     // ------------------------------------------------------------------ background job

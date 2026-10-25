@@ -14,6 +14,7 @@ import com.progenie.payment.PaymentGateway.RefundResult;
 import com.progenie.shared.config.QueryConstants;
 import com.progenie.shared.error.ApiException;
 import com.progenie.shared.util.QueryUtil;
+import org.jspecify.annotations.Nullable;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.context.ApplicationEventPublisher;
@@ -45,9 +46,9 @@ public class RefundService {
     }
 
     public record RefundDto(UUID id, UUID paymentId, UUID bookingId, BigDecimal amount, BigDecimal genieShare,
-                            BigDecimal platformShare, String reason, String method, String status, String providerRefundId,
-                            String manualReference, String failureReason, UUID ticketId, OffsetDateTime createdAt,
-                            OffsetDateTime processedAt) {
+                            BigDecimal platformShare, String reason, String method, String status, @Nullable String providerRefundId,
+                            @Nullable String manualReference, @Nullable String failureReason, @Nullable UUID ticketId, OffsetDateTime createdAt,
+                            @Nullable OffsetDateTime processedAt) {
     }
 
     record PaymentForRefund(UUID id, UUID bookingId, UUID customerId, String purpose, String method, String provider,

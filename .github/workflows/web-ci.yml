@@ -1,5 +1,7 @@
 name: web-ci
 
+# Unit tests and production build, and a check that the generated API client
+# (src/app/core/api/generated) is up to date with the committed contract (web/openapi.json).
 on:
   push:
     branches: [main]
@@ -21,5 +23,13 @@ jobs:
           cache: npm
           cache-dependency-path: web/package-lock.json
       - run: npm ci --no-audit --no-fund
+      - name: Generated API client matches web/openapi.json
+        run: |
+          npm run api:generate
+          if [ -n "$(git status --porcelain -- src/app/core/api/generated)" ]; then
+            git status --short -- src/app/core/api/generated
+            echo "::error::The generated client is out of date. Run 'npm run api:generate' in web/ and commit the result."
+            exit 1
+          fi
       - run: npm run test:ci
       - run: npm run build

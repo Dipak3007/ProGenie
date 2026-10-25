@@ -22,9 +22,15 @@ public final class PriceCalculator {
                               BigDecimal travelPerKm, BigDecimal travelFeeCap) {
     }
 
-    public record PriceBreakdown(BigDecimal serviceAmount, BigDecimal distanceKm, BigDecimal travelFee,
-                                 BigDecimal tipAmount, BigDecimal totalAmount, BigDecimal commissionRate,
-                                 BigDecimal commissionAmount, BigDecimal genieEarning) {
+    /** How the travel distance was measured: ROAD (routing engine) or ESTIMATE (straight line × road factor). */
+    public enum DistanceMethod {
+        ROAD,
+        ESTIMATE
+    }
+
+    public record PriceBreakdown(BigDecimal serviceAmount, BigDecimal distanceKm, DistanceMethod distanceMethod,
+                                 BigDecimal travelFee, BigDecimal tipAmount, BigDecimal totalAmount,
+                                 BigDecimal commissionRate, BigDecimal commissionAmount, BigDecimal genieEarning) {
     }
 
     public static BigDecimal travelFee(BigDecimal distanceKm, CityPricing p) {
@@ -35,7 +41,8 @@ public final class PriceCalculator {
         return money(fee.min(p.travelFeeCap()));
     }
 
-    public static PriceBreakdown quote(BigDecimal serviceAmount, BigDecimal distanceKm, BigDecimal tip, CityPricing p) {
+    public static PriceBreakdown quote(BigDecimal serviceAmount, BigDecimal distanceKm, DistanceMethod method,
+                                       BigDecimal tip, CityPricing p) {
         BigDecimal service = money(serviceAmount);
         BigDecimal distance = distanceKm.setScale(2, RoundingMode.HALF_UP);
         BigDecimal travel = travelFee(distance, p);
@@ -43,7 +50,8 @@ public final class PriceCalculator {
         BigDecimal commission = money(service.multiply(p.commissionRate()));
         BigDecimal total = service.add(travel).add(tipAmount);
         BigDecimal genieEarning = total.subtract(commission);
-        return new PriceBreakdown(service, distance, travel, tipAmount, total, p.commissionRate(), commission, genieEarning);
+        return new PriceBreakdown(service, distance, method, travel, tipAmount, total, p.commissionRate(), commission,
+            genieEarning);
     }
 
     private static BigDecimal money(BigDecimal value) {

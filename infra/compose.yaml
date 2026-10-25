@@ -6,10 +6,17 @@
 #   Everything in containers (like production):
 #     docker compose --profile app up -d --build
 #
-#   Optional S3-compatible file storage (needed from Phase 2 for KYC uploads):
+#   Optional S3-compatible file storage (SeaweedFS). The API uses it when started with PROGENIE_STORAGE_TYPE=s3
+#   (see docs/LOCAL_SETUP.md, "S3 storage"); otherwise files stay in api/data/uploads:
 #     docker compose --profile storage up -d
 #
-# Ports: web 8088 · api 8080 · postgres 5432 · redis 6379 · mailpit 8025 · s3 8333
+#   Optional road distance for the travel fee (OSRM, Gujarat roads). Prepare the data once with
+#   bash osrm/prepare.sh, then start the API with PROGENIE_DISTANCE_PROVIDER=osrm (docs/LOCAL_SETUP.md, "Road distance"):
+#     docker compose --profile osrm up -d
+#
+# Redis (always started) is used only when the API runs with PROGENIE_CACHE_TYPE=redis; the default read cache is in memory.
+#
+# Ports: web 8088 · api 8080 · postgres 5432 · redis 6379 · mailpit 8025 · s3 8333 · osrm 5000
 
 name: progenie
 
@@ -45,18 +52,34 @@ services:
       retries: 20
     restart: unless-stopped
 
-  # S3-compatible object storage for KYC documents and photos (Phase 2).
+  # S3-compatible object storage for uploads, receipts and exports, like Supabase Storage on the SIT.
   # MinIO no longer publishes its community image on Docker Hub, so we use SeaweedFS.
   # Only started with:  docker compose --profile storage up -d
+  # Local credentials (seaweedfs/s3.json): access key progenie-local, secret progenie-local-secret.
+  # The API creates the bucket "progenie" on first start (S3_CREATE_BUCKET=true).
   s3:
     profiles: ["storage"]
-    image: chrislusf/seaweedfs:latest
+    image: chrislusf/seaweedfs:3.80
     container_name: progenie-s3
-    command: server -dir=/data -s3 -s3.port=8333
+    command: server -dir=/data -volume.max=30 -master.volumeSizeLimitMB=64 -s3 -s3.port=8333 -s3.config=/etc/seaweedfs/s3.json
     ports:
       - "8333:8333"   # S3 API: http://localhost:8333
     volumes:
       - s3data:/data
+      - ./seaweedfs/s3.json:/etc/seaweedfs/s3.json:ro
+    restart: unless-stopped
+
+  # Road routing for the travel fee. Needs the prepared data in osrm/data (bash osrm/prepare.sh; about 1-2 GB RAM).
+  # Only started with:  docker compose --profile osrm up -d
+  osrm:
+    profiles: ["osrm"]
+    image: ghcr.io/project-osrm/osrm-backend:v5.27.1
+    container_name: progenie-osrm
+    command: osrm-routed --algorithm mld /data/region.osrm
+    ports:
+      - "5000:5000"   # http://localhost:5000/route/v1/driving/72.505,23.04;72.561,23.035
+    volumes:
+      - ./osrm/data:/data:ro
     restart: unless-stopped
 
   mailpit:
@@ -83,6 +106,20 @@ services:
       PROGENIE_JWT_PRIVATE_KEY: ${PROGENIE_JWT_PRIVATE_KEY:-}
       PROGENIE_JWT_PUBLIC_KEY: ${PROGENIE_JWT_PUBLIC_KEY:-}
       PROGENIE_STORAGE_DIR: /data/uploads
+      # Files: local (the volume below) or s3 (start the "storage" profile too)
+      PROGENIE_STORAGE_TYPE: ${PROGENIE_STORAGE_TYPE:-local}
+      S3_ENDPOINT: ${S3_ENDPOINT:-http://s3:8333}
+      S3_PUBLIC_ENDPOINT: ${S3_PUBLIC_ENDPOINT:-http://localhost:8333}
+      S3_BUCKET: ${S3_BUCKET:-progenie}
+      S3_ACCESS_KEY: ${S3_ACCESS_KEY:-progenie-local}
+      S3_SECRET_KEY: ${S3_SECRET_KEY:-progenie-local-secret}
+      S3_CREATE_BUCKET: ${S3_CREATE_BUCKET:-true}
+      # Read cache: memory (default) or redis (the redis service above; also holds the rate limits then)
+      PROGENIE_CACHE_TYPE: ${PROGENIE_CACHE_TYPE:-memory}
+      REDIS_URL: ${REDIS_URL:-redis://redis:6379}
+      # Travel fee distance: straight (line x 1.3) or osrm (start the "osrm" profile too)
+      PROGENIE_DISTANCE_PROVIDER: ${PROGENIE_DISTANCE_PROVIDER:-straight}
+      PROGENIE_OSRM_URL: ${PROGENIE_OSRM_URL:-http://osrm:5000}
       PROGENIE_PAYMENT_WEBHOOK_SECRET: ${PROGENIE_PAYMENT_WEBHOOK_SECRET:-local-dev-webhook-secret}
       PROGENIE_WEB_BASE_URL: http://localhost:${WEB_PORT:-8088}
       # Accounts and messages (SMS / WhatsApp / email go to Mailpit unless a provider is set to msg91)

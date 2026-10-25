@@ -6,6 +6,7 @@ import java.time.format.DateTimeFormatter;
 import java.util.Locale;
 
 import com.progenie.booking.BookingEvent;
+import com.progenie.messaging.NotificationService;
 import com.progenie.payment.PaymentDtos.PaymentReceived;
 import com.progenie.payment.PaymentDtos.RefundProcessed;
 import com.progenie.provider.GenieEvents.GenieFlagged;

@@ -14,6 +14,7 @@ import com.progenie.shared.web.PageResponse;
 import jakarta.validation.constraints.Max;
 import jakarta.validation.constraints.Min;
 import jakarta.validation.constraints.Size;
+import org.jspecify.annotations.Nullable;
 import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.dao.DuplicateKeyException;
 import org.springframework.jdbc.core.simple.JdbcClient;
@@ -31,8 +32,8 @@ public class ReviewService {
     public record ReviewRequest(@Min(1) @Max(5) int rating, @Size(max = 1000) String comment) {
     }
 
-    public record ReviewDto(UUID id, UUID bookingId, String bookingRef, String serviceName, int rating, String comment,
-                            String customerName, OffsetDateTime createdAt, String genieReply, OffsetDateTime repliedAt) {
+    public record ReviewDto(UUID id, UUID bookingId, String bookingRef, String serviceName, int rating, @Nullable String comment,
+                            String customerName, OffsetDateTime createdAt, @Nullable String genieReply, @Nullable OffsetDateTime repliedAt) {
     }
 
     /** Published after a new review; the notification module tells the Genie. */

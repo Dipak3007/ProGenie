@@ -12,6 +12,7 @@ import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.NotNull;
 import jakarta.validation.constraints.Pattern;
 import jakarta.validation.constraints.Size;
+import org.jspecify.annotations.Nullable;
 
 /** Requests and read models for bookings (customer, Genie and admin views share the same shapes). */
 public final class BookingDtos {
@@ -59,18 +60,18 @@ public final class BookingDtos {
 
     public record BookingSummaryDto(UUID id, String bookingRef, String status, String serviceName, String categorySlug,
                                     String counterpartName, OffsetDateTime slotStart, OffsetDateTime slotEnd,
-                                    BigDecimal totalAmount, String paymentMethod, String paymentStatus, String area,
-                                    String cancellationFeeStatus, boolean reviewed) {
+                                    BigDecimal totalAmount, String paymentMethod, String paymentStatus, @Nullable String area,
+                                    @Nullable String cancellationFeeStatus, boolean reviewed) {
     }
 
-    public record PartyDto(UUID id, String name, String phone, BigDecimal avgRating) {
+    public record PartyDto(UUID id, String name, @Nullable String phone, @Nullable BigDecimal avgRating) {
     }
 
-    public record AddressView(String label, String line1, String line2, String landmark, String area, String city,
-                              String pincode) {
+    public record AddressView(@Nullable String label, @Nullable String line1, @Nullable String line2, @Nullable String landmark, @Nullable String area, @Nullable String city,
+                              @Nullable String pincode) {
     }
 
-    public record HistoryDto(String fromStatus, String toStatus, String actorRole, String reason, OffsetDateTime changedAt) {
+    public record HistoryDto(@Nullable String fromStatus, String toStatus, @Nullable String actorRole, @Nullable String reason, OffsetDateTime changedAt) {
     }
 
     /**
@@ -81,16 +82,16 @@ public final class BookingDtos {
      */
     public record BookingDetailDto(UUID id, String bookingRef, String status, long serviceId, String serviceName,
                                    String categoryName, String categorySlug, PartyDto genie, PartyDto customer,
-                                   AddressView address, OffsetDateTime slotStart, OffsetDateTime slotEnd,
-                                   OffsetDateTime expiresAt, String notes, BigDecimal serviceAmount,
-                                   BigDecimal extraAmount, String extraNote, BigDecimal distanceKm,
+                                   @Nullable AddressView address, OffsetDateTime slotStart, OffsetDateTime slotEnd,
+                                   @Nullable OffsetDateTime expiresAt, @Nullable String notes, BigDecimal serviceAmount,
+                                   BigDecimal extraAmount, @Nullable String extraNote, BigDecimal distanceKm,
                                    BigDecimal travelFee, BigDecimal tipAmount, BigDecimal totalAmount,
                                    BigDecimal commissionAmount, BigDecimal geniePayout, String paymentMethod,
-                                   String paymentStatus, BigDecimal cancellationFee, String cancellationFeeStatus,
-                                   BigDecimal cancellationFeeIfCancelledNow, String cancelReason,
-                                   String cancelledByRole, int rescheduledCount, boolean reviewed,
-                                   OffsetDateTime createdAt, OffsetDateTime acceptedAt, OffsetDateTime startedAt,
-                                   OffsetDateTime completedAt, OffsetDateTime cancelledAt,
+                                   String paymentStatus, @Nullable BigDecimal cancellationFee, @Nullable String cancellationFeeStatus,
+                                   @Nullable BigDecimal cancellationFeeIfCancelledNow, @Nullable String cancelReason,
+                                   @Nullable String cancelledByRole, int rescheduledCount, boolean reviewed,
+                                   OffsetDateTime createdAt, @Nullable OffsetDateTime acceptedAt, @Nullable OffsetDateTime startedAt,
+                                   @Nullable OffsetDateTime completedAt, @Nullable OffsetDateTime cancelledAt,
                                    List<String> allowedActions, List<HistoryDto> history) {
     }
 }

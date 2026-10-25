@@ -3,6 +3,8 @@ package com.progenie.customer;
 import java.util.List;
 import java.util.UUID;
 
+import com.progenie.catalog.ServiceabilityService;
+import com.progenie.catalog.ServiceabilityService.ServedAddress;
 import com.progenie.customer.AddressDtos.AddressDto;
 import com.progenie.customer.AddressDtos.AddressRequest;
 import com.progenie.shared.config.QueryConstants;
@@ -15,17 +17,18 @@ import org.springframework.transaction.annotation.Transactional;
 /**
  * Customer address book. Written with SQL because the location is a PostGIS geography point.
  * The booking module reads an address through {@link #getOwned(UUID, UUID)} and snapshots it.
+ * The city comes from the PIN code; see {@link ServiceabilityService#requireServedAddress}.
  */
 @Service
 public class AddressService {
 
     static final int MAX_ADDRESSES = 10;
-    private static final long DEFAULT_CITY_ID = 1L; // Ahmedabad (trial city)
-
     private final JdbcClient jdbc;
+    private final ServiceabilityService serviceability;
 
-    public AddressService(JdbcClient jdbc) {
+    public AddressService(JdbcClient jdbc, ServiceabilityService serviceability) {
         this.jdbc = jdbc;
+        this.serviceability = serviceability;
     }
 
     @Transactional(readOnly = true)
@@ -53,7 +56,7 @@ public class AddressService {
         if (count >= MAX_ADDRESSES) {
             throw ApiException.unprocessable("ADDRESS_LIMIT", "You can save up to " + MAX_ADDRESSES + " addresses");
         }
-        long cityId = requireActiveCity(req.cityId());
+        ServedAddress served = serviceability.requireServedAddress(req.pincode(), req.lat(), req.lng());
         boolean makeDefault = req.isDefault() || count == 0;
         if (makeDefault) {
             clearDefault(userId);
@@ -64,8 +67,8 @@ public class AddressService {
             .param("line1", req.line1().trim())
             .param("line2", req.line2())
             .param("landmark", req.landmark())
-            .param("area", req.area())
-            .param("cityId", cityId)
+            .param("area", area(req, served))
+            .param("cityId", served.cityId())
             .param("pincode", req.pincode())
             .param("lat", req.lat())
             .param("lng", req.lng())
@@ -78,7 +81,7 @@ public class AddressService {
     @Transactional
     public AddressDto update(UUID userId, UUID addressId, AddressRequest req) {
         AddressDto existing = getOwned(userId, addressId);
-        long cityId = requireActiveCity(req.cityId());
+        ServedAddress served = serviceability.requireServedAddress(req.pincode(), req.lat(), req.lng());
         boolean makeDefault = req.isDefault() || existing.isDefault();
         if (makeDefault && !existing.isDefault()) {
             clearDefault(userId);
@@ -88,8 +91,8 @@ public class AddressService {
             .param("line1", req.line1().trim())
             .param("line2", req.line2())
             .param("landmark", req.landmark())
-            .param("area", req.area())
-            .param("cityId", cityId)
+            .param("area", area(req, served))
+            .param("cityId", served.cityId())
             .param("pincode", req.pincode())
             .param("lat", req.lat())
             .param("lng", req.lng())
@@ -126,13 +129,13 @@ public class AddressService {
             .param("userId", userId).update();
     }
 
-    private long requireActiveCity(Long cityId) {
-        long id = cityId == null ? DEFAULT_CITY_ID : cityId;
-        boolean active = jdbc.sql(QueryUtil.get(QueryConstants.EXISTS_ADDRESS_ACTIVE_CITY))
-            .param("id", id).query(Boolean.class).single();
-        if (!active) {
-            throw ApiException.unprocessable("CITY_NOT_SERVED", "We do not serve this city yet");
+    /** The area the customer typed, else the PIN code's area name (e.g. Navrangpura). */
+    private static String area(AddressRequest req, ServedAddress served) {
+        String typed = req.area() == null ? "" : req.area().trim();
+        if (!typed.isEmpty()) {
+            return typed;
         }
-        return id;
+        String area = served.area();
+        return area == null ? null : area.substring(0, Math.min(area.length(), 80));
     }
 }

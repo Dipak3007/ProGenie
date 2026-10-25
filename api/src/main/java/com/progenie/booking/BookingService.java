@@ -105,6 +105,9 @@ public class BookingService {
 
         Offer offer = directory.bookableOffer(req.genieId(), req.serviceId());
         AddressDto address = addresses.getOwned(customerId, req.addressId());
+        if (!directory.servesCity(offer.genieId(), address.cityId())) {
+            throw ApiException.unprocessable("OUT_OF_SERVICE_AREA", "This Genie works in another city");
+        }
         if (!directory.servesLocation(offer.genieId(), address.lat(), address.lng())) {
             throw ApiException.unprocessable("OUT_OF_SERVICE_AREA", "This Genie does not travel to that address");
         }

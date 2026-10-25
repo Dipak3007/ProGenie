@@ -12,6 +12,7 @@ import com.progenie.shared.config.QueryConstants;
 import com.progenie.shared.error.ApiException;
 import com.progenie.shared.util.QueryUtil;
 import com.progenie.shared.web.PageResponse;
+import org.jspecify.annotations.Nullable;
 import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.jdbc.core.simple.JdbcClient;
 import org.springframework.stereotype.Service;
@@ -39,17 +40,17 @@ public class GenieVerificationService {
         Decision.APPROVE, "APPROVED", Decision.NEEDS_CHANGES, "NEEDS_CHANGES", Decision.REJECT, "REJECTED",
         Decision.SUSPEND, "SUSPENDED", Decision.REINSTATE, "APPROVED");
 
-    public record QueueItemDto(UUID id, String fullName, String phone, String baseArea, String verificationStatus,
-                               OffsetDateTime submittedAt, OffsetDateTime createdAt, int serviceCount,
-                               int pendingDocuments, OffsetDateTime flaggedAt, String flagReason) {
+    public record QueueItemDto(UUID id, String fullName, String phone, @Nullable String baseArea, String verificationStatus,
+                               @Nullable OffsetDateTime submittedAt, OffsetDateTime createdAt, int serviceCount,
+                               int pendingDocuments, @Nullable OffsetDateTime flaggedAt, @Nullable String flagReason) {
     }
 
-    public record VerificationEventDto(String fromStatus, String toStatus, String reason, String actorName,
+    public record VerificationEventDto(@Nullable String fromStatus, String toStatus, @Nullable String reason, @Nullable String actorName,
                                        OffsetDateTime createdAt) {
     }
 
-    public record AdminGenieDetailDto(MyProfileDto profile, String userStatus, OffsetDateTime flaggedAt,
-                                      String flagReason, List<VerificationEventDto> history) {
+    public record AdminGenieDetailDto(MyProfileDto profile, String userStatus, @Nullable OffsetDateTime flaggedAt,
+                                      @Nullable String flagReason, List<VerificationEventDto> history) {
     }
 
     private final JdbcClient jdbc;
@@ -90,6 +91,7 @@ public class GenieVerificationService {
     }
 
     @Transactional
+    @GenieCaches.EvictsGenies
     public AdminGenieDetailDto decide(UUID genieId, UUID adminId, Decision decision, String note) {
         String from = jdbc.sql(QueryUtil.get(QueryConstants.LOCK_GENIE_PROFILE_STATUS))
             .param("id", genieId).query(String.class).optional()
@@ -140,6 +142,7 @@ public class GenieVerificationService {
     }
 
     @Transactional
+    @GenieCaches.EvictsGenies
     public void clearFlag(UUID genieId, UUID adminId) {
         int rows = jdbc.sql(QueryUtil.get(QueryConstants.UPDATE_GENIE_PROFILE_CLEAR_FLAG))
             .param("id", genieId).update();

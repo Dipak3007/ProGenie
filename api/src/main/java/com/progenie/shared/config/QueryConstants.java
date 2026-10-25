@@ -72,28 +72,47 @@ public final class QueryConstants {
     // ------------------------------------------------------------------ Catalog and city pricing
 
     public static final String GET_CATALOG_ACTIVE_CITIES = "get.catalog.active-cities";
+    public static final String GET_CATALOG_ACTIVE_CITY_BY_SLUG = "get.catalog.active-city-by-slug";
+    public static final String GET_CATALOG_ADMIN_CITIES = "get.catalog.admin-cities";
     public static final String GET_CATALOG_ADMIN_CATEGORIES = "get.catalog.admin-categories";
     public static final String GET_CATALOG_ADMIN_SERVICE = "get.catalog.admin-service";
     public static final String GET_CATALOG_ADMIN_SERVICES = "get.catalog.admin-services";
     public static final String GET_CATALOG_CATEGORIES = "get.catalog.categories";
     public static final String GET_CATALOG_CATEGORY_BY_SLUG = "get.catalog.category-by-slug";
     public static final String GET_CATALOG_CATEGORY_SERVICES = "get.catalog.category-services";
-    public static final String GET_CATALOG_CITY_PRICING = "get.catalog.city-pricing";
+    public static final String GET_CATALOG_CITY_AREAS = "get.catalog.city-areas";
+    public static final String GET_CATALOG_CITY_PINCODES = "get.catalog.city-pincodes";
+    public static final String GET_CATALOG_CITY_READINESS = "get.catalog.city-readiness";
+    public static final String GET_CATALOG_PINCODE_OWNER = "get.catalog.pincode-owner";
     public static final String GET_CATALOG_SEARCH_SERVICES = "get.catalog.search-services";
+    public static final String COUNT_CATALOG_ACTIVE_CITIES = "count.catalog.active-cities";
     public static final String EXISTS_CATALOG_CATEGORY = "exists.catalog.category";
     public static final String EXISTS_CATALOG_CITY = "exists.catalog.city";
     public static final String INSERT_CATALOG_CATEGORY = "insert.catalog.category";
+    public static final String INSERT_CATALOG_CITY = "insert.catalog.city";
+    public static final String INSERT_CATALOG_CITY_DEFAULT_PRICING = "insert.catalog.city-default-pricing";
     public static final String INSERT_CATALOG_SERVICE = "insert.catalog.service";
+    public static final String UPSERT_CATALOG_CITY_PINCODE = "upsert.catalog.city-pincode";
     public static final String UPSERT_CATALOG_CITY_PRICING = "upsert.catalog.city-pricing";
     public static final String UPDATE_CATALOG_CATEGORY = "update.catalog.category";
+    public static final String UPDATE_CATALOG_CITY = "update.catalog.city";
+    public static final String UPDATE_CATALOG_CITY_ACTIVE = "update.catalog.city-active";
     public static final String UPDATE_CATALOG_SERVICE = "update.catalog.service";
+    public static final String DELETE_CATALOG_CITY_PINCODE = "delete.catalog.city-pincode";
+
+    // ------------------------------------------------------------------ Serviceability: PIN codes, India boundary, live cities
+
+    public static final String GET_SERVICEABILITY_PINCODE = "get.serviceability.pincode";
+    public static final String GET_SERVICEABILITY_LIVE_CITY_AT = "get.serviceability.live-city-at";
+    public static final String EXISTS_SERVICEABILITY_IN_INDIA = "exists.serviceability.in-india";
+    public static final String EXISTS_SERVICEABILITY_WITHIN_CITY = "exists.serviceability.within-city";
+    public static final String GET_SERVICEABILITY_NEAREST_PINCODE = "get.serviceability.nearest-pincode";
 
     // ------------------------------------------------------------------ Customer addresses and favourites
 
     public static final String GET_ADDRESS_LIST = "get.address.list";
     public static final String GET_ADDRESS_OWNED = "get.address.owned";
     public static final String COUNT_ADDRESS_BY_USER = "count.address.by-user";
-    public static final String EXISTS_ADDRESS_ACTIVE_CITY = "exists.address.active-city";
     public static final String INSERT_ADDRESS_CREATE = "insert.address.create";
     public static final String UPDATE_ADDRESS_CLEAR_DEFAULT = "update.address.clear-default";
     public static final String UPDATE_ADDRESS_DETAILS = "update.address.details";
@@ -302,6 +321,7 @@ public final class QueryConstants {
 
     // ------------------------------------------------------------------ Genies: directory, profile, documents, verification
 
+    public static final String FRAGMENT_GENIE_FILTER_CITY = "fragment.genie.filter-city";
     public static final String FRAGMENT_GENIE_FILTER_CATEGORY = "fragment.genie.filter-category";
     public static final String FRAGMENT_GENIE_FILTER_SERVICE = "fragment.genie.filter-service";
     public static final String FRAGMENT_GENIE_ORDER_EXPERIENCE = "fragment.genie.order-experience";
@@ -316,6 +336,7 @@ public final class QueryConstants {
     public static final String GET_GENIE_SERVES_LOCATION = "get.genie.serves-location";
     public static final String GET_GENIE_TIME_OFF_BETWEEN = "get.genie.time-off-between";
     public static final String GET_GENIE_WEEKLY_AVAILABILITY = "get.genie.weekly-availability";
+    public static final String EXISTS_GENIE_SERVES_CITY = "exists.genie.serves-city";
     public static final String EXISTS_GENIE_LISTED = "exists.genie.listed";
     public static final String GET_GENIE_DOCUMENT_FILE = "get.genie-document.file";
     public static final String GET_GENIE_DOCUMENT_LIST = "get.genie-document.list";

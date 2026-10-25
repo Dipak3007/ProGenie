@@ -21,6 +21,7 @@ import hmac
 import http.cookiejar
 import json
 import os
+import re
 import sys
 import time
 import urllib.error
@@ -46,6 +47,22 @@ def check(condition, label, detail=None):
         failed += 1
         print(f"  ✗ {label}" + (f"  ->  {detail}" if detail is not None else ""))
     return condition
+
+
+def open_link(link):
+    """Opens a download link (S3 presigned URL or signed /api/v1/files/... path) with no login, like the browser."""
+    url = link["url"] if link["url"].startswith("http") else BASE + link["url"]
+    try:
+        with urllib.request.urlopen(urllib.request.Request(url), timeout=30) as res:
+            return res.status, res.read(), res.headers.get("Content-Disposition", "")
+    except urllib.error.HTTPError as e:
+        return e.code, e.read(), ""
+
+
+def tampered(link):
+    """The same link with its signature changed: must not work."""
+    url = link["url"]
+    return {"url": url[:-3] + ("aaa" if not url.endswith("aaa") else "bbb")}
 
 
 def section(title):
@@ -249,8 +266,15 @@ def main():
     s, addr = customer.post("/api/v1/me/addresses", {
         "label": f"Test {RUN}", "line1": "12 Test Society", "area": gp["baseArea"] or "Navrangpura",
         "pincode": "380009", "lat": gp["baseLat"] + 0.01, "lng": gp["baseLng"] + 0.01, "isDefault": False})
-    check(s == 201, "customer adds an address near the Genie", addr)
+    check(s == 201 and addr["cityName"] == "Ahmedabad", "customer adds an address near the Genie (city from PIN code)", addr)
     address_id = addr["id"]
+    base_addr = {"label": "Bad", "line1": "1 Nowhere Rd", "isDefault": False}
+    s, body = customer.post("/api/v1/me/addresses", {**base_addr, "pincode": "400001", "lat": 18.94, "lng": 72.83})
+    check(s == 422 and code_of(body) == "PINCODE_NOT_SERVED", "an unserved PIN code is refused (422)", body)
+    s, body = customer.post("/api/v1/me/addresses", {**base_addr, "pincode": "380009", "lat": 24.86, "lng": 67.01})
+    check(s == 422 and code_of(body) == "LOCATION_OUTSIDE_INDIA", "a map pin outside India is refused (422)", body)
+    s, body = customer.post("/api/v1/me/addresses", {**base_addr, "pincode": "380009", "lat": 19.07, "lng": 72.87})
+    check(s == 422 and code_of(body) == "LOCATION_OUTSIDE_CITY", "a map pin far from the PIN code's city is refused (422)", body)
     s, lst = customer.get("/api/v1/me/addresses")
     check(s == 200 and any(a["id"] == address_id for a in lst), "address is listed", s)
     s, _ = customer.put(f"/api/v1/me/favourites/{genie_id}")
@@ -421,6 +445,11 @@ def main():
     check(s == 200 and np_["verificationStatus"] == "REGISTERED" and not np_["canSubmit"], "new Genie starts REGISTERED", np_.get("missingSteps"))
     s, body = newbie.post("/api/v1/genie/profile/submit")
     check(s == 422 and code_of(body) == "ONBOARDING_INCOMPLETE", "cannot submit an incomplete profile", body)
+    bad_profile = {"bio": "x", "experienceYears": 1, "baseArea": "Somewhere", "serviceRadiusKm": 8}
+    s, body = newbie.put("/api/v1/genie/profile", {**bad_profile, "baseLat": 19.07, "baseLng": 72.87})
+    check(s == 422 and code_of(body) == "CITY_NOT_LIVE", "a base location outside every live city is refused", body)
+    s, body = newbie.put("/api/v1/genie/profile", {**bad_profile, "baseLat": 27.70, "baseLng": 85.32})
+    check(s == 422 and code_of(body) == "LOCATION_OUTSIDE_INDIA", "a base location outside India is refused", body)
     s, _ = newbie.put("/api/v1/genie/profile", {"bio": "Certified plumber with 6 years of home repair experience.",
                                                 "experienceYears": 6, "baseArea": "Maninagar", "baseLat": 22.9962,
                                                 "baseLng": 72.6030, "serviceRadiusKm": 8, "payoutUpiId": "nikhil@okbank"})
@@ -453,6 +482,12 @@ def main():
     check(any(g["id"] == new_id for g in q["items"]), "admin sees them in the verification queue", s)
     s, f = admin.get(f"/api/v1/admin/genie-documents/{doc['id']}/file")
     check(s == 200 and f.startswith(b"%PDF"), "admin can open the KYC file", s)
+    s, link = admin.get(f"/api/v1/admin/genie-documents/{doc['id']}/link")
+    ls, lf, disp = open_link(link) if s == 200 else (s, b"", "")
+    check(s == 200 and ls == 200 and lf.startswith(b"%PDF") and "inline" in disp, "admin gets a short-lived link to the KYC file (no login needed to open it)", (s, ls, disp))
+    check(open_link(tampered(link))[0] in (403, 404), "a tampered link does not work", None)
+    s, _ = newbie.get(f"/api/v1/admin/genie-documents/{doc['id']}/link")
+    check(s == 403, "only admins get links to other Genies' documents", s)
     s, body = admin.post(f"/api/v1/admin/genies/{new_id}/decision", {"decision": "NEEDS_CHANGES"})
     check(s == 400 and code_of(body) == "NOTE_REQUIRED", "asking for changes needs a note", body)
     s, _ = admin.post(f"/api/v1/admin/genies/{new_id}/decision", {"decision": "NEEDS_CHANGES", "note": "Please upload a clearer selfie"})
@@ -492,12 +527,17 @@ def main():
     # ------------------------------------------------------------------ admin
     section("Admin: catalog, users, bookings, payouts, analytics, inbox")
     slug = "smoke-" + RUN
+    anon.get("/api/v1/categories")                     # warm the read cache: the new category must still show at once
     s, newcat = admin.post("/api/v1/admin/categories", {"slug": slug, "name": f"Smoke {RUN}", "description": "Test category",
                                                         "icon": "sparkles", "sortOrder": 99, "active": True})
     check(s == 201, "create a category", newcat)
     s, newsvc = admin.post("/api/v1/admin/services", {"categoryId": newcat["id"], "slug": slug + "-svc", "name": f"Window washing {RUN}",
                                                       "basePrice": 299, "durationMinutes": 60, "active": True})
     check(s == 201, "create a service", newsvc)
+    s, cats = anon.get("/api/v1/categories")
+    check(s == 200 and any(c["slug"] == slug for c in cats), "new category shows at once (admin writes empty the read cache)", s)
+    s, page = anon.get(f"/api/v1/categories/{slug}")
+    check(s == 200 and any(x["id"] == newsvc["id"] for x in page["services"]), "its new service shows on the category page", s)
     s, hits = anon.get(f"/api/v1/search?q={RUN}")
     check(s == 200 and any(h["serviceId"] == newsvc["id"] for h in hits), "new service is searchable", hits)
     s, _ = admin.put(f"/api/v1/admin/categories/{newcat['id']}", {**{k: newcat[k] for k in ("slug", "name", "description", "icon")},
@@ -547,11 +587,112 @@ def main():
     s2, uc = customer.get("/api/v1/notifications/unread-count")
     check(uc["unread"] == 0, "mark all read", uc)
 
+    cities_and_serviceability(anon, customer, admin, {"book": book, "slot": slots[0]})
+
     launch_readiness(anon, customer, genie, admin,
                      {"book": book, "genie_id": genie_id, "service_id": service_id, "b1": b1, "b2": b2})
 
     customer.delete(f"/api/v1/me/favourites/{genie_id}")
     customer.delete(f"/api/v1/me/addresses/{address_id}")
+
+
+# ====================================================================== Cities and serviceability
+
+def cities_and_serviceability(anon, customer, admin, ctx):
+    """Opening a city is a data change: create it, add PIN codes, switch it on; no code or deploy."""
+    section("Cities and serviceability: PIN codes, India-only pins, a second city as data")
+    s, cities = anon.get("/api/v1/cities")
+    ahm = next((c for c in cities if c["slug"] == "ahmedabad"), None) if s == 200 else None
+    check(ahm is not None and ahm["lat"] and ahm["radiusKm"], "live cities are public, with centre and radius", cities)
+    s, chk = anon.get("/api/v1/serviceability?pincode=380009")
+    check(s == 200 and chk["serviceable"] and chk["citySlug"] == "ahmedabad" and chk["area"], "PIN code check: 380009 is served", chk)
+    s, chk = anon.get("/api/v1/serviceability?pincode=400001")
+    check(s == 200 and not chk["serviceable"] and chk["cityId"] is None, "PIN code check: 400001 is not served", chk)
+    s, body = anon.get("/api/v1/serviceability?pincode=12345")
+    check(s == 400 and code_of(body) == "INVALID_PINCODE", "PIN code check: a malformed PIN code is a 400", body)
+    s, loc = anon.get("/api/v1/serviceability/location?lat=23.03&lng=72.56")
+    check(s == 200 and loc["inIndia"] and loc["serviceable"] and loc["city"]["slug"] == "ahmedabad", "location check: Navrangpura is served", loc)
+    s, loc = anon.get("/api/v1/serviceability/location?lat=19.07&lng=72.87")
+    check(s == 200 and loc["inIndia"] and not loc["serviceable"], "location check: Mumbai is in India but not live", loc)
+    for name, lat, lng in (("Karachi", 24.86, 67.01), ("Kathmandu", 27.70, 85.32), ("Dhaka", 23.81, 90.41), ("Colombo", 6.93, 79.85)):
+        s, loc = anon.get(f"/api/v1/serviceability/location?lat={lat}&lng={lng}")
+        check(s == 200 and not loc["inIndia"], f"location check: {name} is outside India", loc)
+    s, areas = anon.get("/api/v1/cities/ahmedabad/areas")
+    check(s == 200 and any(a["pincode"] == "380009" for a in areas), "a city's served areas are public", len(areas) if isinstance(areas, list) else areas)
+    # Address form: PIN code <-> map pin (works with any geocoding provider, including "none")
+    s, at = customer.get("/api/v1/geo/pincodes/380009")
+    check(s == 200 and at["found"] and at["source"] == "SERVED" and at["lat"], "geo: a served PIN code is placed from our own data", at)
+    s, body = customer.get("/api/v1/geo/pincodes/12345")
+    check(s == 400 and code_of(body) == "INVALID_PINCODE", "geo: a malformed PIN code is a 400", body)
+    s, at = customer.get("/api/v1/geo/pincode-at?lat=23.0351&lng=72.5611")
+    check(s == 200 and at["inIndia"] and re.fullmatch(r"[1-9][0-9]{5}", at["pincode"] or "") and at["source"] in ("GEOCODER", "NEAREST"),
+          "geo: a pin in Navrangpura gets a PIN code", at)
+    s, at = customer.get("/api/v1/geo/pincode-at?lat=24.86&lng=67.01")
+    check(s == 200 and not at["inIndia"] and at["pincode"] is None, "geo: no PIN code outside India", at)
+    s, _ = anon.get("/api/v1/geo/pincode-at?lat=23.03&lng=72.56")
+    check(s == 401, "geo: lookups need a login (they may call a rate-limited outside service)", s)
+    s, gl = anon.get("/api/v1/genies?city=ahmedabad&limit=50")
+    check(s == 200 and len(gl) > 0 and all(g["citySlug"] == "ahmedabad" for g in gl), "Genie list filters by city", len(gl) if isinstance(gl, list) else gl)
+
+    # A second city, opened entirely through the admin API
+    slug = f"smoke-city-{RUN}"
+    center = {"centerLat": 22.3072, "centerLng": 73.1812}
+    req = {"slug": slug, "name": f"Smoke City {RUN}", "state": "Gujarat", **center, "radiusKm": 20}
+    s, body = admin.post("/api/v1/admin/cities", {**req, "centerLat": 24.86, "centerLng": 67.01})
+    check(s == 422 and code_of(body) == "LOCATION_OUTSIDE_INDIA", "a city centre must be in India", body)
+    s, city = admin.post("/api/v1/admin/cities", req)
+    check(s == 201 and not city["active"] and city["commissionRate"] is not None and city["pincodeCount"] == 0,
+          "admin creates a city: switched off, default pricing", city)
+    if s != 201:
+        return
+    cid = city["cityId"]
+    s, body = admin.post("/api/v1/admin/cities", req)
+    check(s == 409 and code_of(body) == "DUPLICATE_CITY", "city slugs are unique", body)
+    s, body = admin.put(f"/api/v1/admin/cities/{cid}/status", {"active": True})
+    check(s == 422 and code_of(body) == "CITY_NOT_READY", "a city without PIN codes cannot go live", body)
+    pin = None
+    for _ in range(20):
+        candidate = "39" + str(int(uuid.uuid4().int % 9000) + 1000)
+        if not anon.get(f"/api/v1/serviceability?pincode={candidate}")[1]["serviceable"]:
+            pin = candidate
+            break
+    s, body = admin.put(f"/api/v1/admin/cities/{cid}/pincodes/380009", {"area": "Taken", "active": True})
+    check(s == 409 and code_of(body) == "PINCODE_TAKEN", "a PIN code belongs to one city only", body)
+    s, p = admin.put(f"/api/v1/admin/cities/{cid}/pincodes/{pin}", {"area": "Alkapuri", "lat": 22.31, "lng": 73.17, "active": True})
+    check(s == 200 and p["pincode"] == pin and p["area"] == "Alkapuri", f"admin adds PIN code {pin}", p)
+    s, chk = anon.get(f"/api/v1/serviceability?pincode={pin}")
+    check(s == 200 and not chk["serviceable"], "its PIN codes are not served while the city is off", chk)
+    s, city = admin.put(f"/api/v1/admin/cities/{cid}/status", {"active": True})
+    check(s == 200 and city["active"] and city["pincodeCount"] == 1, "admin switches the city on", city)
+    s, cities = anon.get("/api/v1/cities")
+    check(s == 200 and any(c["slug"] == slug for c in cities), "the new city appears in the city switcher", [c["slug"] for c in cities] if s == 200 else cities)
+    s, chk = anon.get(f"/api/v1/serviceability?pincode={pin}")
+    check(s == 200 and chk["serviceable"] and chk["citySlug"] == slug, "its PIN code is now served", chk)
+    s, loc = anon.get("/api/v1/serviceability/location?lat=22.31&lng=73.18")
+    check(s == 200 and loc["serviceable"] and loc["city"]["slug"] == slug, "a pin there resolves to the new city", loc)
+    s, a2 = customer.post("/api/v1/me/addresses", {"label": f"Smoke city {RUN}", "line1": "4 Race Course", "pincode": pin,
+                                                   "lat": 22.312, "lng": 73.175, "isDefault": False})
+    check(s == 201 and a2["cityId"] == cid and a2["area"] == "Alkapuri", "customer saves an address there (area from the PIN code)", a2)
+    s, body = customer.post("/api/v1/me/addresses", {"label": "x", "line1": "x", "pincode": pin, "lat": 23.03, "lng": 72.56, "isDefault": False})
+    check(s == 422 and code_of(body) == "LOCATION_OUTSIDE_CITY", "an Ahmedabad pin with the new city's PIN code is refused", body)
+    if isinstance(a2, dict) and a2.get("id"):
+        s, body = ctx["book"](ctx["slot"], address=a2["id"])
+        check(s == 422 and code_of(body) == "OUT_OF_SERVICE_AREA", "an Ahmedabad Genie cannot be booked in the new city", body)
+        customer.delete(f"/api/v1/me/addresses/{a2['id']}")
+    s, gl = anon.get(f"/api/v1/genies?city={slug}")
+    check(s == 200 and gl == [], "the new city has no Genies yet", gl)
+    s, body = admin.delete(f"/api/v1/admin/cities/{cid}/pincodes/{pin}")
+    check(s == 422 and code_of(body) == "CITY_NEEDS_PINCODE", "a live city keeps at least one PIN code", body)
+    s, city = admin.put(f"/api/v1/admin/cities/{cid}", {**req, "name": f"Smoke City {RUN} (renamed)", "radiusKm": 25})
+    check(s == 200 and city["name"].endswith("(renamed)") and float(city["radiusKm"]) == 25, "admin edits a city", city)
+    s, city = admin.put(f"/api/v1/admin/cities/{cid}/status", {"active": False})
+    check(s == 200 and not city["active"], "admin switches the city off again", city)
+    s, _ = admin.delete(f"/api/v1/admin/cities/{cid}/pincodes/{pin}")
+    check(s == 204, "and removes its PIN code", s)
+    s, cities = anon.get("/api/v1/cities")
+    if s == 200 and len(cities) == 1:
+        s, body = admin.put(f"/api/v1/admin/cities/{cities[0]['id']}/status", {"active": False})
+        check(s == 422 and code_of(body) == "LAST_LIVE_CITY", "the last live city cannot be switched off", body)
 
 
 # ====================================================================== Phase 2A: launch readiness
@@ -700,6 +841,11 @@ def launch_readiness(anon, customer, genie, admin, ctx):
     check(s == 200 and pdf[:4] == b"%PDF", "receipt PDF downloads", s)
     s, _ = genie.get(f"/api/v1/receipts/{receipt['id']}/pdf")
     check(s in (403, 404), "someone else's receipt is not available", s)
+    s, link = customer.get(f"/api/v1/receipts/{receipt['id']}/link")
+    ls, lf, disp = open_link(link) if s == 200 else (s, b"", "")
+    check(s == 200 and ls == 200 and lf[:4] == b"%PDF" and "attachment" in disp and link["expiresAt"], "receipt download link works without login and expires", (s, ls, disp))
+    s, _ = genie.get(f"/api/v1/receipts/{receipt['id']}/link")
+    check(s in (403, 404), "no link to someone else's receipt", s)
     mails = [m for m in mailpit_messages(customer.user["email"]) if receipt["number"] in m["Subject"]]
     check(mails and mailpit_message(mails[0]["ID"])["Attachments"], "receipt emailed with the PDF attached", len(mails))
     s, pays = admin.get(f"/api/v1/admin/bookings/{b2['id']}/payments")
@@ -754,6 +900,9 @@ def launch_readiness(anon, customer, genie, admin, ctx):
     check(s == 201 and att["contentType"] == "image/jpeg", "a real photo is attached", att)
     s, f = admin.get(f"/api/v1/tickets/{t['id']}/attachments/{att['id']}")
     check(s == 200 and f[:3] == b"\xff\xd8\xff", "admin opens the photo", s)
+    s, link = customer.get(f"/api/v1/tickets/{t['id']}/attachments/{att['id']}/link")
+    ls, lf, _ = open_link(link) if s == 200 else (s, b"", "")
+    check(s == 200 and ls == 200 and lf[:3] == b"\xff\xd8\xff", "the photo opens from a short-lived link", (s, ls))
     s, q = admin.get("/api/v1/admin/tickets?status=ACTIVE&size=100")
     check(s == 200 and any(x["id"] == t["id"] for x in q["items"]), "the report is in the admin queue", s)
     s, at = admin.post(f"/api/v1/admin/tickets/{t['id']}/assign")
@@ -799,7 +948,11 @@ def launch_readiness(anon, customer, genie, admin, ctx):
     # ------------------------------------------------------------------ privacy
     section("Privacy: data export and account deletion")
     s, job = customer.post("/api/v1/me/data-export")
-    check(s == 202 and job["status"] == "PENDING", "customer asks for a copy of their data", job)
+    if s == 429 and code_of(job) == "EXPORT_RECENT":  # a re-run on the same day: check today's copy instead
+        check(bool(job.get("jobId")), "one data export per day (re-run): today's copy is used", job)
+        job = {"id": job.get("jobId")}
+    else:
+        check(s == 202 and job["status"] == "PENDING", "customer asks for a copy of their data", job)
     ready = None
     for _ in range(40):
         s, jobs = customer.get("/api/v1/me/data-export")
@@ -810,6 +963,9 @@ def launch_readiness(anon, customer, genie, admin, ctx):
     check(ready is not None, "the export is built in the background", jobs[:1] if isinstance(jobs, list) else jobs)
     if ready:
         s, z = customer.get(f"/api/v1/me/data-export/{job['id']}/file")
+        s2, link = customer.get(f"/api/v1/me/data-export/{job['id']}/link")
+        ls, lz, _ = open_link(link) if s2 == 200 else (s2, b"", "")
+        check(s2 == 200 and ls == 200 and lz == z, "the export downloads from a short-lived link too", (s2, ls))
         import io
         import zipfile
         names = zipfile.ZipFile(io.BytesIO(z)).namelist() if s == 200 else []

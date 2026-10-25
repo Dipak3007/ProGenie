@@ -69,14 +69,16 @@ class QueryUtilTest {
     @Test
     void realSlotsAreFilledOnlyWithOtherKeys() {
         String sql = QueryUtil.get(QueryConstants.GET_GENIE_LIST, Map.of(
+            "cityFilter", QueryConstants.FRAGMENT_GENIE_FILTER_CITY,
             "categoryFilter", QueryConstants.FRAGMENT_GENIE_FILTER_CATEGORY,
             "serviceFilter", QueryConstants.FRAGMENT_NONE,
             "orderBy", QueryConstants.FRAGMENT_GENIE_ORDER_PRICE));
-        assertThat(sql).contains("AND c.slug = :category").contains("ORDER BY starting_price ASC").doesNotContain("{{");
+        assertThat(sql).contains("AND c.slug = :category").contains("ci.slug = :city").contains("ORDER BY starting_price ASC").doesNotContain("{{");
 
         assertThatThrownBy(() -> QueryUtil.get(QueryConstants.GET_GENIE_LIST))
             .isInstanceOf(IllegalArgumentException.class).hasMessageContaining("slot");
         assertThatThrownBy(() -> QueryUtil.get(QueryConstants.GET_GENIE_LIST, Map.of(
+            "cityFilter", QueryConstants.FRAGMENT_NONE,
             "categoryFilter", "AND 1=1; DROP TABLE users", "serviceFilter", QueryConstants.FRAGMENT_NONE,
             "orderBy", QueryConstants.FRAGMENT_GENIE_ORDER_PRICE)))
             .as("a slot value must be a key, never SQL").isInstanceOf(IllegalArgumentException.class)

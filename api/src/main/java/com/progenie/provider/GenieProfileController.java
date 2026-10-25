@@ -7,7 +7,7 @@ import java.util.UUID;
 import com.progenie.provider.GenieDocumentService.StoredDocument;
 import com.progenie.provider.GenieProfileDtos.AvailabilityDto;
 import com.progenie.provider.GenieProfileDtos.AvailabilityRequest;
-import com.progenie.provider.GenieProfileDtos.DocumentDto;
+import com.progenie.provider.GenieProfileDtos.KycDocumentDto;
 import com.progenie.provider.GenieProfileDtos.LocationRequest;
 import com.progenie.provider.GenieProfileDtos.MyProfileDto;
 import com.progenie.provider.GenieProfileDtos.MyServiceDto;
@@ -17,6 +17,7 @@ import com.progenie.provider.GenieProfileDtos.ServicesRequest;
 import com.progenie.provider.GenieProfileDtos.TimeOffDto;
 import com.progenie.provider.GenieProfileDtos.TimeOffRequest;
 import com.progenie.shared.security.CurrentUser;
+import com.progenie.shared.storage.FileStorage;
 import jakarta.validation.Valid;
 import org.springframework.core.io.InputStreamResource;
 import org.springframework.http.ContentDisposition;
@@ -94,17 +95,23 @@ public class GenieProfileController {
     }
 
     @GetMapping("/documents")
-    public List<DocumentDto> documents() {
+    public List<KycDocumentDto> documents() {
         return documents.list(CurrentUser.id());
     }
 
     /** multipart/form-data: docType=AADHAAR|PAN|SELFIE|CERTIFICATE|OTHER, last4 (for Aadhaar/PAN), file. */
     @PostMapping(path = "/documents", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
     @ResponseStatus(HttpStatus.CREATED)
-    public DocumentDto upload(@RequestParam String docType,
+    public KycDocumentDto upload(@RequestParam String docType,
                               @RequestParam(required = false) String last4,
                               @RequestPart MultipartFile file) {
         return documents.upload(CurrentUser.id(), docType, last4, file);
+    }
+
+    /** A link to the file that works for a few minutes; inline=true shows it in the browser. */
+    @GetMapping("/documents/{id}/link")
+    public FileStorage.FileLink documentLink(@PathVariable UUID id, @RequestParam(defaultValue = "true") boolean inline) {
+        return documents.link(documents.find(id, CurrentUser.id()), inline);
     }
 
     @GetMapping("/documents/{id}/file")

@@ -18,10 +18,10 @@ import com.progenie.identity.domain.User;
 import com.progenie.identity.repository.RefreshTokenRepository;
 import com.progenie.identity.repository.UserRepository;
 import com.progenie.identity.service.OtpService;
-import com.progenie.notification.delivery.Channel;
-import com.progenie.notification.delivery.MessageTemplate;
-import com.progenie.notification.delivery.Messenger;
-import com.progenie.notification.delivery.NotificationPreferences;
+import com.progenie.messaging.delivery.Channel;
+import com.progenie.messaging.delivery.MessageTemplate;
+import com.progenie.messaging.delivery.Messenger;
+import com.progenie.messaging.delivery.NotificationPreferences;
 import com.progenie.shared.config.AppProperties;
 import com.progenie.shared.config.QueryConstants;
 import com.progenie.shared.error.ApiException;
@@ -30,6 +30,7 @@ import com.progenie.shared.storage.FileStorage;
 import com.progenie.shared.util.QueryUtil;
 import com.progenie.shared.util.Times;
 import com.progenie.shared.web.PageResponse;
+import org.jspecify.annotations.Nullable;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.jdbc.core.simple.JdbcClient;
@@ -56,13 +57,13 @@ public class AccountDeletionService {
     public record Blocker(String code, String message) {
     }
 
-    public record DeletionStatus(UUID requestId, String status, OffsetDateTime requestedAt, OffsetDateTime scheduledFor,
+    public record DeletionStatus(@Nullable UUID requestId, String status, @Nullable OffsetDateTime requestedAt, @Nullable OffsetDateTime scheduledFor,
                                  List<Blocker> blockers) {
     }
 
-    public record DeletionRequestRow(UUID id, UUID userId, String fullName, String role, String status, String reason,
-                                     OffsetDateTime requestedAt, OffsetDateTime scheduledFor, OffsetDateTime completedAt,
-                                     String note) {
+    public record DeletionRequestRow(UUID id, UUID userId, String fullName, String role, String status, @Nullable String reason,
+                                     OffsetDateTime requestedAt, OffsetDateTime scheduledFor, @Nullable OffsetDateTime completedAt,
+                                     @Nullable String note) {
     }
 
     private final JdbcClient jdbc;

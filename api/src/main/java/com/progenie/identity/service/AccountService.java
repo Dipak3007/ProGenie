@@ -16,6 +16,7 @@ import com.progenie.shared.config.QueryConstants;
 import com.progenie.shared.error.ApiException;
 import com.progenie.shared.util.QueryUtil;
 import com.progenie.shared.web.PageResponse;
+import org.jspecify.annotations.Nullable;
 import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.jdbc.core.simple.JdbcClient;
 import org.springframework.security.crypto.password.PasswordEncoder;
@@ -25,6 +26,7 @@ import org.springframework.util.StringUtils;
 
 /** Self-service account changes and admin status changes. */
 @Service
+@org.springframework.modulith.NamedInterface("accounts") // used by the admin module (user search and suspension)
 public class AccountService {
 
     private final UserRepository users;
@@ -81,7 +83,8 @@ public class AccountService {
     }
 
     /** One row in the admin user list. */
-    public record UserRowDto(UUID id, String fullName, String email, String phone, String role, String status,
+    @org.springframework.modulith.NamedInterface("accounts")
+    public record UserRowDto(UUID id, String fullName, @Nullable String email, String phone, String role, String status,
                              OffsetDateTime createdAt, long bookingCount) {
     }
 

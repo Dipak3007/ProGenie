@@ -11,11 +11,12 @@ import com.progenie.shared.config.QueryConstants;
 import com.progenie.shared.error.ApiException;
 import com.progenie.shared.util.QueryUtil;
 import org.springframework.jdbc.core.simple.JdbcClient;
+import org.springframework.cache.annotation.Cacheable;
 import org.springframework.stereotype.Service;
 
 /**
  * Read-only catalog queries with plain SQL (JdbcClient). Records are mapped by column name
- * (snake_case → camelCase). A Redis cache will sit in front of these in Phase 1.
+ * (snake_case → camelCase). Cities, categories and category pages are cached ({@link CatalogCaches}); search is not.
  */
 @Service
 public class CatalogQueryService {
@@ -26,12 +27,14 @@ public class CatalogQueryService {
         this.jdbc = jdbc;
     }
 
+    @Cacheable(cacheNames = CatalogCaches.CITIES, key = "'all'")
     public List<CityDto> cities() {
         return jdbc.sql(QueryUtil.get(QueryConstants.GET_CATALOG_ACTIVE_CITIES))
             .query(CityDto.class)
             .list();
     }
 
+    @Cacheable(cacheNames = CatalogCaches.CATEGORIES, key = "'all'")
     public List<CategoryDto> categories() {
         return jdbc.sql(QueryUtil.get(QueryConstants.GET_CATALOG_CATEGORIES))
             .query(CategoryDto.class)
@@ -56,6 +59,7 @@ public class CatalogQueryService {
             .list();
     }
 
+    @Cacheable(cacheNames = CatalogCaches.CATEGORY, key = "#slug")
     public CategoryDetailDto category(String slug) {
         CategoryDto category = jdbc.sql(QueryUtil.get(QueryConstants.GET_CATALOG_CATEGORY_BY_SLUG))
             .param("slug", slug)

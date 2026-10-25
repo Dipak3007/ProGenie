@@ -34,7 +34,7 @@ class PriceCalculatorTest {
     @Test
     void commissionIsOnlyOnServiceAmount() {
         // The worked example from the architecture doc
-        PriceBreakdown q = PriceCalculator.quote(new BigDecimal("499"), new BigDecimal("6.4"), new BigDecimal("50"), AHMEDABAD);
+        PriceBreakdown q = PriceCalculator.quote(new BigDecimal("499"), new BigDecimal("6.4"), PriceCalculator.DistanceMethod.ESTIMATE, new BigDecimal("50"), AHMEDABAD);
 
         assertThat(q.serviceAmount()).isEqualByComparingTo("499.00");
         assertThat(q.travelFee()).isEqualByComparingTo("74.00");
@@ -45,7 +45,7 @@ class PriceCalculatorTest {
 
     @Test
     void missingTipCountsAsZero() {
-        PriceBreakdown q = PriceCalculator.quote(new BigDecimal("249"), new BigDecimal("1"), null, AHMEDABAD);
+        PriceBreakdown q = PriceCalculator.quote(new BigDecimal("249"), new BigDecimal("1"), PriceCalculator.DistanceMethod.ROAD, null, AHMEDABAD);
         assertThat(q.tipAmount()).isEqualByComparingTo("0.00");
         assertThat(q.totalAmount()).isEqualByComparingTo("249.00");
     }

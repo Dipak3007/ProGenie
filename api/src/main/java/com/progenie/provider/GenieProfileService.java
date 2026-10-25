@@ -14,10 +14,12 @@ import java.util.Set;
 import java.util.UUID;
 import java.util.stream.Collectors;
 
+import com.progenie.catalog.CatalogDtos.CityDto;
+import com.progenie.catalog.ServiceabilityService;
 import com.progenie.identity.AccountGuards;
 import com.progenie.provider.GenieEvents.GenieSubmitted;
 import com.progenie.provider.GenieProfileDtos.AvailabilityDto;
-import com.progenie.provider.GenieProfileDtos.DocumentDto;
+import com.progenie.provider.GenieProfileDtos.KycDocumentDto;
 import com.progenie.provider.GenieProfileDtos.LocationRequest;
 import com.progenie.provider.GenieProfileDtos.MyProfileDto;
 import com.progenie.provider.GenieProfileDtos.MyServiceDto;
@@ -55,10 +57,12 @@ public class GenieProfileService {
     private final ApplicationEventPublisher events;
     private final Clock clock;
     private final AccountGuards guards;
+    private final ServiceabilityService serviceability;
 
     public GenieProfileService(JdbcClient jdbc, GenieDocumentService documents, ApplicationEventPublisher events, Clock clock,
-                               AccountGuards guards) {
+                               AccountGuards guards, ServiceabilityService serviceability) {
         this.guards = guards;
+        this.serviceability = serviceability;
         this.jdbc = jdbc;
         this.documents = documents;
         this.events = events;
@@ -77,7 +81,7 @@ public class GenieProfileService {
 
         List<MyServiceDto> services = services(genieId);
         List<AvailabilityDto> availability = availability(genieId);
-        List<DocumentDto> docs = documents.list(genieId);
+        List<KycDocumentDto> docs = documents.list(genieId);
         List<Step> missing = missingSteps(p, services, availability, docs);
         boolean canSubmit = missing.isEmpty() && Set.of("REGISTERED", "NEEDS_CHANGES").contains(p.verificationStatus());
         return new MyProfileDto(p.id(), p.fullName(), p.phone(), p.email(), p.bio(), p.experienceYears(),
@@ -87,7 +91,7 @@ public class GenieProfileService {
     }
 
     static List<Step> missingSteps(ProfileRow p, List<MyServiceDto> services, List<AvailabilityDto> availability,
-                                   List<DocumentDto> docs) {
+                                   List<KycDocumentDto> docs) {
         EnumSet<Step> missing = EnumSet.noneOf(Step.class);
         if (p.bio() == null || p.bio().trim().length() < MIN_BIO_LENGTH) {
             missing.add(Step.PROFILE);
@@ -130,8 +134,12 @@ public class GenieProfileService {
     // ------------------------------------------------------------------ profile
 
     @Transactional
+    @GenieCaches.EvictsGenies
     public MyProfileDto updateProfile(UUID genieId, ProfileRequest req) {
         requireProfile(genieId);
+        // The base location must be in India and inside a live city; that city is the Genie's service area
+        // (it decides which city's listing shows them and which city pricing their quotes use).
+        CityDto city = serviceability.requireLiveCity(req.baseLat(), req.baseLng());
         jdbc.sql(QueryUtil.get(QueryConstants.UPDATE_GENIE_PROFILE_DETAILS))
             .param("bio", trimToNull(req.bio()))
             .param("experience", req.experienceYears())
@@ -142,17 +150,16 @@ public class GenieProfileService {
             .param("upi", trimToNull(req.payoutUpiId()))
             .param("id", genieId)
             .update();
-        // The service area (and so the city pricing used for quotes) is the nearest active city.
         jdbc.sql(QueryUtil.get(QueryConstants.DELETE_GENIE_PROFILE_SERVICE_AREAS)).param("id", genieId).update();
         jdbc.sql(QueryUtil.get(QueryConstants.INSERT_GENIE_PROFILE_SERVICE_AREAS))
             .param("id", genieId)
-            .param("lat", req.baseLat())
-            .param("lng", req.baseLng())
+            .param("cityId", city.id())
             .update();
         return me(genieId);
     }
 
     @Transactional
+    @GenieCaches.EvictsGenies
     public List<MyServiceDto> replaceServices(UUID genieId, List<ServiceOfferRequest> offers) {
         requireProfile(genieId);
         Set<Long> seen = new HashSet<>();
@@ -268,6 +275,7 @@ public class GenieProfileService {
     // ------------------------------------------------------------------ verification submit / online / location
 
     @Transactional
+    @GenieCaches.EvictsGenies
     public MyProfileDto submitForReview(UUID genieId) {
         guards.requireVerifiedPhone(genieId);
         MyProfileDto me = me(genieId);
@@ -287,6 +295,7 @@ public class GenieProfileService {
     }
 
     @Transactional
+    @GenieCaches.EvictsGenies
     public boolean setOnline(UUID genieId, boolean online) {
         String status = jdbc.sql(QueryUtil.get(QueryConstants.GET_GENIE_PROFILE_STATUS))
             .param("id", genieId).query(String.class).optional()
@@ -300,6 +309,7 @@ public class GenieProfileService {
     }
 
     @Transactional
+    @GenieCaches.EvictsGenies
     public void updateLocation(UUID genieId, LocationRequest req) {
         requireProfile(genieId);
         jdbc.sql(QueryUtil.get(QueryConstants.UPSERT_GENIE_PROFILE_LOCATION))
@@ -314,6 +324,7 @@ public class GenieProfileService {
 
     /** Booking module: a Genie finished a job. */
     @Transactional
+    @GenieCaches.EvictsGenies
     public void recordCompletedJob(UUID genieId) {
         jdbc.sql(QueryUtil.get(QueryConstants.UPDATE_GENIE_PROFILE_COMPLETED_JOB))
             .param("id", genieId).update();
@@ -328,6 +339,7 @@ public class GenieProfileService {
 
     /** Booking module: too many cancellations; flag once until an admin clears it. */
     @Transactional
+    @GenieCaches.EvictsGenies
     public void flag(UUID genieId, String reason) {
         int rows = jdbc.sql(QueryUtil.get(QueryConstants.UPDATE_GENIE_PROFILE_FLAG))
             .param("reason", reason).param("id", genieId).update();
@@ -340,6 +352,7 @@ public class GenieProfileService {
 
     /** Review module: recompute the denormalised rating after a new review. */
     @Transactional
+    @GenieCaches.EvictsGenies
     public void refreshRating(UUID genieId) {
         jdbc.sql(QueryUtil.get(QueryConstants.UPDATE_GENIE_PROFILE_RATING))
             .param("id", genieId).update();

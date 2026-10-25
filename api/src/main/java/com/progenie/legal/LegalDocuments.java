@@ -11,6 +11,8 @@ import com.progenie.shared.config.CompanyProperties;
 import com.progenie.shared.config.QueryConstants;
 import com.progenie.shared.error.ApiException;
 import com.progenie.shared.util.QueryUtil;
+import jakarta.validation.constraints.NotBlank;
+import org.jspecify.annotations.Nullable;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.jdbc.core.simple.JdbcClient;
@@ -27,22 +29,23 @@ public class LegalDocuments {
 
     private static final Logger log = LoggerFactory.getLogger(LegalDocuments.class);
 
-    public record DocumentDto(UUID id, LegalKind kind, int version, String title, String body, String changeSummary,
-                              boolean requiresReacceptance, LocalDate effectiveFrom, OffsetDateTime publishedAt,
+    public record LegalDocumentDto(UUID id, LegalKind kind, int version, String title, String body, @Nullable String changeSummary,
+                              boolean requiresReacceptance, @Nullable LocalDate effectiveFrom, @Nullable OffsetDateTime publishedAt,
                               OffsetDateTime updatedAt) {
     }
 
-    public record VersionDto(int version, String title, String changeSummary, boolean requiresReacceptance,
-                             LocalDate effectiveFrom, OffsetDateTime publishedAt) {
+    public record VersionDto(int version, String title, @Nullable String changeSummary, boolean requiresReacceptance,
+                             @Nullable LocalDate effectiveFrom, OffsetDateTime publishedAt) {
     }
 
-    public record DraftRequest(String title, String body, String changeSummary, Boolean requiresReacceptance,
+    /** title and body are required (checked in {@link #saveDraft}, which answers DRAFT_INCOMPLETE). */
+    public record DraftRequest(@NotBlank String title, @NotBlank String body, String changeSummary, Boolean requiresReacceptance,
                                LocalDate effectiveFrom) {
     }
 
     /** Public contact details for the Privacy page and Contact Us. Blank values mean "not set yet". */
-    public record CompanyDto(String legalName, String address, String city, String supportEmail, String supportPhone,
-                             String grievanceName, String grievanceEmail) {
+    public record CompanyDto(@Nullable String legalName, @Nullable String address, @Nullable String city, @Nullable String supportEmail, @Nullable String supportPhone,
+                             @Nullable String grievanceName, @Nullable String grievanceEmail) {
     }
 
     private final JdbcClient jdbc;
@@ -55,17 +58,17 @@ public class LegalDocuments {
 
     /** The latest published version. */
     @Transactional(readOnly = true)
-    public DocumentDto current(LegalKind kind) {
+    public LegalDocumentDto current(LegalKind kind) {
         return jdbc.sql(QueryUtil.get(QueryConstants.GET_LEGAL_CURRENT))
-            .param("k", kind.name()).query(DocumentDto.class).optional()
+            .param("k", kind.name()).query(LegalDocumentDto.class).optional()
             .map(this::withCompany)
             .orElseThrow(() -> ApiException.notFound("LEGAL_DOCUMENT_NOT_FOUND", "This document isn't published yet"));
     }
 
     @Transactional(readOnly = true)
-    public DocumentDto version(LegalKind kind, int version) {
+    public LegalDocumentDto version(LegalKind kind, int version) {
         return jdbc.sql(QueryUtil.get(QueryConstants.GET_LEGAL_VERSION))
-            .param("k", kind.name()).param("v", version).query(DocumentDto.class).optional()
+            .param("k", kind.name()).param("v", version).query(LegalDocumentDto.class).optional()
             .map(this::withCompany)
             .orElseThrow(() -> ApiException.notFound("LEGAL_DOCUMENT_NOT_FOUND", "No such version"));
     }
@@ -85,13 +88,13 @@ public class LegalDocuments {
 
     /** Every version and draft, newest first per kind, with the raw text (placeholders not filled). */
     @Transactional(readOnly = true)
-    public List<DocumentDto> adminList() {
-        return jdbc.sql(QueryUtil.get(QueryConstants.GET_LEGAL_ADMIN_LIST)).query(DocumentDto.class).list();
+    public List<LegalDocumentDto> adminList() {
+        return jdbc.sql(QueryUtil.get(QueryConstants.GET_LEGAL_ADMIN_LIST)).query(LegalDocumentDto.class).list();
     }
 
     /** Creates or updates the one draft of this kind (the next version number). */
     @Transactional
-    public DocumentDto saveDraft(LegalKind kind, DraftRequest req, UUID adminId) {
+    public LegalDocumentDto saveDraft(LegalKind kind, DraftRequest req, UUID adminId) {
         if (req.title() == null || req.title().isBlank() || req.body() == null || req.body().isBlank()) {
             throw ApiException.badRequest("DRAFT_INCOMPLETE", "A title and text are required");
         }
@@ -111,7 +114,7 @@ public class LegalDocuments {
                 .update();
         }
         return jdbc.sql(QueryUtil.get(QueryConstants.GET_LEGAL_DRAFT)).param("k", kind.name())
-            .query(DocumentDto.class).single();
+            .query(LegalDocumentDto.class).single();
     }
 
     @Transactional
@@ -124,9 +127,9 @@ public class LegalDocuments {
      * can't book (or accept jobs) until they accept it.
      */
     @Transactional
-    public DocumentDto publish(UUID documentId) {
-        DocumentDto d = jdbc.sql(QueryUtil.get(QueryConstants.LOCK_LEGAL_DOCUMENT)).param("id", documentId)
-            .query(DocumentDto.class).optional()
+    public LegalDocumentDto publish(UUID documentId) {
+        LegalDocumentDto d = jdbc.sql(QueryUtil.get(QueryConstants.LOCK_LEGAL_DOCUMENT)).param("id", documentId)
+            .query(LegalDocumentDto.class).optional()
             .orElseThrow(() -> ApiException.notFound("LEGAL_DOCUMENT_NOT_FOUND", "Document not found"));
         if (d.publishedAt() != null) {
             throw ApiException.unprocessable("ALREADY_PUBLISHED", "This version is already published");
@@ -134,10 +137,10 @@ public class LegalDocuments {
         jdbc.sql(QueryUtil.get(QueryConstants.UPDATE_LEGAL_PUBLISH))
             .param("id", documentId).update();
         log.info("Published {} v{} (re-acceptance: {})", d.kind(), d.version(), d.requiresReacceptance());
-        return jdbc.sql(QueryUtil.get(QueryConstants.GET_LEGAL_DOCUMENT)).param("id", documentId).query(DocumentDto.class).single();
+        return jdbc.sql(QueryUtil.get(QueryConstants.GET_LEGAL_DOCUMENT)).param("id", documentId).query(LegalDocumentDto.class).single();
     }
 
-    private DocumentDto withCompany(DocumentDto d) {
+    private LegalDocumentDto withCompany(LegalDocumentDto d) {
         Map<String, String> values = new LinkedHashMap<>();
         values.put("[Company legal name]", company.legalName());
         values.put("[Registered address]", company.address());
@@ -152,7 +155,7 @@ public class LegalDocuments {
                 body = body.replace(e.getKey(), e.getValue());
             }
         }
-        return new DocumentDto(d.id(), d.kind(), d.version(), d.title(), body, d.changeSummary(), d.requiresReacceptance(),
+        return new LegalDocumentDto(d.id(), d.kind(), d.version(), d.title(), body, d.changeSummary(), d.requiresReacceptance(),
             d.effectiveFrom(), d.publishedAt(), d.updatedAt());
     }
 }

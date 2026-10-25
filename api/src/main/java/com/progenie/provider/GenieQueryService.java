@@ -7,11 +7,12 @@ import java.util.UUID;
 import com.progenie.provider.GenieDtos.GenieCardDto;
 import com.progenie.provider.GenieDtos.GenieDetailDto;
 import com.progenie.provider.GenieDtos.GenieServiceDto;
-import com.progenie.provider.GenieDtos.ReviewDto;
+import com.progenie.provider.GenieDtos.GenieReviewDto;
 import com.progenie.shared.config.QueryConstants;
 import com.progenie.shared.error.ApiException;
 import com.progenie.shared.util.QueryUtil;
 import org.springframework.jdbc.core.simple.JdbcClient;
+import org.springframework.cache.annotation.Cacheable;
 import org.springframework.stereotype.Service;
 
 /** Public Genie listing and profile. Only APPROVED Genies with an ACTIVE account are ever shown. */
@@ -38,12 +39,21 @@ public class GenieQueryService {
         this.jdbc = jdbc;
     }
 
-    public List<GenieCardDto> list(String categorySlug, Long serviceId, Sort sort, int limit) {
+    /**
+     * Listed Genies, optionally only those working in a city (slug, e.g. "ahmedabad"), a category or a service.
+     */
+    @Cacheable(cacheNames = GenieCaches.LIST,
+        key = "#citySlug + '|' + #categorySlug + '|' + #serviceId + '|' + #sort + '|' + #limit")
+    public List<GenieCardDto> list(String citySlug, String categorySlug, Long serviceId, Sort sort, int limit) {
         JdbcClient.StatementSpec statement = jdbc.sql(QueryUtil.get(QueryConstants.GET_GENIE_LIST, Map.of(
+            "cityFilter", citySlug != null ? QueryConstants.FRAGMENT_GENIE_FILTER_CITY : QueryConstants.FRAGMENT_NONE,
             "categoryFilter", categorySlug != null ? QueryConstants.FRAGMENT_GENIE_FILTER_CATEGORY : QueryConstants.FRAGMENT_NONE,
             "serviceFilter", serviceId != null ? QueryConstants.FRAGMENT_GENIE_FILTER_SERVICE : QueryConstants.FRAGMENT_NONE,
             "orderBy", sort.orderBy)))
             .param("limit", Math.clamp(limit, 1, 50));
+        if (citySlug != null) {
+            statement = statement.param("city", citySlug);
+        }
         if (categorySlug != null) {
             statement = statement.param("category", categorySlug);
         }
@@ -75,6 +85,7 @@ public class GenieQueryService {
             .single();
     }
 
+    @Cacheable(cacheNames = GenieCaches.DETAIL, key = "#genieId")
     public GenieDetailDto detail(UUID genieId) {
         GenieCardDto card = jdbc.sql(QueryUtil.get(QueryConstants.GET_GENIE_CARD))
             .param("id", genieId)
@@ -87,9 +98,9 @@ public class GenieQueryService {
             .query(GenieServiceDto.class)
             .list();
 
-        List<ReviewDto> reviews = jdbc.sql(QueryUtil.get(QueryConstants.GET_GENIE_DETAIL_REVIEWS))
+        List<GenieReviewDto> reviews = jdbc.sql(QueryUtil.get(QueryConstants.GET_GENIE_DETAIL_REVIEWS))
             .param("id", genieId)
-            .query(ReviewDto.class)
+            .query(GenieReviewDto.class)
             .list();
 
         return new GenieDetailDto(card, services, reviews);

@@ -9,7 +9,7 @@ import java.util.Map;
 import java.util.Set;
 import java.util.UUID;
 
-import com.progenie.provider.GenieProfileDtos.DocumentDto;
+import com.progenie.provider.GenieProfileDtos.KycDocumentDto;
 import com.progenie.shared.config.AppProperties;
 import com.progenie.shared.config.QueryConstants;
 import com.progenie.shared.error.ApiException;
@@ -48,15 +48,15 @@ public class GenieDocumentService {
     }
 
     @Transactional(readOnly = true)
-    public List<DocumentDto> list(UUID genieId) {
+    public List<KycDocumentDto> list(UUID genieId) {
         return jdbc.sql(QueryUtil.get(QueryConstants.GET_GENIE_DOCUMENT_LIST))
             .param("id", genieId)
-            .query(DocumentDto.class)
+            .query(KycDocumentDto.class)
             .list();
     }
 
     @Transactional
-    public DocumentDto upload(UUID genieId, String docType, String numberLast4, MultipartFile file) {
+    public KycDocumentDto upload(UUID genieId, String docType, String numberLast4, MultipartFile file) {
         String type = docType == null ? "" : docType.trim().toUpperCase();
         if (!DOC_TYPES.contains(type)) {
             throw ApiException.badRequest("INVALID_DOC_TYPE", "Document type must be one of " + DOC_TYPES);
@@ -90,7 +90,7 @@ public class GenieDocumentService {
             .param("name", safeFileName(file.getOriginalFilename()))
             .param("ct", contentType)
             .param("size", bytes.length)
-            .query(DocumentDto.class)
+            .query(KycDocumentDto.class)
             .single();
     }
 
@@ -123,6 +123,11 @@ public class GenieDocumentService {
 
     public InputStream open(StoredDocument doc) {
         return storage.get(doc.objectKey());
+    }
+
+    /** A short-lived link to the file (presigned URL on S3). Access is checked by {@link #find} first. */
+    public FileStorage.FileLink link(StoredDocument doc, boolean inline) {
+        return storage.link(doc.objectKey(), doc.fileName(), doc.contentType(), inline);
     }
 
     /** Documents cannot change while an admin is reviewing them. */

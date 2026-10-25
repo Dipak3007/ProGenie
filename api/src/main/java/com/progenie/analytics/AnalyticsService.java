@@ -15,6 +15,7 @@ import com.progenie.shared.config.AppProperties;
 import com.progenie.shared.config.QueryConstants;
 import com.progenie.shared.error.ApiException;
 import com.progenie.shared.util.QueryUtil;
+import org.jspecify.annotations.Nullable;
 import org.springframework.jdbc.core.simple.JdbcClient;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -39,14 +40,14 @@ public class AnalyticsService {
 
     public record OverviewDto(LocalDate from, LocalDate to, long bookingsCreated, Map<String, Long> bookingsByStatus,
                               long completed, BigDecimal gmv, BigDecimal commission, BigDecimal avgOrderValue,
-                              BigDecimal acceptanceRate, BigDecimal cancellationRate, long newCustomers, long newGenies,
+                              @Nullable BigDecimal acceptanceRate, @Nullable BigDecimal cancellationRate, long newCustomers, long newGenies,
                               long approvedGenies, long pendingVerifications, long flaggedGenies,
                               long outstandingFees, List<CategoryStat> topCategories, List<GenieStat> topGenies,
                               List<DayStat> daily) {
     }
 
     public record GenieStatsDto(LocalDate from, LocalDate to, long requestsReceived, long completed,
-                                long cancelledByGenie, BigDecimal acceptanceRate, BigDecimal earnings,
+                                long cancelledByGenie, @Nullable BigDecimal acceptanceRate, BigDecimal earnings,
                                 BigDecimal avgRating, int ratingCount, List<DayStat> daily) {
     }
 

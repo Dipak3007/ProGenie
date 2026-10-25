@@ -18,9 +18,9 @@ import java.util.Map;
 import java.util.Set;
 import java.util.UUID;
 
-import com.progenie.notification.delivery.Channel;
-import com.progenie.notification.delivery.MessageTemplate;
-import com.progenie.notification.delivery.Messenger;
+import com.progenie.messaging.delivery.Channel;
+import com.progenie.messaging.delivery.MessageTemplate;
+import com.progenie.messaging.delivery.Messenger;
 import com.progenie.payment.DocumentNumbers.Series;
 import com.progenie.payment.PaymentDtos.PaymentReceived;
 import com.progenie.payment.PaymentDtos.RefundProcessed;
@@ -31,6 +31,7 @@ import com.progenie.shared.config.QueryConstants;
 import com.progenie.shared.error.ApiException;
 import com.progenie.shared.storage.FileStorage;
 import com.progenie.shared.util.QueryUtil;
+import org.jspecify.annotations.Nullable;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.context.event.EventListener;
@@ -51,7 +52,7 @@ public class ReceiptService {
     private static final DateTimeFormatter DATE = DateTimeFormatter.ofPattern("d MMM yyyy", Locale.ENGLISH);
     private static final DateTimeFormatter DATE_TIME = DateTimeFormatter.ofPattern("d MMM yyyy, h:mm a", Locale.ENGLISH);
 
-    public record ReceiptDto(UUID id, String number, String kind, UUID bookingId, UUID paymentId, UUID refundId,
+    public record ReceiptDto(UUID id, String number, String kind, UUID bookingId, @Nullable UUID paymentId, @Nullable UUID refundId,
                              BigDecimal amount, OffsetDateTime issuedAt) {
     }
 
@@ -194,6 +195,22 @@ public class ReceiptService {
         byte[] pdf = render(r);
         store(r, pdf);
         return new PdfFile(fileName(r), pdf);
+    }
+
+    /**
+     * A short-lived download link (presigned URL on S3) for its customer or an admin. The PDF is rendered and stored
+     * first if it is missing, so the link always works.
+     */
+    @Transactional
+    public FileStorage.FileLink link(UUID receiptId, UUID userId, boolean admin, boolean inline) {
+        ReceiptRow r = jdbc.sql(QueryUtil.get(QueryConstants.GET_RECEIPT_ROW)).param("id", receiptId).query(ReceiptRow.class).optional()
+            .filter(x -> admin || x.customerId().equals(userId))
+            .orElseThrow(() -> ApiException.notFound("RECEIPT_NOT_FOUND", "Receipt not found"));
+        String key = r.fileKey();
+        if (key == null || !storage.exists(key)) {
+            key = store(r, render(r));
+        }
+        return storage.link(key, fileName(r), "application/pdf", inline);
     }
 
     // ------------------------------------------------------------------ rendering

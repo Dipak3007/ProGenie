@@ -22,16 +22,22 @@ public class GenieController {
         this.genies = genies;
     }
 
+    /** Example: GET /api/v1/genies?city=ahmedabad&category=plumbing&sort=PRICE */
     @GetMapping
-    public List<GenieCardDto> list(@RequestParam(required = false) String category,
+    public List<GenieCardDto> list(@RequestParam(required = false) String city,
+                                   @RequestParam(required = false) String category,
                                    @RequestParam(required = false) Long serviceId,
                                    @RequestParam(defaultValue = "RATING") GenieQueryService.Sort sort,
                                    @RequestParam(defaultValue = "20") int limit) {
-        return genies.list(category, serviceId, sort, limit);
+        return genies.list(blankToNull(city), category, serviceId, sort, limit);
     }
 
     @GetMapping("/{id}")
     public GenieDetailDto detail(@PathVariable UUID id) {
         return genies.detail(id);
+    }
+
+    private static String blankToNull(String s) {
+        return s == null || s.isBlank() ? null : s.trim();
     }
 }
