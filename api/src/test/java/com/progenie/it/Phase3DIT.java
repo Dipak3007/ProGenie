@@ -137,7 +137,14 @@ class Phase3DIT extends IntegrationTest {
     void theWorkingHoursCheckUsesTheGeniesRealTravelTime() {
         assumeThat(LocalTime.now(INDIA)).isBefore(LocalTime.of(21, 0));
         genie.post("/api/v1/genie/status", "{\"online\":true}");
-        double km = jdbc.sql("SELECT ST_Distance(gp.base_location, a.location) / 1000 FROM genie_profiles gp, addresses a WHERE gp.user_id = CAST(:g AS uuid) AND a.id = CAST(:a AS uuid)")
+        // Same rule as the candidate pool: a fresh, accurate live position wins over the base location (another IT may
+        // have just sent one for this Genie), and the distance is rounded to 2 decimals before the travel estimate.
+        double km = jdbc.sql("""
+                SELECT round((ST_Distance(coalesce(CASE WHEN gl.updated_at > now() - interval '15 minutes' AND coalesce(gl.accuracy_m, 0) <= 1000 THEN gl.location END, gp.base_location), a.location) / 1000.0)::numeric, 2)
+                FROM genie_profiles gp
+                JOIN addresses a ON a.id = CAST(:a AS uuid)
+                LEFT JOIN genie_locations gl ON gl.genie_id = gp.user_id
+                WHERE gp.user_id = CAST(:g AS uuid)""")
             .param("g", genieId).param("a", addressId).query(Double.class).single();
         int travel = Math.max(15, (int) Math.ceil(km * 1.3 / 22 * 60) + 10);
         int duration = jdbc.sql("SELECT duration_minutes FROM services WHERE id = :s").param("s", serviceId).query(Integer.class).single();
