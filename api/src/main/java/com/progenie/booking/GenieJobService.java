@@ -70,12 +70,13 @@ public class GenieJobService {
     @Transactional
     public BookingDetailDto cancel(UUID genieId, UUID bookingId, String reason) {
         Booking b = support.lockForGenie(bookingId, genieId);
-        if (b.getStatus() != BookingStatus.ACCEPTED) {
+        BookingStatus from = b.getStatus();
+        if (!from.isConfirmed()) {
             throw ApiException.unprocessable("INVALID_STATE", "Only accepted jobs can be cancelled; decline new requests instead");
         }
         String why = StringUtils.hasText(reason) ? reason.trim() : "Cancelled by Genie";
         b.cancel(clock.instant(), genieId, why, BigDecimal.ZERO);
-        support.transitioned(b, BookingStatus.ACCEPTED, genieId, "GENIE", BookingEvent.Type.CANCELLED, why, false);
+        support.transitioned(b, from, genieId, "GENIE", BookingEvent.Type.CANCELLED, why, false);
         genies.recordCancellation(genieId);
         int recent = queries.recentGenieCancellations(genieId, rules.genieCancellationFlagWindow());
         if (recent >= rules.genieCancellationFlagThreshold()) {
@@ -86,12 +87,31 @@ public class GenieJobService {
         return queries.detail(bookingId, Viewer.GENIE, genieId);
     }
 
+    /**
+     * "Start travelling" (Phase 3C): the customer is told the Genie is on the way and sees them on a map until the
+     * job starts. Allowed from 2 h before the earliest start ({@link BookingPolicy#canStartTravel}).
+     */
+    @Transactional
+    public BookingDetailDto startTravel(UUID genieId, UUID bookingId) {
+        Booking b = support.lockForGenie(bookingId, genieId);
+        Instant now = clock.instant();
+        if (b.getStatus() == BookingStatus.ACCEPTED
+            && !BookingPolicy.canStartTravel(b.getSlotStart(), now, rules.startEarlyWindow())) {
+            throw ApiException.unprocessable("TOO_EARLY", "You can start travelling at most "
+                + rules.startEarlyWindow().plus(BookingPolicy.TRAVEL_LEAD).toMinutes() + " minutes before the slot");
+        }
+        BookingStatus from = b.getStatus();
+        b.startTravel(now);
+        support.transitioned(b, from, genieId, "GENIE", BookingEvent.Type.ON_THE_WAY, null, false);
+        return queries.detail(bookingId, Viewer.GENIE, genieId);
+    }
+
     /** Wrong codes are counted even though the request fails, hence noRollbackFor. */
     @Transactional(noRollbackFor = ApiException.class)
     public BookingDetailDto start(UUID genieId, UUID bookingId, String code) {
         Booking b = support.lockForGenie(bookingId, genieId);
         Instant now = clock.instant();
-        if (b.getStatus() == BookingStatus.ACCEPTED && !BookingPolicy.canStart(b.getSlotStart(), now, rules.startEarlyWindow())) {
+        if (b.getStatus().isConfirmed() && !BookingPolicy.canStart(b.getSlotStart(), now, rules.startEarlyWindow())) {
             throw ApiException.unprocessable("TOO_EARLY",
                 "You can start at most " + rules.startEarlyWindow().toMinutes() + " minutes before the slot");
         }

@@ -19,6 +19,7 @@ import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.PutMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
@@ -35,8 +36,11 @@ public class GenieJobController {
     private final GenieJobService jobs;
     private final BookingQueryService queries;
     private final BookingPhotos photos;
+    private final BookingTracking tracking;
 
-    public GenieJobController(GenieJobService jobs, BookingQueryService queries, BookingPhotos photos) {
+    public GenieJobController(GenieJobService jobs, BookingQueryService queries, BookingPhotos photos,
+                              BookingTracking tracking) {
+        this.tracking = tracking;
         this.jobs = jobs;
         this.queries = queries;
         this.photos = photos;
@@ -68,6 +72,18 @@ public class GenieJobController {
     @PostMapping("/{id}/cancel")
     public BookingDetailDto cancel(@PathVariable UUID id, @Valid @RequestBody(required = false) CancelRequest req) {
         return jobs.cancel(CurrentUser.id(), id, req == null ? null : req.reason());
+    }
+
+    /** "Start travelling": the customer sees the Genie on a map until the job starts (Phase 3C). */
+    @PostMapping("/{id}/travel")
+    public BookingDetailDto startTravel(@PathVariable UUID id) {
+        return jobs.startTravel(CurrentUser.id(), id);
+    }
+
+    /** The Genie's current position while on the way, about every 20 seconds. Only the latest is kept. */
+    @PutMapping("/{id}/location")
+    public BookingTracking.TrackingDto location(@PathVariable UUID id, @Valid @RequestBody BookingTracking.LocationRequest req) {
+        return tracking.update(CurrentUser.id(), id, req);
     }
 
     /** Body: {"code": "1234"} — the start code shown in the customer's app. */

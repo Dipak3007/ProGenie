@@ -281,7 +281,7 @@ export default class AdminBookingPage {
   }
 
   protected canCancel(b: BookingDetail): boolean {
-    return ['REQUESTED', 'ACCEPTED', 'IN_PROGRESS'].includes(b.status);
+    return ['REQUESTED', 'ACCEPTED', 'ON_THE_WAY', 'IN_PROGRESS'].includes(b.status);
   }
 
   protected cancel(): void {

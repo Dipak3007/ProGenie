@@ -39,8 +39,8 @@ public class BookingQueryService {
     public enum Scope { ACTIVE, REQUESTS, UPCOMING, PAST, ALL }
 
     static final Duration REVIEW_WINDOW = Duration.ofDays(14);
-    private static final Set<String> CONTACT_VISIBLE = Set.of("ACCEPTED", "IN_PROGRESS");
-    private static final Set<String> ADDRESS_VISIBLE = Set.of("ACCEPTED", "IN_PROGRESS", "COMPLETED");
+    private static final Set<String> CONTACT_VISIBLE = Set.of("ACCEPTED", "ON_THE_WAY", "IN_PROGRESS");
+    private static final Set<String> ADDRESS_VISIBLE = Set.of("ACCEPTED", "ON_THE_WAY", "IN_PROGRESS", "COMPLETED");
 
     /** Flat SQL row behind {@link BookingDetailDto}. */
     record Row(UUID id, String bookingRef, String status, UUID customerId, UUID genieId, long serviceId,
@@ -53,7 +53,8 @@ public class BookingQueryService {
                BigDecimal geniePayout, String paymentMethod, String paymentStatus, BigDecimal cancellationFee,
                String cancellationFeeStatus, String cancelReason, String cancelledByRole, int rescheduledCount,
                boolean reviewed, OffsetDateTime createdAt, OffsetDateTime acceptedAt, OffsetDateTime startedAt,
-               OffsetDateTime completedAt, OffsetDateTime cancelledAt, BigDecimal discountAmount, String couponCode) {
+               OffsetDateTime completedAt, OffsetDateTime cancelledAt, BigDecimal discountAmount, String couponCode,
+               OffsetDateTime travelStartedAt) {
     }
 
     /** Status filter per list tab: keys of SQL fragments in sql_scripts.properties. */
@@ -155,7 +156,7 @@ public class BookingQueryService {
 
         Instant now = clock.instant();
         BookingStatus status = BookingStatus.valueOf(r.status());
-        BigDecimal feeIfNow = viewer == Viewer.CUSTOMER && (status == BookingStatus.REQUESTED || status == BookingStatus.ACCEPTED)
+        BigDecimal feeIfNow = viewer == Viewer.CUSTOMER && (status == BookingStatus.REQUESTED || status.isConfirmed())
             ? BookingPolicy.customerCancellationFee(status, r.slotStart().toInstant(), now,
                 rules.freeCancellationWindow(), rules.lateCancellationFee())
             : null;
@@ -172,7 +173,7 @@ public class BookingQueryService {
             r.paymentMethod(), r.paymentStatus(), r.cancellationFee(), r.cancellationFeeStatus(), feeIfNow,
             r.cancelReason(), r.cancelledByRole(), r.rescheduledCount(), r.reviewed(), r.createdAt(), r.acceptedAt(),
             r.startedAt(), r.completedAt(), r.cancelledAt(), actions, history(bookingId), jobPhotos, r.discountAmount(),
-            r.couponCode());
+            r.couponCode(), r.travelStartedAt());
     }
 
     List<String> allowedActions(Row r, Viewer viewer, Instant now) {
@@ -182,8 +183,11 @@ public class BookingQueryService {
         List<String> actions = new ArrayList<>();
         switch (viewer) {
             case CUSTOMER -> {
-                if (status == BookingStatus.REQUESTED || status == BookingStatus.ACCEPTED) {
+                if (status == BookingStatus.REQUESTED || status.isConfirmed()) {
                     actions.add("CANCEL");
+                }
+                if (status == BookingStatus.ON_THE_WAY) {
+                    actions.add("TRACK");
                 }
                 if (BookingPolicy.canReschedule(status, slotStart, now, rules.freeCancellationWindow(),
                     r.rescheduledCount(), rules.maxReschedules())) {
@@ -192,7 +196,7 @@ public class BookingQueryService {
                 if (unpaid && (status.isActive() || status == BookingStatus.COMPLETED)) {
                     actions.add("CHANGE_TIP");
                 }
-                if (status == BookingStatus.ACCEPTED) {
+                if (status.isConfirmed()) {
                     actions.add("START_CODE");
                 }
                 if (status == BookingStatus.COMPLETED && unpaid) {
@@ -211,7 +215,13 @@ public class BookingQueryService {
                     actions.add("ACCEPT");
                     actions.add("DECLINE");
                 }
-                if (status == BookingStatus.ACCEPTED) {
+                if (status == BookingStatus.ACCEPTED && BookingPolicy.canStartTravel(slotStart, now, rules.startEarlyWindow())) {
+                    actions.add("START_TRAVEL");
+                }
+                if (status == BookingStatus.ON_THE_WAY) {
+                    actions.add("SHARE_LOCATION");
+                }
+                if (status.isConfirmed()) {
                     if (BookingPolicy.canStart(slotStart, now, rules.startEarlyWindow())) {
                         actions.add("START");
                     }
@@ -222,7 +232,7 @@ public class BookingQueryService {
                 }
             }
             case ADMIN -> {
-                if (status == BookingStatus.REQUESTED || status == BookingStatus.ACCEPTED) {
+                if (status == BookingStatus.REQUESTED || status.isConfirmed()) {
                     actions.add("CANCEL");
                 }
                 if ("DUE".equals(r.cancellationFeeStatus())) {

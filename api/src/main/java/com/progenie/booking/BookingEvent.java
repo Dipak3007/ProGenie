@@ -13,5 +13,5 @@ import java.util.UUID;
 public record BookingEvent(Type type, UUID bookingId, String bookingRef, UUID customerId, UUID genieId,
                            Instant slotStart, String actorRole, String reason, boolean cashCollected) {
 
-    public enum Type { REQUESTED, ACCEPTED, DECLINED, EXPIRED, CANCELLED, RESCHEDULED, STARTED, COMPLETED }
+    public enum Type { REQUESTED, ACCEPTED, DECLINED, EXPIRED, CANCELLED, RESCHEDULED, ON_THE_WAY, STARTED, COMPLETED }
 }

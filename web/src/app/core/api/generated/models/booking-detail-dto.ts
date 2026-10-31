@@ -48,4 +48,5 @@ export interface BookingDetailDto {
   tipAmount: number;
   totalAmount: number;
   travelFee: number;
+  travelStartedAt: (string | null);
 }

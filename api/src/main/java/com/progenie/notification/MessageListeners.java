@@ -118,6 +118,8 @@ class MessageListeners {
                     messenger.toUser(e.customerId(), MessageTemplate.BOOKING_COMPLETED, Set.of(Channel.WHATSAPP),
                         with(p, "link", customerLink, "payText", payText, "linkLabel", "Rate your Genie"), key);
                 }
+                case ON_THE_WAY -> messenger.toUser(e.customerId(), MessageTemplate.BOOKING_ON_THE_WAY,
+                    Set.of(Channel.WHATSAPP), with(p, "link", customerLink, "linkLabel", "Track your Genie"), key);
                 case STARTED -> {
                 }
             }

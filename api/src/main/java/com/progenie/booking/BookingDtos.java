@@ -80,7 +80,7 @@ public final class BookingDtos {
      * One booking as seen by {@code viewer}. Contact details are only shared while the job is active
      * and accepted; the Genie sees the full address only after accepting.
      *
-     * @param allowedActions what this viewer can do next, e.g. CANCEL, RESCHEDULE, PAY, ACCEPT, START
+     * @param allowedActions what this viewer can do next, e.g. CANCEL, RESCHEDULE, PAY, TRACK, ACCEPT, START_TRAVEL, START
      */
     public record BookingDetailDto(UUID id, String bookingRef, String status, long serviceId, String serviceName,
                                    String categoryName, String categorySlug, PartyDto genie, PartyDto customer,
@@ -95,7 +95,8 @@ public final class BookingDtos {
                                    OffsetDateTime createdAt, @Nullable OffsetDateTime acceptedAt, @Nullable OffsetDateTime startedAt,
                                    @Nullable OffsetDateTime completedAt, @Nullable OffsetDateTime cancelledAt,
                                    List<String> allowedActions, List<HistoryDto> history, List<BookingPhotoDto> photos,
-                                   BigDecimal discountAmount, @Nullable String couponCode) {
+                                   BigDecimal discountAmount, @Nullable String couponCode,
+                                   @Nullable OffsetDateTime travelStartedAt) {
     }
 
     /**

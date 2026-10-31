@@ -1,6 +1,6 @@
 import { ChangeDetectionStrategy, Component, computed, inject, input, signal, viewChild } from '@angular/core';
 import { httpResource } from '@angular/common/http';
-import { CurrencyPipe, DatePipe, DecimalPipe } from '@angular/common';
+import { CurrencyPipe, DatePipe, DecimalPipe, NgTemplateOutlet } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { RouterLink } from '@angular/router';
 import {
@@ -13,6 +13,7 @@ import {
   LucideKeyRound as KeyRound,
   LucideLifeBuoy as LifeBuoy,
   LucideMapPin as MapPin,
+  LucideNavigation as Navigation,
   LucidePartyPopper as PartyPopper,
   LucidePhone as Phone,
   LucideStar as Star,
@@ -35,6 +36,7 @@ import { EmptyState, Skeleton, Spinner } from '../../shared/ui/kit';
 import { SlotPicker } from '../../shared/ui/slot-picker';
 import { StatusBadge } from '../../shared/ui/status-badge';
 import { PaymentDialog } from './payment-dialog';
+import { LiveTracking } from './live-tracking';
 
 const TIP_PRESETS = [0, 20, 50, 100];
 
@@ -51,6 +53,8 @@ const TIP_PRESETS = [0, 20, 50, 100];
     Dialog,
     EmptyState,
     JobPhotos,
+    LiveTracking,
+    NgTemplateOutlet,
     PaymentDialog,
     PriceSummary,
     ReportDialog,
@@ -100,23 +104,20 @@ const TIP_PRESETS = [0, 20, 50, 100];
                     <p class="mt-1 text-sm text-ink/75">When they arrive, give them your 4-digit start code. The job starts only with your code.</p>
                   </div>
                 </div>
-                @if (can('START_CODE')) {
-                  <div class="flex flex-col gap-4 border-t border-line p-5 sm:flex-row sm:items-center">
-                    @if (code(); as c) {
-                      <div class="flex-1">
-                        <p class="text-xs font-semibold uppercase tracking-widest text-muted">Your start code</p>
-                        <p class="mt-1 font-display text-5xl font-extrabold tracking-[0.3em] text-brand-600" aria-live="polite">{{ c.code }}</p>
-                        <p class="mt-2 text-sm text-muted">Share it only when your Genie is at the door. Generating a new code replaces this one.</p>
-                      </div>
-                      <button type="button" class="btn-ghost" [disabled]="busy()" (click)="generateCode()">New code</button>
-                    } @else {
-                      <p class="flex-1 text-sm text-ink/75">For your safety, the code is created only when you need it.</p>
-                      <button type="button" class="btn-primary" [disabled]="busy()" (click)="generateCode()">
-                        <svg [lucideIcon]="KeyRound" [size]="18" aria-hidden="true"></svg> Show start code
-                      </button>
-                    }
+                <ng-container *ngTemplateOutlet="startCodeBlock" />
+              }
+              @case ('ON_THE_WAY') {
+                <div class="bg-sky-50 p-5">
+                  <div class="flex gap-4">
+                    <svg [lucideIcon]="Navigation" [size]="24" class="shrink-0 text-sky-700" aria-hidden="true"></svg>
+                    <div class="min-w-0 flex-1">
+                      <p class="font-semibold">{{ b.genie.name }} is on the way</p>
+                      <p class="mt-1 text-sm text-ink/75">Your slot is {{ b.slotStart | date: 'h:mm a' }}. When they arrive, give them your 4-digit start code.</p>
+                    </div>
                   </div>
-                }
+                  <pg-live-tracking class="mt-4" [bookingId]="b.id" [genieName]="b.genie.name" (ended)="detail.reload()" />
+                </div>
+                <ng-container *ngTemplateOutlet="startCodeBlock" />
               }
               @case ('IN_PROGRESS') {
                 <div class="flex gap-4 bg-sky-50 p-5">
@@ -304,6 +305,25 @@ const TIP_PRESETS = [0, 20, 50, 100];
               </div>
             }
           </section>
+          <ng-template #startCodeBlock>
+                @if (can('START_CODE')) {
+                  <div class="flex flex-col gap-4 border-t border-line p-5 sm:flex-row sm:items-center">
+                    @if (code(); as c) {
+                      <div class="flex-1">
+                        <p class="text-xs font-semibold uppercase tracking-widest text-muted">Your start code</p>
+                        <p class="mt-1 font-display text-5xl font-extrabold tracking-[0.3em] text-brand-600" aria-live="polite">{{ c.code }}</p>
+                        <p class="mt-2 text-sm text-muted">Share it only when your Genie is at the door. Generating a new code replaces this one.</p>
+                      </div>
+                      <button type="button" class="btn-ghost" [disabled]="busy()" (click)="generateCode()">New code</button>
+                    } @else {
+                      <p class="flex-1 text-sm text-ink/75">For your safety, the code is created only when you need it.</p>
+                      <button type="button" class="btn-primary" [disabled]="busy()" (click)="generateCode()">
+                        <svg [lucideIcon]="KeyRound" [size]="18" aria-hidden="true"></svg> Show start code
+                      </button>
+                    }
+                  </div>
+                }
+          </ng-template>
 
           @if (can('RESCHEDULE') || can('CANCEL')) {
             <section class="card space-y-3 p-5">
@@ -312,6 +332,8 @@ const TIP_PRESETS = [0, 20, 50, 100];
                 <p class="rounded-xl bg-rose-50 px-3 py-2 text-sm text-rose-800">
                   It's less than 2 hours to the slot, so cancelling now costs {{ b.cancellationFeeIfCancelledNow | currency: 'INR' }}.
                 </p>
+              } @else if (b.status === 'ON_THE_WAY') {
+                <p class="text-sm text-muted">Your Genie is already on the way. Cancelling is still free until 2 hours before the slot.</p>
               } @else if (b.status === 'ACCEPTED') {
                 <p class="text-sm text-muted">Free to cancel or reschedule until 2 hours before the slot.</p>
               } @else {
@@ -588,6 +610,7 @@ export default class BookingDetailPage {
   protected readonly KeyRound = KeyRound;
   protected readonly LifeBuoy = LifeBuoy;
   protected readonly MapPin = MapPin;
+  protected readonly Navigation = Navigation;
   protected readonly PartyPopper = PartyPopper;
   protected readonly Phone = Phone;
   protected readonly Star = Star;

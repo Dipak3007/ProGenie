@@ -301,6 +301,37 @@
         ]
       }
     },
+    "/api/v1/admin/bookings/{id}/tracking": {
+      "get": {
+        "operationId": "adminOperationsTracking",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "*/*": {
+                "schema": {
+                  "$ref": "#/components/schemas/TrackingDto"
+                }
+              }
+            },
+            "description": "OK"
+          }
+        },
+        "tags": [
+          "admin-operations-controller"
+        ]
+      }
+    },
     "/api/v1/admin/bookings/{id}/waive-fee": {
       "post": {
         "operationId": "adminOperationsWaiveFee",
@@ -3124,6 +3155,37 @@
         ]
       }
     },
+    "/api/v1/bookings/{id}/tracking": {
+      "get": {
+        "operationId": "bookingTracking",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "*/*": {
+                "schema": {
+                  "$ref": "#/components/schemas/TrackingDto"
+                }
+              }
+            },
+            "description": "OK"
+          }
+        },
+        "tags": [
+          "booking-controller"
+        ]
+      }
+    },
     "/api/v1/categories": {
       "get": {
         "operationId": "catalogCategories",
@@ -3747,6 +3809,47 @@
         ]
       }
     },
+    "/api/v1/genie/bookings/{id}/location": {
+      "put": {
+        "operationId": "genieJobLocation",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/LocationRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "*/*": {
+                "schema": {
+                  "$ref": "#/components/schemas/TrackingDto"
+                }
+              }
+            },
+            "description": "OK"
+          }
+        },
+        "tags": [
+          "genie-job-controller"
+        ]
+      }
+    },
     "/api/v1/genie/bookings/{id}/photos": {
       "post": {
         "operationId": "genieJobAddPhoto",
@@ -3865,6 +3968,37 @@
           },
           "required": true
         },
+        "responses": {
+          "200": {
+            "content": {
+              "*/*": {
+                "schema": {
+                  "$ref": "#/components/schemas/BookingDetailDto"
+                }
+              }
+            },
+            "description": "OK"
+          }
+        },
+        "tags": [
+          "genie-job-controller"
+        ]
+      }
+    },
+    "/api/v1/genie/bookings/{id}/travel": {
+      "post": {
+        "operationId": "genieJobStartTravel",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
         "responses": {
           "200": {
             "content": {
@@ -7455,6 +7589,13 @@
           },
           "travelFee": {
             "type": "number"
+          },
+          "travelStartedAt": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date-time"
           }
         },
         "required": [
@@ -7499,7 +7640,8 @@
           "status",
           "tipAmount",
           "totalAmount",
-          "travelFee"
+          "travelFee",
+          "travelStartedAt"
         ]
       },
       "BookingPhotoDto": {
@@ -12152,6 +12294,103 @@
         },
         "required": [
           "tipAmount"
+        ]
+      },
+      "TrackingDto": {
+        "type": "object",
+        "properties": {
+          "accuracyM": {
+            "type": [
+              "number",
+              "null"
+            ]
+          },
+          "active": {
+            "type": "boolean"
+          },
+          "bookingId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "customerLat": {
+            "type": [
+              "number",
+              "null"
+            ],
+            "format": "double"
+          },
+          "customerLng": {
+            "type": [
+              "number",
+              "null"
+            ],
+            "format": "double"
+          },
+          "distanceKm": {
+            "type": [
+              "number",
+              "null"
+            ]
+          },
+          "distanceMethod": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "etaMinutes": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int32"
+          },
+          "lat": {
+            "type": [
+              "number",
+              "null"
+            ],
+            "format": "double"
+          },
+          "lng": {
+            "type": [
+              "number",
+              "null"
+            ],
+            "format": "double"
+          },
+          "status": {
+            "type": "string"
+          },
+          "travelStartedAt": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date-time"
+          },
+          "updatedAt": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date-time"
+          }
+        },
+        "required": [
+          "accuracyM",
+          "active",
+          "bookingId",
+          "customerLat",
+          "customerLng",
+          "distanceKm",
+          "distanceMethod",
+          "etaMinutes",
+          "lat",
+          "lng",
+          "status",
+          "travelStartedAt",
+          "updatedAt"
         ]
       },
       "UpdateProfileRequest": {

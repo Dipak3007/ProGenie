@@ -10,7 +10,7 @@ import { addDays, statusMeta } from '../../shared/format';
 import { BookingRow } from '../../shared/ui/booking-parts';
 import { EmptyState, PageHead, Pager, Skeleton } from '../../shared/ui/kit';
 
-const STATUSES = ['REQUESTED', 'ACCEPTED', 'IN_PROGRESS', 'COMPLETED', 'CANCELLED', 'REJECTED', 'EXPIRED'];
+const STATUSES = ['REQUESTED', 'ACCEPTED', 'ON_THE_WAY', 'IN_PROGRESS', 'COMPLETED', 'CANCELLED', 'REJECTED', 'EXPIRED'];
 
 @Component({
   selector: 'pg-admin-bookings-page',

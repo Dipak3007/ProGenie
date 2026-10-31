@@ -77,6 +77,10 @@ class BookingSupport {
             // the new time gets its own reminder
             jdbc.sql(QueryUtil.get(QueryConstants.UPDATE_BOOKING_CLEAR_REMINDER)).param("id", b.getId()).update();
         }
+        if (from == BookingStatus.ON_THE_WAY && b.getStatus() != BookingStatus.ON_THE_WAY) {
+            // the live position is only shared while travelling: gone once the job starts or is cancelled
+            jdbc.sql(QueryUtil.get(QueryConstants.DELETE_BOOKING_TRACKING)).param("id", b.getId()).update();
+        }
         if (b.getCouponId() != null && from != b.getStatus() && ENDED_BEFORE_START.contains(b.getStatus())) {
             coupons.release(b.getId(), b.getBookingRef());
         }

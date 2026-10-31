@@ -138,6 +138,7 @@ export type { TicketSummary } from './models/ticket-summary';
 export type { TimeOffDto } from './models/time-off-dto';
 export type { TimeOffRequest } from './models/time-off-request';
 export type { TipRequest } from './models/tip-request';
+export type { TrackingDto } from './models/tracking-dto';
 export type { UpdateProfileRequest } from './models/update-profile-request';
 export type { UserDto } from './models/user-dto';
 export type { UserRowDto } from './models/user-row-dto';

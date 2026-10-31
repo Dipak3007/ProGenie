@@ -68,4 +68,20 @@ class BookingPolicyTest {
         assertThat(BookingPolicy.canStart(SLOT, SLOT.minus(Duration.ofMinutes(30)), early)).isTrue();
         assertThat(BookingPolicy.canStart(SLOT, SLOT.plus(Duration.ofMinutes(15)), early)).isTrue();
     }
+
+    @Test
+    void genieCanSetOffTwoAndAHalfHoursBeforeTheSlot() {
+        Duration early = Duration.ofMinutes(30);
+        assertThat(BookingPolicy.canStartTravel(SLOT, SLOT.minus(Duration.ofMinutes(150)), early)).isTrue();
+        assertThat(BookingPolicy.canStartTravel(SLOT, SLOT.minus(Duration.ofMinutes(151)), early)).isFalse();
+    }
+
+    @Test
+    void aGenieOnTheWayIsCancelledUnderTheSameRulesAsAnAcceptedBooking() {
+        Instant late = SLOT.minus(Duration.ofMinutes(30));
+        assertThat(BookingPolicy.customerCancellationFee(BookingStatus.ON_THE_WAY, SLOT, late, FREE_WINDOW, FEE))
+            .isEqualByComparingTo("49.00");
+        assertThat(BookingPolicy.canReschedule(BookingStatus.ON_THE_WAY, SLOT, SLOT.minus(Duration.ofHours(5)), FREE_WINDOW, 0, 2))
+            .isFalse();
+    }
 }

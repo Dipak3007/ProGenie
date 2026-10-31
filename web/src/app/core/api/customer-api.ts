@@ -13,6 +13,7 @@ import {
   PaymentOrder,
   Review,
   StartCode,
+  Tracking,
   User,
 } from './models';
 
@@ -90,6 +91,11 @@ export class CustomerApi {
 
   startCode(id: string): Observable<StartCode> {
     return this.http.post<StartCode>(`${API}/bookings/${id}/start-code`, {});
+  }
+
+  /** The Genie's live position while on the way (also pushed as the live "tracking" event). */
+  tracking(id: string): Observable<Tracking> {
+    return this.http.get<Tracking>(`${API}/bookings/${id}/tracking`);
   }
 
   review(id: string, body: { rating: number; comment: string | null }): Observable<Review> {

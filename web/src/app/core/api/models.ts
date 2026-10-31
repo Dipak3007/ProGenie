@@ -87,6 +87,7 @@ import type {
   TicketMessageDto,
   TicketSummary,
   TimeOffDto,
+  TrackingDto,
   UserDto,
   UserRowDto,
   RedemptionDto,
@@ -170,7 +171,7 @@ export type Address = AddressDto;
 
 // ---------------------------------------------------------------- bookings
 
-export type BookingStatus = 'REQUESTED' | 'ACCEPTED' | 'IN_PROGRESS' | 'COMPLETED' | 'CANCELLED' | 'REJECTED' | 'EXPIRED';
+export type BookingStatus = 'REQUESTED' | 'ACCEPTED' | 'ON_THE_WAY' | 'IN_PROGRESS' | 'COMPLETED' | 'CANCELLED' | 'REJECTED' | 'EXPIRED';
 export type PaymentMethod = 'CASH' | 'ONLINE';
 export type PaymentStatus = 'UNPAID' | 'PAID' | 'PARTIALLY_REFUNDED' | 'REFUNDED' | 'WAIVED';
 export type FeeStatus = 'DUE' | 'PAID' | 'WAIVED';
@@ -186,7 +187,10 @@ export type BookingAction =
   | 'ACCEPT'
   | 'DECLINE'
   | 'START'
-  | 'COMPLETE';
+  | 'COMPLETE'
+  | 'START_TRAVEL'
+  | 'SHARE_LOCATION'
+  | 'TRACK';
 
 export type Party = PartyDto;
 
@@ -194,6 +198,8 @@ export type Party = PartyDto;
 export type HistoryItem = HistoryDto;
 
 export type BookingDetail = BookingDetailDto;
+/** Live "on the way" map: the Genie's latest position, distance and arrival estimate (Phase 3C-10). */
+export type Tracking = TrackingDto;
 /** A before/after job photo with a short-lived link (Phase 3A-8). */
 export type BookingPhoto = BookingPhotoDto;
 

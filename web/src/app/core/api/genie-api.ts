@@ -15,6 +15,7 @@ import {
   ProfileRequest,
   Review,
   TimeOff,
+  Tracking,
 } from './models';
 
 /** Genie self-service commands: onboarding, availability, jobs and reviews. */
@@ -91,6 +92,16 @@ export class GenieApi {
 
   cancel(id: string, reason: string | null): Observable<BookingDetail> {
     return this.http.post<BookingDetail>(`${this.base}/bookings/${id}/cancel`, { reason });
+  }
+
+  /** "Start travelling": the booking becomes ON_THE_WAY and the customer can follow the Genie on a map. */
+  startTravel(id: string): Observable<BookingDetail> {
+    return this.http.post<BookingDetail>(`${this.base}/bookings/${id}/travel`, {});
+  }
+
+  /** The Genie's latest position while on the way (sent about every 20 seconds). */
+  sendTravelLocation(id: string, lat: number, lng: number, accuracyM: number | null): Observable<Tracking> {
+    return this.http.put<Tracking>(`${this.base}/bookings/${id}/location`, { lat, lng, accuracyM });
   }
 
   start(id: string, code: string): Observable<BookingDetail> {

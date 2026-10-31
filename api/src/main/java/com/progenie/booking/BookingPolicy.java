@@ -18,7 +18,7 @@ public final class BookingPolicy {
      */
     public static BigDecimal customerCancellationFee(BookingStatus status, Instant slotStart, Instant now,
                                                      Duration freeWindow, BigDecimal lateFee) {
-        if (status != BookingStatus.ACCEPTED) {
+        if (!status.isConfirmed()) {
             return BigDecimal.ZERO;
         }
         return now.isBefore(slotStart.minus(freeWindow)) ? BigDecimal.ZERO : lateFee;
@@ -36,6 +36,14 @@ public final class BookingPolicy {
         return (status == BookingStatus.REQUESTED || status == BookingStatus.ACCEPTED)
             && now.isBefore(slotStart.minus(freeWindow))
             && rescheduledCount < maxReschedules;
+    }
+
+    /** How long before the earliest start the Genie may set off and share their position (Phase 3C). */
+    public static final Duration TRAVEL_LEAD = Duration.ofHours(2);
+
+    /** "Start travelling" opens {@link #TRAVEL_LEAD} before the job may start (2 h 30 min before the slot by default). */
+    public static boolean canStartTravel(Instant slotStart, Instant now, Duration startEarlyWindow) {
+        return !now.isBefore(slotStart.minus(startEarlyWindow).minus(TRAVEL_LEAD));
     }
 
     /** A Genie may start a little before the slot, never earlier. */

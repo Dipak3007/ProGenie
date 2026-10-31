@@ -73,6 +73,8 @@ class NotificationListeners {
                 }
                 case RESCHEDULED -> notifications.notify(e.genieId(), "BOOKING_RESCHEDULED", "Booking moved to a new time",
                     e.bookingRef() + " is now on " + when + ". Please accept it again.", genieLink);
+                case ON_THE_WAY -> notifications.notify(e.customerId(), "BOOKING_ON_THE_WAY", "Your Genie is on the way",
+                    "Follow them on the map for " + e.bookingRef() + ". Share your start code when they arrive.", customerLink);
                 case STARTED -> notifications.notify(e.customerId(), "BOOKING_STARTED", "Your Genie has started",
                     "Work on " + e.bookingRef() + " has started.", customerLink);
                 case COMPLETED -> notifications.notify(e.customerId(), "BOOKING_COMPLETED", "Job done! How was it?",

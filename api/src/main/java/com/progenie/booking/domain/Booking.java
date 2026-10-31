@@ -147,6 +147,9 @@ public class Booking {
     @Column(name = "accepted_at")
     private Instant acceptedAt;
 
+    @Column(name = "travel_started_at")
+    private Instant travelStartedAt;
+
     @Column(name = "started_at")
     private Instant startedAt;
 
@@ -239,9 +242,16 @@ public class Booking {
         status = BookingStatus.EXPIRED;
     }
 
+    /** The Genie sets off to the customer (Phase 3C): their live position is shared until the job starts. */
+    public void startTravel(Instant now) {
+        require(BookingStatus.ACCEPTED, "start travelling to");
+        status = BookingStatus.ON_THE_WAY;
+        travelStartedAt = now;
+    }
+
     /** Cancels an active, not yet started booking. A positive fee becomes due from the customer. */
     public void cancel(Instant now, UUID actorId, String reason, BigDecimal fee) {
-        if (status != BookingStatus.REQUESTED && status != BookingStatus.ACCEPTED) {
+        if (status != BookingStatus.REQUESTED && !status.isConfirmed()) {
             throw invalid("cancel");
         }
         status = BookingStatus.CANCELLED;
@@ -271,14 +281,18 @@ public class Booking {
 
     /** Stores the hash of a fresh start code (the customer reads the code to the Genie at the door). */
     public void issueStartCode(String codeHash) {
-        require(BookingStatus.ACCEPTED, "create a start code for");
+        if (!status.isConfirmed()) {
+            throw invalid("create a start code for");
+        }
         startOtpHash = codeHash;
         startOtpAttempts = 0;
     }
 
     /** Starts the job if the start code matches; wrong codes are counted and lock after 5 tries. */
     public void start(Instant now, boolean codeMatches) {
-        require(BookingStatus.ACCEPTED, "start");
+        if (!status.isConfirmed()) {
+            throw invalid("start");
+        }
         if (startOtpHash == null) {
             throw ApiException.unprocessable("START_CODE_MISSING", "Ask the customer to open the booking and share the start code");
         }
@@ -479,6 +493,10 @@ public class Booking {
 
     public Instant getExpiresAt() {
         return expiresAt;
+    }
+
+    public Instant getTravelStartedAt() {
+        return travelStartedAt;
     }
 
     public Instant getCompletedAt() {

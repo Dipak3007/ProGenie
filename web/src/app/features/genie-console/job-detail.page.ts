@@ -1,4 +1,4 @@
-import { ChangeDetectionStrategy, Component, computed, inject, input, signal } from '@angular/core';
+import { ChangeDetectionStrategy, Component, DestroyRef, computed, effect, inject, input, signal, untracked } from '@angular/core';
 import { firstValueFrom } from 'rxjs';
 import { httpResource } from '@angular/common/http';
 import { CurrencyPipe, DatePipe } from '@angular/common';
@@ -18,7 +18,7 @@ import {
 
 import { API, errorCode, errorMessage } from '../../core/api/api';
 import { GenieApi } from '../../core/api/genie-api';
-import { BookingDetail, BookingPhoto } from '../../core/api/models';
+import { BookingDetail, BookingPhoto, Tracking } from '../../core/api/models';
 import { ReportDialog } from '../support/report-dialog';
 import { ConfirmService, ToastService } from '../../core/ui/feedback';
 import { liveReload } from '../../core/live/live-stream';
@@ -32,6 +32,7 @@ import { EmptyState, Skeleton, Spinner } from '../../shared/ui/kit';
 import { PhotoPicker } from '../../shared/ui/photo-picker';
 import { StatusBadge } from '../../shared/ui/status-badge';
 import { GenieStore } from './genie-store';
+import { LocationSharer } from './location-sharer';
 
 @Component({
   selector: 'pg-job-detail-page',
@@ -68,6 +69,61 @@ import { GenieStore } from './genie-store';
             </section>
           }
 
+          @if (can('START_TRAVEL')) {
+            <section class="card overflow-hidden" aria-labelledby="travel-h">
+              <div class="flex gap-4 bg-sky-50 p-5">
+                <svg [lucideIcon]="Navigation" [size]="24" class="shrink-0 text-sky-700" aria-hidden="true"></svg>
+                <div>
+                  <h2 id="travel-h" class="font-semibold">Leaving for this job?</h2>
+                  <p class="mt-1 text-sm text-ink/75">
+                    Tap <span class="font-semibold">Start travelling</span> when you set off. {{ b.customer.name.split(' ')[0] }} will see you on a map with an
+                    arrival estimate. Keep this page open on the way; your location is shared only until you start the job.
+                  </p>
+                </div>
+              </div>
+              <div class="p-5">
+                <button type="button" class="btn-primary min-h-12 w-full sm:w-auto" [disabled]="busy()" (click)="startTravel()">
+                  <svg [lucideIcon]="Navigation" [size]="18" aria-hidden="true"></svg> Start travelling
+                </button>
+              </div>
+            </section>
+          }
+
+          @if (b.status === 'ON_THE_WAY') {
+            <section class="card p-5" aria-labelledby="otw-h" data-testid="sharing">
+              <h2 id="otw-h" class="flex items-center gap-2 text-lg font-bold">
+                <svg [lucideIcon]="Navigation" [size]="20" class="text-sky-700" aria-hidden="true"></svg> You're on the way
+              </h2>
+              @switch (sharer.error()) {
+                @case ('denied') {
+                  <p class="mt-2 rounded-xl bg-rose-50 px-3 py-2 text-sm text-rose-800" role="alert">
+                    Location access is blocked, so {{ b.customer.name.split(' ')[0] }} can't see you coming. Allow location for ProGenie in your browser settings, then try again.
+                  </p>
+                  <button type="button" class="btn-ghost mt-3" (click)="sharer.start()">Try again</button>
+                }
+                @case ('unsupported') {
+                  <p class="mt-2 text-sm text-muted" role="status">This browser can't share your location. The customer sees that you're on the way, without a map.</p>
+                }
+                @default {
+                  <p class="mt-1 text-sm text-muted" aria-live="polite">
+                    @if (sharer.lastSentAt(); as at) {
+                      Sharing your location with {{ b.customer.name.split(' ')[0] }} · last sent {{ at | date: 'h:mm:ss a' }}
+                      @if (lastTrip(); as t) {
+                        · {{ t.distanceKm }} km, about {{ t.etaMinutes }} min
+                      }
+                    } @else {
+                      Finding your location…
+                    }
+                  </p>
+                  @if (sharer.error() === 'unavailable' || sharer.error() === 'failed') {
+                    <p class="mt-2 text-sm text-amber-800" role="status">Couldn't {{ sharer.error() === 'failed' ? 'send' : 'get' }} your location just now. Retrying…</p>
+                  }
+                }
+              }
+              <p class="mt-3 text-xs text-muted">Keep this page open until you arrive. Only your latest position is shared, and it's deleted when the job starts.</p>
+            </section>
+          }
+
           @if (can('START')) {
             <section class="card p-5" aria-labelledby="start-h">
               <h2 id="start-h" class="flex items-center gap-2 text-lg font-bold">
@@ -98,10 +154,10 @@ import { GenieStore } from './genie-store';
                 <pg-photo-picker class="mt-3 block" label="Before photo" [(files)]="beforeFiles" />
               </div>
             </section>
-          } @else if (b.status === 'ACCEPTED') {
+          } @else if (b.status === 'ACCEPTED' && !can('START_TRAVEL')) {
             <section class="card p-5">
               <p class="font-semibold">Confirmed for {{ b.slotStart | date: 'EEE d MMM, h:mm a' }}</p>
-              <p class="mt-1 text-sm text-muted">You can start up to 30 minutes before the slot with the customer's code.</p>
+              <p class="mt-1 text-sm text-muted">On the day, tap Start travelling when you set off (from about 2½ hours before). Start the job with the customer's code from 30 minutes before the slot.</p>
             </section>
           }
 
@@ -266,8 +322,25 @@ export default class JobDetailPage {
   protected readonly reportOpen = signal(false);
 
   /** Accepted, and the slot ended less than 7 days ago. */
+  /** Shares the Genie's position while the booking is ON_THE_WAY (Phase 3C-10). */
+  protected readonly sharer = new LocationSharer(async (fix) => {
+    try {
+      this.lastTrip.set(await firstValueFrom(this.api.sendTravelLocation(this.id(), fix.lat, fix.lng, fix.accuracyM)));
+    } catch (err) {
+      // the job started or was cancelled elsewhere: refresh, which stops sharing
+      if (['NOT_ON_THE_WAY', 'BOOKING_NOT_FOUND'].includes(errorCode(err) ?? '')) this.detail.reload();
+      throw err;
+    }
+  });
+  protected readonly lastTrip = signal<Tracking | null>(null);
+
   constructor() {
     liveReload('booking', (e) => e.bookingId === this.id(), () => this.detail.reload());
+    effect(() => {
+      const onTheWay = this.detail.value()?.status === 'ON_THE_WAY';
+      untracked(() => (onTheWay ? this.sharer.start() : this.sharer.stop()));
+    });
+    inject(DestroyRef).onDestroy(() => this.sharer.stop());
   }
 
   protected canReport(b: BookingDetail): boolean {
@@ -317,7 +390,7 @@ export default class JobDetailPage {
   private failed(err: unknown): void {
     this.busy.set(false);
     this.toast.error(errorMessage(err));
-    if (['INVALID_STATE', 'REQUEST_EXPIRED'].includes(errorCode(err) ?? '')) this.detail.reload();
+    if (['INVALID_STATE', 'REQUEST_EXPIRED', 'TOO_EARLY'].includes(errorCode(err) ?? '')) this.detail.reload();
   }
 
   protected accept(): void {
@@ -335,6 +408,14 @@ export default class JobDetailPage {
     if (!confirmed) return;
     this.busy.set(true);
     this.api.decline(this.id(), value).subscribe({ next: (b) => this.done(b, 'Request declined'), error: (e) => this.failed(e) });
+  }
+
+  protected startTravel(): void {
+    this.busy.set(true);
+    this.api.startTravel(this.id()).subscribe({
+      next: (b) => this.done(b, 'Have a safe trip. The customer can now see you on the map.'),
+      error: (e) => this.failed(e),
+    });
   }
 
   protected start(): void {

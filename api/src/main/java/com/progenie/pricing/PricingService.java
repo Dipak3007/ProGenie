@@ -1,9 +1,11 @@
 package com.progenie.pricing;
 
 import java.math.BigDecimal;
+import java.math.RoundingMode;
 import java.util.UUID;
 
 import com.progenie.pricing.PriceCalculator.CityPricing;
+import com.progenie.pricing.PriceCalculator.DistanceMethod;
 import com.progenie.pricing.PriceCalculator.PriceBreakdown;
 import com.progenie.pricing.distance.DistanceService;
 import com.progenie.pricing.distance.DistanceService.TravelDistance;
@@ -53,5 +55,28 @@ public class PricingService {
             in.travelPerKm(), in.travelFeeCap());
         TravelDistance d = distances.travel(in.genieLat(), in.genieLng(), lat, lng, in.straightKm());
         return PriceCalculator.quote(in.servicePrice(), d.km(), d.method(), tip, pricing);
+    }
+
+    /** A distance between two points, and how it was measured (road, or straight line × road factor). */
+    public record Trip(BigDecimal km, DistanceMethod method) {
+    }
+
+    /**
+     * Distance between any two points (live tracking: the Genie's position to the customer, Phase 3C), measured the
+     * same way as the travel fee: OSRM road distance when configured, else the straight line × 1.3.
+     */
+    public Trip distanceBetween(double fromLat, double fromLng, double toLat, double toLng) {
+        TravelDistance d = distances.travel(fromLat, fromLng, toLat, toLng, straightKm(fromLat, fromLng, toLat, toLng));
+        return new Trip(d.km(), d.method());
+    }
+
+    /** Great-circle distance in km (haversine), 2 decimals. */
+    static BigDecimal straightKm(double lat1, double lng1, double lat2, double lng2) {
+        double r = 6371.0088;
+        double dLat = Math.toRadians(lat2 - lat1);
+        double dLng = Math.toRadians(lng2 - lng1);
+        double a = Math.sin(dLat / 2) * Math.sin(dLat / 2)
+            + Math.cos(Math.toRadians(lat1)) * Math.cos(Math.toRadians(lat2)) * Math.sin(dLng / 2) * Math.sin(dLng / 2);
+        return BigDecimal.valueOf(2 * r * Math.asin(Math.min(1, Math.sqrt(a)))).setScale(2, RoundingMode.HALF_UP);
     }
 }

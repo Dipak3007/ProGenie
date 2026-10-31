@@ -22,6 +22,7 @@ const STATUS: Record<string, { label: string; tone: Tone }> = {
   // bookings
   REQUESTED: { label: 'Waiting for Genie', tone: 'warning' },
   ACCEPTED: { label: 'Confirmed', tone: 'brand' },
+  ON_THE_WAY: { label: 'On the way', tone: 'info' },
   IN_PROGRESS: { label: 'In progress', tone: 'info' },
   COMPLETED: { label: 'Completed', tone: 'success' },
   CANCELLED: { label: 'Cancelled', tone: 'neutral' },

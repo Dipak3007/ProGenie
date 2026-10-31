@@ -75,6 +75,10 @@ public final class QueryConstants {
     public static final String INSERT_BOOKING_PHOTO = "insert.booking.photo";
     public static final String DELETE_BOOKING_PHOTO = "delete.booking.photo";
     public static final String GET_BOOKING_EXPIRED_PHOTOS = "get.booking.expired-photos";
+    public static final String GET_BOOKING_TRACKING = "get.booking.tracking";
+    public static final String UPSERT_BOOKING_TRACKING = "upsert.booking.tracking";
+    public static final String DELETE_BOOKING_TRACKING = "delete.booking.tracking";
+    public static final String DELETE_BOOKING_STALE_TRACKING = "delete.booking.stale-tracking";
 
     // ------------------------------------------------------------------ Catalog and city pricing
 

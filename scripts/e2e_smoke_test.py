@@ -594,6 +594,7 @@ def main():
 
     phase3a(anon, customer, genie, admin, {"book": book, "genie_id": genie_id, "service_id": service_id})
     phase3b(anon, customer, genie, admin, {"genie_id": genie_id, "service_id": service_id, "address_id": address_id})
+    phase3c(anon, customer, genie, admin, {"genie_id": genie_id, "service_id": service_id, "address_id": address_id})
 
     customer.delete(f"/api/v1/me/favourites/{genie_id}")
     customer.delete(f"/api/v1/me/addresses/{address_id}")
@@ -1167,6 +1168,115 @@ def phase3b(anon, customer, genie, admin, ctx):
     check(paused["status"] == "PAUSED" and all(o["code"] != code for o in offers), "a paused coupon disappears from checkout",
           paused.get("status"))
 
+
+
+# ====================================================================== Phase 3C
+
+def listen(session, event, seconds=25):
+    """Opens the live stream (SSE) as `session` in the background and collects `event` payloads."""
+    import threading
+    got, ready = [], threading.Event()
+
+    def run():
+        req = urllib.request.Request(BASE + "/api/v1/stream", headers={"Authorization": "Bearer " + session.token,
+                                                                         "Accept": "text/event-stream"})
+        try:
+            with urllib.request.urlopen(req, timeout=seconds) as res:
+                current = None
+                end = time.time() + seconds
+                for raw in res:
+                    line = raw.decode().rstrip("\r\n")
+                    if line.startswith("event:"):
+                        current = line[6:].strip()
+                    elif line.startswith("data:"):
+                        if current == "ready":
+                            ready.set()
+                        elif current == event:
+                            got.append(json.loads(line[5:]))
+                    if time.time() > end or got:
+                        return
+        except Exception:
+            pass
+        finally:
+            ready.set()
+
+    t = threading.Thread(target=run, daemon=True)
+    t.start()
+    ready.wait(10)
+    return got, t
+
+
+def phase3c(anon, customer, genie, admin, ctx):
+    genie_id, service_id, address_id = ctx["genie_id"], ctx["service_id"], ctx["address_id"]
+    section("Phase 3C: live 'on the way' tracking")
+
+    def booked_and_accepted():
+        slot = free_slots(anon, genie_id, service_id)[0]
+        s, b = customer.post("/api/v1/bookings", {"genieId": genie_id, "serviceId": service_id, "addressId": address_id,
+                                                  "slotStart": slot, "paymentMethod": "CASH", "tipAmount": 0})
+        genie.post(f"/api/v1/genie/bookings/{b['id']}/accept")
+        return b["id"]
+
+    bid = booked_and_accepted()
+    jobs = f"/api/v1/genie/bookings/{bid}"
+    s, body = genie.put(jobs + "/location", {"lat": 23.03, "lng": 72.56})
+    check(s == 422 and code_of(body) == "NOT_ON_THE_WAY", "no location is accepted before the Genie sets off", body)
+    s, g = genie.get(jobs)
+    check("START_TRAVEL" in g["allowedActions"], "an accepted job offers Start travelling", g["allowedActions"])
+    wa = f"{customer.user['phone'][-10:]}@whatsapp.progenie.local" if customer.user.get("phone") else None
+    before = seen(wa) if wa else set()
+    s, otw = genie.post(jobs + "/travel")
+    check(s == 200 and otw["status"] == "ON_THE_WAY" and otw["travelStartedAt"], "the Genie starts travelling (ON_THE_WAY)",
+          otw.get("status") if isinstance(otw, dict) else otw)
+    s, again = genie.post(jobs + "/travel")
+    check(s == 409 or code_of(again) == "INVALID_STATE", "starting to travel twice is refused", again)
+    s, c = customer.get(f"/api/v1/bookings/{bid}")
+    check({"TRACK", "START_CODE", "CANCEL"} <= set(c["allowedActions"]) and "RESCHEDULE" not in c["allowedActions"],
+          "the customer can track; rescheduling is no longer offered", c["allowedActions"])
+    s, n = customer.get("/api/v1/notifications?size=5")
+    check(any(x["type"] == "BOOKING_ON_THE_WAY" for x in n["items"]), "the customer is told the Genie is on the way", None)
+    if wa:
+        msg, deadline = None, time.time() + 25
+        while msg is None and time.time() < deadline:  # other booking messages may still be on their way too
+            msg = next((m for m in mailpit_messages(wa, before) if "ON_THE_WAY" in m.get("Subject", "")), None)
+            time.sleep(0 if msg else 1)
+        text = (mailpit_message(msg["ID"]) or {}).get("Text", "") if msg else ""
+        check(msg is not None and "on the way" in text and "/account/bookings/" + bid in text,
+              "...and gets a WhatsApp with the tracking link", (msg or {}).get("Subject"))
+    s, t0 = customer.get(f"/api/v1/bookings/{bid}/tracking")
+    check(s == 200 and t0["active"] and t0["lat"] is None, "the map is live but waits for the first position", t0)
+
+    events, listener = listen(customer, "tracking")
+    s, t1 = genie.put(jobs + "/location", {"lat": 23.0450, "lng": 72.5500, "accuracyM": 15})
+    check(s == 200 and float(t1["distanceKm"]) > 0 and t1["etaMinutes"] >= 1 and t1["distanceMethod"] in ("ROAD", "ESTIMATE"),
+          "a position gives distance and arrival estimate", t1)
+    listener.join(15)
+    check(events and events[0]["bookingId"] == bid and events[0]["lat"] == 23.045,
+          "the customer receives it on the live stream at once", events[:1])
+    genie.put(jobs + "/location", {"lat": 23.0400, "lng": 72.5550, "accuracyM": 10})
+    s, t2 = customer.get(f"/api/v1/bookings/{bid}/tracking")
+    check(t2["lat"] == 23.04 and t2["updatedAt"], "only the latest position is kept", (t2["lat"], t2["lng"]))
+    s, _ = admin.get(f"/api/v1/admin/bookings/{bid}/tracking")
+    check(s == 200, "support can see the map too", s)
+    s, body = genie.put(f"/api/v1/genie/bookings/{bid}/location", {"lat": 95, "lng": 72.5})
+    check(s == 400, "an impossible position is refused", s)
+
+    _, sc = customer.post(f"/api/v1/bookings/{bid}/start-code")
+    s, st = genie.post(jobs + "/start", {"code": sc["code"]})
+    check(s == 200 and st["status"] == "IN_PROGRESS", "the job starts from ON_THE_WAY with the code", st.get("status"))
+    s, t3 = customer.get(f"/api/v1/bookings/{bid}/tracking")
+    check(not t3["active"] and t3["lat"] is None, "once started, the position is gone (not shared any more)", t3)
+    s, body = genie.put(jobs + "/location", {"lat": 23.03, "lng": 72.56})
+    check(s == 422 and code_of(body) == "NOT_ON_THE_WAY", "and no new position is accepted", body)
+    genie.post(jobs + "/complete", {"cashCollected": True})
+
+    bid2 = booked_and_accepted()
+    genie.post(f"/api/v1/genie/bookings/{bid2}/travel")
+    genie.put(f"/api/v1/genie/bookings/{bid2}/location", {"lat": 23.04, "lng": 72.55})
+    s, cancelled = customer.post(f"/api/v1/bookings/{bid2}/cancel", {"reason": "smoke on the way"})
+    s2, t4 = customer.get(f"/api/v1/bookings/{bid2}/tracking")
+    check(s == 200 and cancelled["status"] == "CANCELLED" and not t4["active"] and t4["lat"] is None,
+          "cancelling while on the way deletes the position", (cancelled.get("status"), t4.get("lat")))
 
 if __name__ == "__main__":
     print(f"ProGenie API smoke test against {BASE} (run {RUN})")
