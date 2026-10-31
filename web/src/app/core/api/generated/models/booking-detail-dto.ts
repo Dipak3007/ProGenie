@@ -32,6 +32,8 @@ export interface BookingDetailDto {
   geniePayout: number;
   history: Array<HistoryDto>;
   id: string;
+  instant: boolean;
+  instantFee: number;
   notes: (string | null);
   paymentMethod: string;
   paymentStatus: string;

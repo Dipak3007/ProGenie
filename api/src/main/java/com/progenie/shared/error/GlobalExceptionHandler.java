@@ -10,6 +10,8 @@ import jakarta.servlet.http.HttpServletRequest;
 import org.jspecify.annotations.Nullable;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.core.Ordered;
+import org.springframework.core.annotation.Order;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.dao.OptimisticLockingFailureException;
 import org.springframework.http.HttpStatus;
@@ -38,8 +40,12 @@ import org.springframework.web.multipart.support.MissingServletRequestPartExcept
  * <p>Logging (3A-0): a business error (4xx) is one INFO line with its code (401 and 404 at DEBUG, 429 at WARN); an
  * unexpected error (5xx) is one ERROR line with the stack trace. Field values and request bodies are never logged.
  * The request ID and user ID are added to every line by the log pattern.
+ *
+ * <p>Runs before Spring Boot's own ProblemDetail handler ({@code spring.mvc.problemdetails.enabled}), otherwise
+ * that one answers body validation and unreadable JSON first, with a generic "Invalid request content." and no code.
  */
 @RestControllerAdvice
+@Order(Ordered.HIGHEST_PRECEDENCE)
 public class GlobalExceptionHandler {
 
     private static final Logger log = LoggerFactory.getLogger(GlobalExceptionHandler.class);

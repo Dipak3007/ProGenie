@@ -79,6 +79,13 @@ describe('LiveTracking', () => {
     expect(el().querySelector('[data-testid=eta]')?.textContent).toContain('About 7 min away');
   });
 
+  it('says when the position is only approximate (a device without GPS)', () => {
+    http.expectOne('/api/v1/bookings/b1/tracking').flush(tracking({ accuracyM: 150000 }));
+    fixture.detectChanges();
+    expect(el().querySelector('[data-testid=rough-location]')?.textContent).toContain('within about');
+    expect(el().querySelector('[data-testid=rough-location]')?.textContent).toContain('150');
+  });
+
   it('polls while the live stream is down and reports the end of the trip', () => {
     vi.useFakeTimers();
     try {

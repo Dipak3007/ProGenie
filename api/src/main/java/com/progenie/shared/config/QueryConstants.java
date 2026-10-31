@@ -79,6 +79,23 @@ public final class QueryConstants {
     public static final String UPSERT_BOOKING_TRACKING = "upsert.booking.tracking";
     public static final String DELETE_BOOKING_TRACKING = "delete.booking.tracking";
     public static final String DELETE_BOOKING_STALE_TRACKING = "delete.booking.stale-tracking";
+    public static final String GET_INSTANT_SERVICE = "get.instant.service";
+    public static final String GET_INSTANT_CANDIDATES = "get.instant.candidates";
+    public static final String INSERT_INSTANT_REQUEST = "insert.instant.request";
+    public static final String LOCK_INSTANT_REQUEST = "lock.instant.request";
+    public static final String GET_INSTANT_REQUEST = "get.instant.request";
+    public static final String EXISTS_INSTANT_SEARCHING = "exists.instant.searching";
+    public static final String UPDATE_INSTANT_REQUEST_ENDED = "update.instant.request-ended";
+    public static final String COUNT_INSTANT_OFFERS = "count.instant.offers";
+    public static final String INSERT_INSTANT_OFFER = "insert.instant.offer";
+    public static final String GET_INSTANT_OFFER = "get.instant.offer";
+    public static final String UPDATE_INSTANT_OFFER_STATUS = "update.instant.offer-status";
+    public static final String UPDATE_INSTANT_OFFERS_WITHDRAW = "update.instant.offers-withdraw";
+    public static final String GET_INSTANT_OFFERS_EXPIRED = "get.instant.offers-expired";
+    public static final String GET_INSTANT_REQUESTS_STALLED = "get.instant.requests-stalled";
+    public static final String FRAGMENT_INSTANT_OFFER_VIEW_SELECT = "fragment.instant.offer-view-select";
+    public static final String GET_INSTANT_OFFER_VIEW = "get.instant.offer-view";
+    public static final String GET_INSTANT_GENIE_OPEN_OFFERS = "get.instant.genie-open-offers";
 
     // ------------------------------------------------------------------ Catalog and city pricing
 
@@ -358,10 +375,12 @@ public final class QueryConstants {
     public static final String UPDATE_COUPON = "update.coupon";
     public static final String UPDATE_COUPON_STATUS = "update.coupon.status";
     public static final String UPDATE_COUPON_RELEASE = "update.coupon.release";
+    public static final String GET_COUPON_CONTEXT_SERVICE = "get.coupon.context-service";
 
     // ------------------------------------------------------------------ Pricing
 
     public static final String GET_PRICING_ESTIMATE = "get.pricing.estimate";
+    public static final String GET_PRICING_INSTANT_FEE = "get.pricing.instant-fee";
 
     // ------------------------------------------------------------------ Genies: directory, profile, documents, verification
 
@@ -431,6 +450,8 @@ public final class QueryConstants {
     public static final String UPDATE_GENIE_PROFILE_CLEAR_BADGES = "update.genie-profile.clear-badges";
     public static final String EXISTS_GENIE_PROFILE_BADGES_COMPUTED = "exists.genie-profile.badges-computed";
     public static final String GET_GENIE_PROFILE_BADGES = "get.genie-profile.badges";
+    public static final String UPDATE_GENIE_PROFILE_LIVE_SEEN = "update.genie-profile.live-seen";
+    public static final String UPDATE_GENIE_PROFILE_OFFLINE_UNSEEN = "update.genie-profile.offline-unseen";
 
     // ------------------------------------------------------------------ Reviews
 

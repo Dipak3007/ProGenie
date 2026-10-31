@@ -59,7 +59,7 @@ public class EarningsStatements {
 
     record JobRow(String bookingRef, OffsetDateTime completedAt, String serviceName, String paymentMethod,
                   BigDecimal serviceAmount, BigDecimal extraAmount, BigDecimal travelFee, BigDecimal tipAmount,
-                  BigDecimal commissionAmount, BigDecimal refundDeduction) {
+                  BigDecimal commissionAmount, BigDecimal refundDeduction, BigDecimal instantFee) {
     }
 
     /** One job; {@code earned} = service + extras + travel + instant fee + tip − commission − refunds. */
@@ -207,7 +207,7 @@ public class EarningsStatements {
     }
 
     private JobLine jobLine(JobRow r) {
-        BigDecimal instantFee = BigDecimal.ZERO; // Genie Now (Phase 3C) adds an instant fee per booking
+        BigDecimal instantFee = r.instantFee(); // Genie Now (Phase 3C-9)
         BigDecimal earned = r.serviceAmount().add(r.extraAmount()).add(r.travelFee()).add(instantFee).add(r.tipAmount())
             .subtract(r.commissionAmount()).subtract(r.refundDeduction());
         return new JobLine(r.bookingRef(), r.completedAt().atZoneSameInstant(zone).toLocalDate(), r.serviceName(),

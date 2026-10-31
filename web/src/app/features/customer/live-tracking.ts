@@ -41,6 +41,12 @@ const TICK_MS = 15_000;
               {{ t.distanceKm | number: '1.1-1' }} km{{ t.distanceMethod === 'ESTIMATE' ? ' (approx.)' : ' by road' }}
             </p>
           </div>
+          @if ((t.accuracyM ?? 0) > 1000) {
+            <p class="rounded-xl bg-amber-50 px-3 py-2 text-sm text-amber-900" role="status" data-testid="rough-location">
+              Approximate position: {{ firstName() }}'s device only gives a rough location (within about
+              {{ roughKm(t.accuracyM!) }} km), so the arrival time may be off.
+            </p>
+          }
           @if (stale()) {
             <p class="flex items-start gap-2 rounded-xl bg-amber-50 px-3 py-2 text-sm text-amber-900" role="status" data-testid="last-seen">
               <svg [lucideIcon]="WifiOff" [size]="16" class="mt-0.5 shrink-0" aria-hidden="true"></svg>
@@ -113,6 +119,10 @@ export class LiveTracking {
       clearInterval(tick);
       clearInterval(poll);
     });
+  }
+
+  protected roughKm(metres: number): number {
+    return Math.max(1, Math.round(metres / 1000));
   }
 
   private load(): void {

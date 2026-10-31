@@ -87,6 +87,9 @@ import type {
   TicketMessageDto,
   TicketSummary,
   TimeOffDto,
+  InstantOfferDto,
+  InstantQuoteDto,
+  InstantRequestDto,
   TrackingDto,
   UserDto,
   UserRowDto,
@@ -198,6 +201,12 @@ export type Party = PartyDto;
 export type HistoryItem = HistoryDto;
 
 export type BookingDetail = BookingDetailDto;
+/** Genie Now (Phase 3C-9): price range before searching, the search itself, and an offer as a Genie sees it. */
+export type InstantQuote = InstantQuoteDto;
+export type InstantRequest = InstantRequestDto;
+export type InstantOffer = InstantOfferDto;
+export type InstantStatus = 'SEARCHING' | 'BOOKED' | 'NO_GENIE' | 'CANCELLED';
+
 /** Live "on the way" map: the Genie's latest position, distance and arrival estimate (Phase 3C-10). */
 export type Tracking = TrackingDto;
 /** A before/after job photo with a short-lived link (Phase 3A-8). */
@@ -267,7 +276,7 @@ export type AdminCity = AdminCityDto;
 export type AdminPincode = AdminPincodeDto;
 
 
-export type PricingRequest = Pick<AdminCity, 'commissionRate' | 'travelFreeKm' | 'travelBaseFee' | 'travelPerKm' | 'travelFeeCap'>;
+export type PricingRequest = Pick<AdminCity, 'commissionRate' | 'travelFreeKm' | 'travelBaseFee' | 'travelPerKm' | 'travelFeeCap' | 'instantFee'>;
 
 export type ContactMessage = ContactMessageDto;
 

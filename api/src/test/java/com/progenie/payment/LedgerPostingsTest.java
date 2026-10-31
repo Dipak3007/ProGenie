@@ -18,7 +18,7 @@ class LedgerPostingsTest {
     private static Payable job() {
         return new Payable(UUID.randomUUID(), "PG-2026-000001", UUID.randomUUID(), GENIE, "COMPLETED", "ONLINE", "UNPAID",
             new BigDecimal("499.00"), new BigDecimal("150.00"), new BigDecimal("74.00"), new BigDecimal("50.00"),
-            new BigDecimal("24.95"), new BigDecimal("773.00"), new BigDecimal("748.05"), new BigDecimal("49.00"), "DUE", BigDecimal.ZERO);
+            new BigDecimal("24.95"), new BigDecimal("773.00"), new BigDecimal("748.05"), new BigDecimal("49.00"), "DUE", BigDecimal.ZERO, BigDecimal.ZERO);
     }
 
     private static BigDecimal walletChange(List<Entry> entries) {
@@ -52,7 +52,7 @@ class LedgerPostingsTest {
         Payable withCoupon = new Payable(UUID.randomUUID(), "PG-2026-000003", UUID.randomUUID(), GENIE, "COMPLETED", "ONLINE",
             "UNPAID", new BigDecimal("499.00"), new BigDecimal("150.00"), new BigDecimal("74.00"), new BigDecimal("50.00"),
             new BigDecimal("24.95"), new BigDecimal("723.00"), new BigDecimal("748.05"), BigDecimal.ZERO, null,
-            new BigDecimal("50.00"));
+            new BigDecimal("50.00"), BigDecimal.ZERO);
         List<Entry> online = LedgerPostings.bookingPaid(withCoupon, false);
         assertThat(LedgerPostings.debits(online)).isEqualByComparingTo("773.00").isEqualByComparingTo(LedgerPostings.credits(online));
         assertThat(online).filteredOn(e -> e.account().equals("CUSTOMER")).singleElement()
@@ -67,11 +67,24 @@ class LedgerPostingsTest {
         assertThat(walletChange(cash)).isEqualByComparingTo("25.05");
     }
 
+    /** Genie Now (3C-9): the ₹40 instant fee is paid by the customer and earned in full by the Genie. */
+    @Test
+    void theInstantFeeGoesToTheGenieLikeTheTravelFee() {
+        Payable instant = new Payable(UUID.randomUUID(), "PG-2026-000004", UUID.randomUUID(), GENIE, "COMPLETED", "ONLINE",
+            "UNPAID", new BigDecimal("499.00"), BigDecimal.ZERO, new BigDecimal("74.00"), BigDecimal.ZERO,
+            new BigDecimal("24.95"), new BigDecimal("613.00"), new BigDecimal("588.05"), BigDecimal.ZERO, null,
+            BigDecimal.ZERO, new BigDecimal("40.00"));
+        List<Entry> online = LedgerPostings.bookingPaid(instant, false);
+        assertThat(LedgerPostings.debits(online)).isEqualByComparingTo("613.00").isEqualByComparingTo(LedgerPostings.credits(online));
+        assertThat(walletChange(online)).isEqualByComparingTo("588.05");
+        assertThat(walletChange(LedgerPostings.bookingPaid(instant, true))).isEqualByComparingTo("-24.95");
+    }
+
     @Test
     void zeroAmountsAreNotPosted() {
         Payable noTip = new Payable(UUID.randomUUID(), "PG-2026-000002", UUID.randomUUID(), GENIE, "COMPLETED", "CASH", "UNPAID",
             new BigDecimal("299.00"), BigDecimal.ZERO, BigDecimal.ZERO, BigDecimal.ZERO,
-            new BigDecimal("14.95"), new BigDecimal("299.00"), new BigDecimal("284.05"), BigDecimal.ZERO, null, BigDecimal.ZERO);
+            new BigDecimal("14.95"), new BigDecimal("299.00"), new BigDecimal("284.05"), BigDecimal.ZERO, null, BigDecimal.ZERO, BigDecimal.ZERO);
         assertThat(LedgerPostings.bookingPaid(noTip, true)).extracting(Entry::account)
             .containsExactly("GENIE_CASH", "PLATFORM_COMMISSION", "GENIE_EARNINGS");
     }

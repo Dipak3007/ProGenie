@@ -120,7 +120,7 @@ import { ALL_STEPS, GenieStore, STEP_TEXT } from './genie-store';
           <div class="min-w-0 flex-1">
             <p class="text-lg font-bold">{{ p.online ? "You're online" : "You're offline" }}</p>
             <p class="text-sm text-muted">
-              {{ p.online ? 'Customers see "Online now" on your card. Bookings still follow your working hours.' : 'Go online to show customers you are available right now.' }}
+              {{ p.online ? 'Customers see "Online now" and you can get Genie Now jobs while ProGenie is open. Closing it switches you offline after 2 minutes.' : 'Go online to show customers you are available and to get Genie Now jobs (nearest free Genie, right away).' }}
             </p>
           </div>
           <button

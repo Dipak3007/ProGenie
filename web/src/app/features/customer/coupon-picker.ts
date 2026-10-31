@@ -89,7 +89,8 @@ import { Spinner } from '../../shared/ui/kit';
   `,
 })
 export class CouponPicker {
-  readonly genieId = input.required<string>();
+  /** null for Genie Now: the Genie isn't known yet, so the service's base price is used. */
+  readonly genieId = input<string | null>(null);
   readonly serviceId = input<number | null>(null);
   readonly addressId = input<string | null>(null);
   /** The coupon applied to the booking (two-way). */

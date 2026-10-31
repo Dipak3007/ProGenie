@@ -150,6 +150,12 @@ public class Booking {
     @Column(name = "travel_started_at")
     private Instant travelStartedAt;
 
+    @Column(name = "instant_fee", nullable = false, updatable = false)
+    private BigDecimal instantFee = BigDecimal.ZERO.setScale(2);   // Phase 3C-9: Genie Now fee (goes to the Genie)
+
+    @Column(name = "instant_request_id", updatable = false)
+    private UUID instantRequestId;
+
     @Column(name = "started_at")
     private Instant startedAt;
 
@@ -371,9 +377,23 @@ public class Booking {
         recalculate();
     }
 
+    /**
+     * A Genie Now booking (Phase 3C-9), before it is accepted: the request it came from and the city's instant fee,
+     * which the customer pays on top and the Genie earns in full (like the travel fee).
+     */
+    public void markInstant(UUID requestId, BigDecimal fee) {
+        if (this.instantRequestId != null || status != BookingStatus.REQUESTED) {
+            throw invalid("mark as instant");
+        }
+        this.instantRequestId = requestId;
+        this.instantFee = fee.setScale(2, RoundingMode.HALF_UP);
+        recalculate();
+    }
+
     /** total = what the customer pays; geniePayout = what the Genie earns (the discount is paid by ProGenie). */
     private void recalculate() {
-        BigDecimal gross = serviceAmount.add(extraAmount).add(travelFee).add(tipAmount).setScale(2, RoundingMode.HALF_UP);
+        BigDecimal gross = serviceAmount.add(extraAmount).add(travelFee).add(instantFee).add(tipAmount)
+            .setScale(2, RoundingMode.HALF_UP);
         totalAmount = gross.subtract(discountAmount);
         geniePayout = gross.subtract(commissionAmount);
     }
@@ -453,6 +473,14 @@ public class Booking {
 
     public BigDecimal getTotalAmount() {
         return totalAmount;
+    }
+
+    public BigDecimal getInstantFee() {
+        return instantFee;
+    }
+
+    public UUID getInstantRequestId() {
+        return instantRequestId;
     }
 
     public Long getCouponId() {

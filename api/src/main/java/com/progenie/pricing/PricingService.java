@@ -57,6 +57,12 @@ public class PricingService {
         return PriceCalculator.quote(in.servicePrice(), d.km(), d.method(), tip, pricing);
     }
 
+    /** The city's Genie Now fee (Phase 3C-9): paid by the customer on an instant booking, earned by the Genie. 0 if unset. */
+    public BigDecimal instantFee(long cityId) {
+        return jdbc.sql(QueryUtil.get(QueryConstants.GET_PRICING_INSTANT_FEE)).param("cityId", cityId)
+            .query(BigDecimal.class).optional().orElse(BigDecimal.ZERO).setScale(2, RoundingMode.HALF_UP);
+    }
+
     /** A distance between two points, and how it was measured (road, or straight line × road factor). */
     public record Trip(BigDecimal km, DistanceMethod method) {
     }

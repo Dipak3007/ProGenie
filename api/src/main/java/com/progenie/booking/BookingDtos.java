@@ -96,7 +96,7 @@ public final class BookingDtos {
                                    @Nullable OffsetDateTime completedAt, @Nullable OffsetDateTime cancelledAt,
                                    List<String> allowedActions, List<HistoryDto> history, List<BookingPhotoDto> photos,
                                    BigDecimal discountAmount, @Nullable String couponCode,
-                                   @Nullable OffsetDateTime travelStartedAt) {
+                                   @Nullable OffsetDateTime travelStartedAt, BigDecimal instantFee, boolean instant) {
     }
 
     /**

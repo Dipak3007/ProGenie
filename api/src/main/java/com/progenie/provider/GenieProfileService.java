@@ -324,7 +324,7 @@ public class GenieProfileService {
             .param("id", genieId)
             .param("lat", req.lat())
             .param("lng", req.lng())
-            .param("acc", req.accuracyM())
+            .param("acc", req.accuracyM() == null ? null : Math.min(req.accuracyM(), 1_000_000))
             .update();
     }
 

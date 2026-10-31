@@ -30,6 +30,12 @@ export const routes: Routes = [
     loadComponent: () => import('./features/customer/checkout.page'),
   },
   {
+    path: 'now/:serviceId',
+    title: 'Genie Now · ProGenie',
+    canActivate: [requireRole('CUSTOMER')],
+    loadComponent: () => import('./features/customer/genie-now.page'),
+  },
+  {
     path: 'account',
     canActivate: [requireRole('CUSTOMER')],
     loadComponent: () => import('./features/account/account.page'),

@@ -50,8 +50,15 @@ class NotificationListeners {
             switch (e.type()) {
                 case REQUESTED -> notifications.notify(e.genieId(), "BOOKING_REQUESTED", "New booking request",
                     e.bookingRef() + " for " + when + ". Please accept or decline soon.", genieLink);
-                case ACCEPTED -> notifications.notify(e.customerId(), "BOOKING_ACCEPTED", "Your booking is confirmed",
-                    "Your Genie accepted " + e.bookingRef() + " for " + when + ".", customerLink);
+                case ACCEPTED -> {
+                    if (BookingEvent.GENIE_NOW.equals(e.reason())) {
+                        notifications.notify(e.customerId(), "BOOKING_ACCEPTED", "A Genie is coming now",
+                            "Your Genie accepted " + e.bookingRef() + " and will arrive within about an hour.", customerLink);
+                    } else {
+                        notifications.notify(e.customerId(), "BOOKING_ACCEPTED", "Your booking is confirmed",
+                            "Your Genie accepted " + e.bookingRef() + " for " + when + ".", customerLink);
+                    }
+                }
                 case DECLINED -> notifications.notify(e.customerId(), "BOOKING_DECLINED", "Your Genie could not take this job",
                     e.bookingRef() + (e.reason() == null ? "" : ": " + e.reason()) + ". Please pick another Genie.", customerLink);
                 case EXPIRED -> {

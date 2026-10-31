@@ -3355,7 +3355,7 @@
           {
             "in": "query",
             "name": "genieId",
-            "required": true,
+            "required": false,
             "schema": {
               "type": "string",
               "format": "uuid"
@@ -4189,6 +4189,84 @@
         ]
       }
     },
+    "/api/v1/genie/instant-offers": {
+      "get": {
+        "operationId": "instantOffers",
+        "responses": {
+          "200": {
+            "content": {
+              "*/*": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/InstantOfferDto"
+                  }
+                }
+              }
+            },
+            "description": "OK"
+          }
+        },
+        "tags": [
+          "instant-controller"
+        ]
+      }
+    },
+    "/api/v1/genie/instant-offers/{id}/accept": {
+      "post": {
+        "operationId": "instantAccept",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "format": "int64"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "*/*": {
+                "schema": {
+                  "$ref": "#/components/schemas/BookingDetailDto"
+                }
+              }
+            },
+            "description": "OK"
+          }
+        },
+        "tags": [
+          "instant-controller"
+        ]
+      }
+    },
+    "/api/v1/genie/instant-offers/{id}/decline": {
+      "post": {
+        "operationId": "instantDecline",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "format": "int64"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "No Content"
+          }
+        },
+        "tags": [
+          "instant-controller"
+        ]
+      }
+    },
     "/api/v1/genie/location": {
       "put": {
         "operationId": "genieProfileLocation",
@@ -4958,6 +5036,138 @@
         },
         "tags": [
           "geo-controller"
+        ]
+      }
+    },
+    "/api/v1/instant/quote": {
+      "get": {
+        "operationId": "instantQuote",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "serviceId",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "format": "int64"
+            }
+          },
+          {
+            "in": "query",
+            "name": "addressId",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "*/*": {
+                "schema": {
+                  "$ref": "#/components/schemas/InstantQuoteDto"
+                }
+              }
+            },
+            "description": "OK"
+          }
+        },
+        "tags": [
+          "instant-controller"
+        ]
+      }
+    },
+    "/api/v1/instant/requests": {
+      "post": {
+        "operationId": "instantRequest",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/InstantRequestBody"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "*/*": {
+                "schema": {
+                  "$ref": "#/components/schemas/InstantRequestDto"
+                }
+              }
+            },
+            "description": "Created"
+          }
+        },
+        "tags": [
+          "instant-controller"
+        ]
+      }
+    },
+    "/api/v1/instant/requests/{id}": {
+      "get": {
+        "operationId": "instantGet",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "*/*": {
+                "schema": {
+                  "$ref": "#/components/schemas/InstantRequestDto"
+                }
+              }
+            },
+            "description": "OK"
+          }
+        },
+        "tags": [
+          "instant-controller"
+        ]
+      }
+    },
+    "/api/v1/instant/requests/{id}/cancel": {
+      "post": {
+        "operationId": "instantCancel",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "*/*": {
+                "schema": {
+                  "$ref": "#/components/schemas/InstantRequestDto"
+                }
+              }
+            },
+            "description": "OK"
+          }
+        },
+        "tags": [
+          "instant-controller"
         ]
       }
     },
@@ -6882,6 +7092,9 @@
           "currency": {
             "type": "string"
           },
+          "instantFee": {
+            "type": "number"
+          },
           "name": {
             "type": "string"
           },
@@ -6918,6 +7131,7 @@
           "cityId",
           "commissionRate",
           "currency",
+          "instantFee",
           "name",
           "pincodeCount",
           "radiusKm",
@@ -7218,6 +7432,9 @@
             "type": "integer",
             "format": "int64"
           },
+          "instantEnabled": {
+            "type": "boolean"
+          },
           "name": {
             "type": "string"
           },
@@ -7234,6 +7451,7 @@
           "durationMinutes",
           "genieCount",
           "id",
+          "instantEnabled",
           "name",
           "slug"
         ]
@@ -7528,6 +7746,12 @@
             "type": "string",
             "format": "uuid"
           },
+          "instant": {
+            "type": "boolean"
+          },
+          "instantFee": {
+            "type": "number"
+          },
           "notes": {
             "type": [
               "string",
@@ -7625,6 +7849,8 @@
           "geniePayout",
           "history",
           "id",
+          "instant",
+          "instantFee",
           "notes",
           "paymentMethod",
           "paymentStatus",
@@ -7979,7 +8205,10 @@
             "minLength": 0
           },
           "genieId": {
-            "type": "string",
+            "type": [
+              "string",
+              "null"
+            ],
             "format": "uuid"
           },
           "serviceId": {
@@ -7990,7 +8219,6 @@
         "required": [
           "addressId",
           "code",
-          "genieId",
           "serviceId"
         ]
       },
@@ -9249,6 +9477,261 @@
           "toStatus"
         ]
       },
+      "InstantOfferDto": {
+        "type": "object",
+        "properties": {
+          "area": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "city": {
+            "type": "string"
+          },
+          "distanceKm": {
+            "type": "number"
+          },
+          "durationMinutes": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "earning": {
+            "type": "number"
+          },
+          "expiresAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "id": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "notes": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "paymentMethod": {
+            "type": "string"
+          },
+          "requestId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "serviceName": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "area",
+          "city",
+          "distanceKm",
+          "durationMinutes",
+          "earning",
+          "expiresAt",
+          "id",
+          "notes",
+          "paymentMethod",
+          "requestId",
+          "serviceName"
+        ]
+      },
+      "InstantQuoteDto": {
+        "type": "object",
+        "properties": {
+          "arrivalMinutes": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "available": {
+            "type": "boolean"
+          },
+          "durationMinutes": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "genieCount": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "instantFee": {
+            "type": "number"
+          },
+          "maxGenies": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "offerSeconds": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "priceFrom": {
+            "type": [
+              "number",
+              "null"
+            ]
+          },
+          "priceTo": {
+            "type": [
+              "number",
+              "null"
+            ]
+          },
+          "reason": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "reasonCode": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "serviceId": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "serviceName": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "arrivalMinutes",
+          "available",
+          "durationMinutes",
+          "genieCount",
+          "instantFee",
+          "maxGenies",
+          "offerSeconds",
+          "priceFrom",
+          "priceTo",
+          "reason",
+          "reasonCode",
+          "serviceId",
+          "serviceName"
+        ]
+      },
+      "InstantRequestBody": {
+        "type": "object",
+        "properties": {
+          "addressId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "couponCode": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "maxLength": 30,
+            "minLength": 0
+          },
+          "notes": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "maxLength": 500,
+            "minLength": 0
+          },
+          "paymentMethod": {
+            "type": "string",
+            "enum": [
+              "CASH",
+              "ONLINE"
+            ]
+          },
+          "serviceId": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "tipAmount": {
+            "type": [
+              "number",
+              "null"
+            ],
+            "maximum": 2000,
+            "minimum": 0
+          }
+        },
+        "required": [
+          "addressId",
+          "paymentMethod",
+          "serviceId"
+        ]
+      },
+      "InstantRequestDto": {
+        "type": "object",
+        "properties": {
+          "bookingId": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "uuid"
+          },
+          "createdAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "endedAt": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date-time"
+          },
+          "geniesAsked": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "maxGenies": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "message": {
+            "type": "string"
+          },
+          "offerExpiresAt": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date-time"
+          },
+          "serviceId": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "serviceName": {
+            "type": "string"
+          },
+          "status": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "bookingId",
+          "createdAt",
+          "endedAt",
+          "geniesAsked",
+          "id",
+          "maxGenies",
+          "message",
+          "offerExpiresAt",
+          "serviceId",
+          "serviceName",
+          "status"
+        ]
+      },
       "KycDocumentDto": {
         "type": "object",
         "properties": {
@@ -9465,7 +9948,6 @@
               "null"
             ],
             "format": "int32",
-            "maximum": 10000,
             "minimum": 0
           },
           "lat": {
@@ -10932,6 +11414,14 @@
             "maximum": 0.5,
             "minimum": 0
           },
+          "instantFee": {
+            "type": [
+              "number",
+              "null"
+            ],
+            "maximum": 1000,
+            "minimum": 0
+          },
           "travelBaseFee": {
             "type": "number",
             "maximum": 1000,
@@ -11680,6 +12170,9 @@
             "type": "integer",
             "format": "int64"
           },
+          "instantEnabled": {
+            "type": "boolean"
+          },
           "name": {
             "type": "string"
           },
@@ -11692,6 +12185,7 @@
           "description",
           "durationMinutes",
           "id",
+          "instantEnabled",
           "name",
           "slug"
         ]
@@ -11743,6 +12237,12 @@
             "format": "int32",
             "maximum": 720,
             "minimum": 15
+          },
+          "instantEnabled": {
+            "type": [
+              "boolean",
+              "null"
+            ]
           },
           "name": {
             "type": "string",

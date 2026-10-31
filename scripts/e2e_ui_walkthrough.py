@@ -8,13 +8,15 @@ Phase 2A: sign-up consent and phone verification (code read from Mailpit), recei
 admin takes, replies and resolves with a split partial refund → customer accepts and gets a credit note,
 one-time-code login, notification preferences, data export download, and publishing a policy that everyone must
 accept again (the consent dialog).
+Phase 3: job photos, statement, badges, coupons, live "on the way" tracking and Genie Now (the offer pops up on the
+Genie's open console and the customer's search turns into the booking).
 Every page is checked for horizontal overflow and console errors; screenshots land in scripts/ui-shots/.
 
 Needs: Mailpit on http://localhost:8025 (docker compose), the API started with relaxed timing (see docs/LOCAL_SETUP.md, step 12) on a freshly reset database,
 the web app on http://localhost:4200 (npm start), and `pip install playwright && python3 -m playwright install chromium`.
 Usage: python3 scripts/e2e_ui_walkthrough.py        (exit code 0 = all checks passed)
 """
-import os, re, sys, json, time, urllib.parse, urllib.request
+import os, re, sys, json, time, urllib.error, urllib.parse, urllib.request
 from playwright.sync_api import sync_playwright, expect
 
 BASE = "http://localhost:4200"
@@ -137,6 +139,23 @@ def login(page, who):
 
 import atexit
 PAGES = []
+
+def api(method, path, body=None, token=None):
+    """Direct API call for test set-up (through the web app's /api proxy)."""
+    req = urllib.request.Request(BASE + path, data=None if body is None else json.dumps(body).encode(), method=method,
+                                 headers={"Content-Type": "application/json", **({"Authorization": "Bearer " + token} if token else {})})
+    try:
+        with urllib.request.urlopen(req, timeout=20) as res:
+            raw = res.read()
+            return res.status, json.loads(raw) if raw else None
+    except urllib.error.HTTPError as e:
+        raw = e.read()
+        return e.code, json.loads(raw) if raw else None
+
+
+def api_token(who):
+    return api("POST", "/api/v1/auth/login", {"identifier": who, "password": PW})[1]["accessToken"]
+
 def dump():
     for i, pg in enumerate(PAGES):
         try:
@@ -364,6 +383,10 @@ with sync_playwright() as p:
         cp.get_by_role("button", name="Use my location").click()
         ok(has(cp, "PIN code 380015 filled in from the map"), "moving the pin fills in its PIN code")
         ok(cp.input_value("#a-pin") == "380015", "PIN code field updated from the pin")
+        try:  # the area comes from a second lookup (PIN code -> area) right after the PIN code is filled in
+            cp.wait_for_function("document.querySelector('#a-area')?.value === 'Satellite'", timeout=5000)
+        except Exception:
+            pass
         ok(cp.input_value("#a-area") == "Satellite", "area follows the new PIN code (it was filled in by us)")
         cp.fill("#a-pin", "380054")
         ok(has(cp, "Pin moved to 380054"), "typing a PIN code again moves the pin back")
@@ -400,6 +423,56 @@ with sync_playwright() as p:
         ok(has(gp, "Your badges"), "the Genie dashboard explains badges")
         gp.goto(BASE + "/genie/availability"); settle(gp)
         shot(gp, "desktop-genie-availability")
+
+        # ------------------------------------------------------------ Phase 3C-9: Genie Now
+        print("GENIE NOW (customer on a phone, Genie on desktop)")
+        g_token, a_token = api_token("genie@example.com"), api_token("admin@progenie.in")
+        saved_hours = api("GET", "/api/v1/genie/profile", token=g_token)[1]["availability"]
+        api("PUT", "/api/v1/genie/availability", {"windows": [{"dayOfWeek": d, "startTime": "00:00", "endTime": "23:45"} for d in range(1, 8)]}, g_token)
+        city = next(c for c in api("GET", "/api/v1/admin/cities", token=a_token)[1] if c["active"])
+        pricing = {k: city[k] for k in ("commissionRate", "travelFreeKm", "travelBaseFee", "travelPerKm", "travelFeeCap")}
+        api("PUT", f"/api/v1/admin/cities/{city['cityId']}/pricing", {**pricing, "instantFee": 20}, a_token)
+        gp.goto(BASE + "/genie"); settle(gp)
+        if gp.get_by_role("switch", name=re.compile("Go online")).count():
+            gp.get_by_role("switch", name=re.compile("Go online")).click(); gp.wait_for_timeout(800)
+        elif gp.get_by_role("button", name="Go online").count():
+            gp.get_by_role("button", name="Go online").click(); gp.wait_for_timeout(800)
+        ok(has(gp, "You're online"), "the Genie is online (ProGenie open) and can get Genie Now jobs")
+        cp.goto(BASE + "/services/electrician"); settle(cp)
+        cp.get_by_role("button", name=re.compile("Fan installation")).first.click()
+        cp.wait_for_selector("[data-testid=genie-now-link]", timeout=8000)
+        ok(cp.locator("[data-testid=genie-now-link]").count() == 1, "a Genie Now service offers 'Need it now?'")
+        cp.locator("[data-testid=genie-now-link]").click()
+        cp.wait_for_url(re.compile(r"/now/\d+"), timeout=10000); settle(cp)
+        cp.wait_for_selector("[data-testid=instant-quote] .font-display", timeout=15000)
+        quote_text = cp.locator("[data-testid=instant-quote]").inner_text()
+        ok("free near you" in quote_text and "Genie Now fee" in quote_text, "the customer sees free Genies nearby and the price range")
+        overflow(cp, "phone genie now")
+        shot(cp, "phone-genie-now")
+        cp.get_by_role("button", name="Find a Genie now").click()
+        cp.wait_for_selector("[data-testid=instant-search]", timeout=10000)
+        ok(has(cp, "Finding your Genie"), "the search screen asks one Genie at a time")
+        shot(cp, "phone-genie-now-searching", full=False)
+        try:
+            gp.wait_for_selector("[data-testid=instant-offer]", timeout=15000)
+            offered = True
+        except Exception:
+            offered = False
+        ok(offered, "the offer pops up on the Genie's open console (live stream), with a countdown")
+        if offered:
+            ok("you earn" in gp.locator("[data-testid=instant-offer]").inner_text().lower(), "the offer shows what the Genie earns")
+            shot(gp, "desktop-genie-now-offer", full=False)
+            gp.locator("[data-testid=instant-offer]").get_by_role("button", name="Accept job").click()
+            gp.wait_for_url(re.compile(r"/genie/bookings/[0-9a-f-]{36}"), timeout=15000); settle(gp)
+            ok(has(gp, "Genie Now"), "the Genie lands on the accepted job, marked Genie Now")
+            cp.wait_for_url(re.compile(r"/account/bookings/[0-9a-f-]{36}"), timeout=15000); settle(cp)
+            ok(has(cp, "within about an hour") and has(cp, "Genie Now fee"), "the customer's page opens the booking: arriving within an hour, with the fee")
+            shot(cp, "phone-genie-now-booked")
+            # free the Genie again for the rest of the walkthrough
+            now_booking_id = cp.url.rsplit("/", 1)[1]
+            api("POST", f"/api/v1/admin/bookings/{now_booking_id}/cancel", {"reason": "walkthrough", "waiveFee": True}, a_token)
+        api("PUT", "/api/v1/genie/availability", {"windows": saved_hours}, g_token)
+        api("PUT", f"/api/v1/admin/cities/{city['cityId']}/pricing", {**pricing, "instantFee": 0}, a_token)
 
         # ------------------------------------------------------------ new Genie onboarding
         print("NEW GENIE onboarding (phone)")

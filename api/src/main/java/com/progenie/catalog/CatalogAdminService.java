@@ -50,7 +50,8 @@ public class CatalogAdminService {
                                  @Size(max = 500) String description,
                                  @NotNull @DecimalMin("1") @DecimalMax("100000") BigDecimal basePrice,
                                  @Min(15) @Max(720) int durationMinutes,
-                                 boolean active) {
+                                 boolean active,
+                                 @Nullable Boolean instantEnabled) {
     }
 
     public record AdminCategoryDto(long id, String slug, String name, @Nullable String description, @Nullable String icon, @Nullable String imageUrl,
@@ -59,21 +60,22 @@ public class CatalogAdminService {
 
     public record AdminServiceDto(long id, long categoryId, String categoryName, String slug, String name,
                                   @Nullable String description, BigDecimal basePrice, int durationMinutes, boolean active,
-                                  int genieCount) {
+                                  int genieCount, boolean instantEnabled) {
     }
 
     public record PricingRequest(@NotNull @DecimalMin("0") @DecimalMax("0.5") BigDecimal commissionRate,
                                  @NotNull @DecimalMin("0") @DecimalMax("50") BigDecimal travelFreeKm,
                                  @NotNull @DecimalMin("0") @DecimalMax("1000") BigDecimal travelBaseFee,
                                  @NotNull @DecimalMin("0") @DecimalMax("200") BigDecimal travelPerKm,
-                                 @NotNull @DecimalMin("0") @DecimalMax("5000") BigDecimal travelFeeCap) {
+                                 @NotNull @DecimalMin("0") @DecimalMax("5000") BigDecimal travelFeeCap,
+                                 @DecimalMin("0") @DecimalMax("1000") BigDecimal instantFee) {
     }
 
     /** A city as admins see it: live or not, its centre and radius, how many PIN codes, and its pricing. */
     public record AdminCityDto(long cityId, String slug, String name, String state, boolean active, @Nullable Double centerLat,
                                @Nullable Double centerLng, BigDecimal radiusKm, int pincodeCount, BigDecimal commissionRate,
                                BigDecimal travelFreeKm, BigDecimal travelBaseFee, BigDecimal travelPerKm,
-                               BigDecimal travelFeeCap, String currency) {
+                               BigDecimal travelFeeCap, String currency, BigDecimal instantFee) {
     }
 
     /** Create or edit a city. A new city starts switched off, with default pricing. */
@@ -233,6 +235,7 @@ public class CatalogAdminService {
         p.put("price", req.basePrice());
         p.put("duration", req.durationMinutes());
         p.put("active", req.active());
+        p.put("instant", req.instantEnabled());
         return p;
     }
 
@@ -412,6 +415,7 @@ public class CatalogAdminService {
         jdbc.sql(QueryUtil.get(QueryConstants.UPSERT_CATALOG_CITY_PRICING))
             .param("id", cityId).param("rate", req.commissionRate()).param("free", req.travelFreeKm())
             .param("base", req.travelBaseFee()).param("perKm", req.travelPerKm()).param("cap", req.travelFeeCap())
+            .param("instantFee", req.instantFee())
             .update();
         return city(cityId);
     }

@@ -33,6 +33,9 @@ import { RefundFields, newRefund, refundValid, refundable } from './refund-field
       <div class="mt-3 flex flex-wrap items-center gap-x-3 gap-y-2">
         <h1 class="text-2xl font-bold sm:text-3xl">{{ b.bookingRef }}</h1>
         <pg-status [status]="b.status" />
+        @if (b.instant) {
+          <span class="chip bg-gold py-1 text-xs font-semibold text-ink">Genie Now</span>
+        }
         @if (b.cancellationFeeStatus) {
           <pg-status [status]="b.cancellationFeeStatus" [label]="'Fee ' + b.cancellationFeeStatus.toLowerCase()" />
         }

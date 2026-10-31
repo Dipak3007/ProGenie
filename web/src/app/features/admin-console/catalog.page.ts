@@ -70,7 +70,12 @@ function slugify(text: string): string {
                     <td class="px-4 py-3 text-right tabular-nums">{{ s.basePrice | currency: 'INR' : 'symbol' : '1.0-0' }}</td>
                     <td class="px-4 py-3 text-right tabular-nums">{{ s.durationMinutes }} min</td>
                     <td class="px-4 py-3 text-right tabular-nums">{{ s.genieCount }}</td>
-                    <td class="px-4 py-3"><pg-status [status]="s.active ? 'ACTIVE' : 'INACTIVE'" [label]="s.active ? 'Live' : 'Hidden'" [tone]="s.active ? 'success' : 'neutral'" /></td>
+                    <td class="px-4 py-3">
+                      <pg-status [status]="s.active ? 'ACTIVE' : 'INACTIVE'" [label]="s.active ? 'Live' : 'Hidden'" [tone]="s.active ? 'success' : 'neutral'" />
+                      @if (s.instantEnabled) {
+                        <span class="chip ml-1 bg-gold py-0.5 text-xs font-semibold text-ink">Genie Now</span>
+                      }
+                    </td>
                     <td class="px-4 py-3 text-right">
                       <button type="button" class="grid size-9 place-items-center rounded-full text-muted hover:bg-surface hover:text-brand" [attr.aria-label]="'Edit ' + s.name" (click)="editService(s)">
                         <svg [lucideIcon]="Pencil" [size]="16" aria-hidden="true"></svg>
@@ -140,6 +145,10 @@ function slugify(text: string): string {
         </div>
         <label class="flex items-center gap-3 text-sm sm:col-span-2">
           <input type="checkbox" name="active" class="size-5 rounded accent-brand" [(ngModel)]="serviceForm.active" /> Visible to customers
+        </label>
+        <label class="flex items-start gap-3 text-sm sm:col-span-2">
+          <input type="checkbox" name="instant" class="mt-0.5 size-5 rounded accent-brand" [(ngModel)]="serviceForm.instantEnabled" />
+          <span><span class="font-semibold">Genie Now</span> · customers can book the nearest free Genie right away. Quick jobs only.</span>
         </label>
         <div class="flex flex-col-reverse gap-2 sm:col-span-2 sm:flex-row sm:justify-end">
           <button type="button" class="btn-ghost" (click)="serviceOpen.set(false)">Cancel</button>
@@ -216,7 +225,7 @@ export default class AdminCatalogPage {
   protected readonly firstCategory = computed(() => this.categories.value()?.[0]?.id ?? null);
 
   private blankService() {
-    return { id: null as number | null, categoryId: null as number | null, slug: '', name: '', description: '', basePrice: 299, durationMinutes: 60, active: true };
+    return { id: null as number | null, categoryId: null as number | null, slug: '', name: '', description: '', basePrice: 299, durationMinutes: 60, active: true, instantEnabled: false };
   }
 
   private blankCategory() {
@@ -225,7 +234,7 @@ export default class AdminCatalogPage {
 
   protected editService(s: AdminService | null): void {
     this.serviceForm = s
-      ? { id: s.id, categoryId: s.categoryId, slug: s.slug, name: s.name, description: s.description ?? '', basePrice: s.basePrice, durationMinutes: s.durationMinutes, active: s.active }
+      ? { id: s.id, categoryId: s.categoryId, slug: s.slug, name: s.name, description: s.description ?? '', basePrice: s.basePrice, durationMinutes: s.durationMinutes, active: s.active, instantEnabled: s.instantEnabled }
       : { ...this.blankService(), categoryId: this.categoryFilter() ?? this.firstCategory() };
     this.serviceOpen.set(true);
   }
@@ -250,6 +259,7 @@ export default class AdminCatalogPage {
         basePrice: Number(f.basePrice),
         durationMinutes: Number(f.durationMinutes),
         active: f.active,
+        instantEnabled: f.instantEnabled,
       })
       .subscribe({
         next: () => {

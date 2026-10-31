@@ -15,6 +15,7 @@ import {
   ProfileRequest,
   Review,
   TimeOff,
+  InstantOffer,
   Tracking,
 } from './models';
 
@@ -92,6 +93,19 @@ export class GenieApi {
 
   cancel(id: string, reason: string | null): Observable<BookingDetail> {
     return this.http.post<BookingDetail>(`${this.base}/bookings/${id}/cancel`, { reason });
+  }
+
+  // --- Genie Now offers (Phase 3C-9)
+  instantOffers(): Observable<InstantOffer[]> {
+    return this.http.get<InstantOffer[]>(`${this.base}/instant-offers`);
+  }
+
+  acceptOffer(id: number): Observable<BookingDetail> {
+    return this.http.post<BookingDetail>(`${this.base}/instant-offers/${id}/accept`, {});
+  }
+
+  declineOffer(id: number): Observable<void> {
+    return this.http.post<void>(`${this.base}/instant-offers/${id}/decline`, {});
   }
 
   /** "Start travelling": the booking becomes ON_THE_WAY and the customer can follow the Genie on a map. */

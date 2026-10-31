@@ -10,7 +10,7 @@ import { RequestBuilder } from '../../request-builder';
 import { CouponOfferDto } from '../../models/coupon-offer-dto';
 
 export interface CouponAvailable$Params {
-  genieId: string;
+  genieId?: string;
   serviceId: number;
   addressId: string;
 }

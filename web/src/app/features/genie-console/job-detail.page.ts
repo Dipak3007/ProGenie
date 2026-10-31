@@ -47,6 +47,9 @@ import { LocationSharer } from './location-sharer';
       <div class="mt-3 flex flex-wrap items-center gap-x-3 gap-y-2">
         <h1 class="text-2xl font-bold sm:text-3xl">{{ b.serviceName }}</h1>
         <pg-status [status]="b.status" [label]="b.status === 'REQUESTED' ? 'Needs your reply' : null" />
+        @if (b.instant) {
+          <span class="chip bg-gold py-1 text-xs font-semibold text-ink">Genie Now · arrive within an hour</span>
+        }
       </div>
       <p class="mt-1 text-sm text-muted">{{ b.bookingRef }} · {{ b.slotStart | date: 'EEEE d MMM, h:mm a' }} – {{ b.slotEnd | date: 'h:mm a' }}</p>
 
@@ -115,6 +118,12 @@ import { LocationSharer } from './location-sharer';
                       Finding your location…
                     }
                   </p>
+                  @if ((sharer.accuracyM() ?? 0) > 1000) {
+                    <p class="mt-2 rounded-xl bg-amber-50 px-3 py-2 text-sm text-amber-900" role="status" data-testid="rough-location">
+                      This device only knows your location roughly (within about {{ km(sharer.accuracyM()!) }} km), so the customer's map and
+                      arrival time won't be accurate. Open ProGenie on your phone with location (GPS) on.
+                    </p>
+                  }
                   @if (sharer.error() === 'unavailable' || sharer.error() === 'failed') {
                     <p class="mt-2 text-sm text-amber-800" role="status">Couldn't {{ sharer.error() === 'failed' ? 'send' : 'get' }} your location just now. Retrying…</p>
                   }
@@ -369,6 +378,10 @@ export default class JobDetailPage {
   /** How many after photos can still be added (3 per stage). */
   protected afterSlots(b: BookingDetail): number {
     return Math.max(0, 3 - b.photos.filter((p) => p.stage === 'AFTER').length);
+  }
+
+  protected km(metres: number): number {
+    return Math.max(1, Math.round(metres / 1000));
   }
 
   protected can(action: string): boolean {

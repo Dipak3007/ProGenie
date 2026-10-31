@@ -3,6 +3,7 @@
 
 export interface PricingRequest {
   commissionRate: number;
+  instantFee?: (number | null);
   travelBaseFee: number;
   travelFeeCap: number;
   travelFreeKm: number;

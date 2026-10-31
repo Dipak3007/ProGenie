@@ -61,7 +61,7 @@ public class ReceiptService {
                   String customerPhone, String genieName, String service, OffsetDateTime slotStart, String area,
                   String city, String pincode, BigDecimal serviceAmount, BigDecimal travelFee, BigDecimal extraAmount,
                   String extraNote, BigDecimal tipAmount, BigDecimal cancellationFee, BigDecimal discountAmount,
-                  String couponCode) {
+                  String couponCode, BigDecimal instantFee) {
     }
 
     record PaymentInfo(UUID id, String purpose, String method, String provider, String providerRef, BigDecimal amount,
@@ -291,6 +291,9 @@ public class ReceiptService {
             lines.add(new Line(s.service(), null, s.serviceAmount()));
             if (s.travelFee() != null && s.travelFee().signum() > 0) {
                 lines.add(new Line("Travel fee", null, s.travelFee()));
+            }
+            if (s.instantFee() != null && s.instantFee().signum() > 0) {
+                lines.add(new Line("Genie Now fee", "Instant booking", s.instantFee()));
             }
             if (s.extraAmount() != null && s.extraAmount().signum() > 0) {
                 lines.add(new Line("Parts and extras", s.extraNote(), s.extraAmount()));

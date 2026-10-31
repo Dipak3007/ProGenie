@@ -54,7 +54,7 @@ public class BookingQueryService {
                String cancellationFeeStatus, String cancelReason, String cancelledByRole, int rescheduledCount,
                boolean reviewed, OffsetDateTime createdAt, OffsetDateTime acceptedAt, OffsetDateTime startedAt,
                OffsetDateTime completedAt, OffsetDateTime cancelledAt, BigDecimal discountAmount, String couponCode,
-               OffsetDateTime travelStartedAt) {
+               OffsetDateTime travelStartedAt, BigDecimal instantFee, boolean instant) {
     }
 
     /** Status filter per list tab: keys of SQL fragments in sql_scripts.properties. */
@@ -173,7 +173,7 @@ public class BookingQueryService {
             r.paymentMethod(), r.paymentStatus(), r.cancellationFee(), r.cancellationFeeStatus(), feeIfNow,
             r.cancelReason(), r.cancelledByRole(), r.rescheduledCount(), r.reviewed(), r.createdAt(), r.acceptedAt(),
             r.startedAt(), r.completedAt(), r.cancelledAt(), actions, history(bookingId), jobPhotos, r.discountAmount(),
-            r.couponCode(), r.travelStartedAt());
+            r.couponCode(), r.travelStartedAt(), r.instantFee(), r.instant());
     }
 
     List<String> allowedActions(Row r, Viewer viewer, Instant now) {

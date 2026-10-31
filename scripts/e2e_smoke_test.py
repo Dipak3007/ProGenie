@@ -7,7 +7,8 @@ run in one go (otherwise a Genie can only start a job 30 minutes before its slot
 
     cd api
     mvn spring-boot:run -Dspring-boot.run.arguments="--progenie.booking.min-lead-time=5m \
-        --progenie.booking.start-early-window=120h --progenie.booking.free-cancellation-window=48h"
+        --progenie.booking.start-early-window=120h --progenie.booking.free-cancellation-window=48h \
+        --progenie.messaging.dispatch-interval=1s --progenie.genie.presence-initial-delay=5s"
 
     python3 scripts/e2e_smoke_test.py            # API at http://localhost:8080
     API=http://localhost:8080 python3 scripts/e2e_smoke_test.py
@@ -595,6 +596,8 @@ def main():
     phase3a(anon, customer, genie, admin, {"book": book, "genie_id": genie_id, "service_id": service_id})
     phase3b(anon, customer, genie, admin, {"genie_id": genie_id, "service_id": service_id, "address_id": address_id})
     phase3c(anon, customer, genie, admin, {"genie_id": genie_id, "service_id": service_id, "address_id": address_id})
+    phase3c9(anon, customer, genie, admin, {"genie_id": genie_id, "service_id": service_id, "address_id": address_id,
+                                             "other_genies": [newbie]})
 
     customer.delete(f"/api/v1/me/favourites/{genie_id}")
     customer.delete(f"/api/v1/me/addresses/{address_id}")
@@ -1277,6 +1280,113 @@ def phase3c(anon, customer, genie, admin, ctx):
     s2, t4 = customer.get(f"/api/v1/bookings/{bid2}/tracking")
     check(s == 200 and cancelled["status"] == "CANCELLED" and not t4["active"] and t4["lat"] is None,
           "cancelling while on the way deletes the position", (cancelled.get("status"), t4.get("lat")))
+
+
+def phase3c9(anon, customer, genie, admin, ctx):
+    genie_id, service_id, address_id = ctx["genie_id"], ctx["service_id"], ctx["address_id"]
+    section("Phase 3C: Genie Now (nearest free Genie, right away)")
+    ist_now = dt.datetime.now(dt.timezone.utc) + dt.timedelta(hours=5, minutes=30)
+    if ist_now.hour * 60 + ist_now.minute > 22 * 60:
+        print("  (skipped: after 22:00 in India the job can't end before the working day does)")
+        return
+
+    # admin: the service can be booked now, and the city has a Rs 30 Genie Now fee
+    _, services = admin.get("/api/v1/admin/services")
+    svc = next(x for x in services if x["id"] == service_id)
+    body = {k: svc[k] for k in ("categoryId", "slug", "name", "description", "basePrice", "durationMinutes", "active")}
+    s, saved = admin.put(f"/api/v1/admin/services/{service_id}", {**body, "instantEnabled": True})
+    check(s == 200 and saved["instantEnabled"], "admin switches the service on for Genie Now", saved.get("instantEnabled"))
+    _, cities = admin.get("/api/v1/admin/cities")
+    city = next(c for c in cities if c["active"])
+    pricing = {k: city[k] for k in ("commissionRate", "travelFreeKm", "travelBaseFee", "travelPerKm", "travelFeeCap")}
+    s, priced = admin.put(f"/api/v1/admin/cities/{city['cityId']}/pricing", {**pricing, "instantFee": 30})
+    check(s == 200 and float(priced["instantFee"]) == 30.0, "admin sets the city's Genie Now fee", priced.get("instantFee"))
+    code = f"NOW{RUN}".upper()
+    admin.post("/api/v1/admin/coupons", {"code": code, "title": "Rs 20 off", "discountType": "FLAT", "discountValue": 20,
+                                         "scope": "ALL", "listed": False})
+
+    # the Genie: working all day today, nothing booked in the next hours, online; everyone else offline
+    _, me = genie.get("/api/v1/genie/profile")
+    saved_windows = me["availability"]
+    s, _ = genie.put("/api/v1/genie/availability", {"windows": [{"dayOfWeek": d, "startTime": "00:00", "endTime": "23:45"}
+                                                                for d in range(1, 8)]})
+    check(s == 200, "the Genie works all day today (for this test)", s)
+    _, mine = customer.get("/api/v1/bookings?scope=ALL&size=100")
+    for b in mine["items"]:
+        if b.get("cancellationFeeStatus") == "DUE":  # left by the late cancellations above
+            admin.post(f"/api/v1/admin/bookings/{b['id']}/waive-fee")
+    soon = (dt.datetime.now(dt.timezone.utc) + dt.timedelta(hours=4)).isoformat()
+    _, page = genie.get("/api/v1/genie/bookings?scope=ALL&size=100")
+    for b in page["items"] if isinstance(page, dict) else []:
+        if b["status"] in ("REQUESTED", "ACCEPTED", "ON_THE_WAY", "IN_PROGRESS") and b["slotStart"] < soon:
+            admin.post(f"/api/v1/admin/bookings/{b['id']}/cancel", {"reason": "smoke: free the Genie", "waiveFee": True})
+    for other in ctx["other_genies"]:
+        other.post("/api/v1/genie/status", {"online": False})
+    genie.post("/api/v1/genie/status", {"online": True})
+
+    q = f"?serviceId={service_id}&addressId={address_id}"
+    s, quote = customer.get("/api/v1/instant/quote" + q)
+    check(s == 200 and quote["available"] and quote["genieCount"] >= 1 and float(quote["instantFee"]) == 30.0
+          and float(quote["priceFrom"]) > 30, "the customer sees Genies free nearby and the price range", quote)
+    s, offers = customer.get(f"/api/v1/coupons{q}")
+    check(s == 200 and isinstance(offers, list), "coupons can be listed before the Genie is known", s)
+
+    request = {"serviceId": service_id, "addressId": address_id, "paymentMethod": "CASH", "tipAmount": 0, "couponCode": code}
+    events, listener = listen(genie, "instant_offer")
+    s, search = customer.post("/api/v1/instant/requests", request)
+    check(s == 201 and search["status"] == "SEARCHING" and search["geniesAsked"] == 1, "the search asks the nearest Genie", search)
+    listener.join(15)
+    check(events and events[0]["requestId"] == search["id"] and float(events[0]["earning"]) > 0,
+          "the Genie gets the offer on the live stream at once, with what they earn", events[:1])
+    s, body = customer.post("/api/v1/instant/requests", request)
+    check(s == 409 and code_of(body) == "INSTANT_IN_PROGRESS", "one search at a time", body)
+    s, open_offers = genie.get("/api/v1/genie/instant-offers")
+    check(s == 200 and len(open_offers) == 1, "the offer is also in the Genie's open offers", s)
+    _, w0 = genie.get("/api/v1/genie/wallet")
+    s, booking = genie.post(f"/api/v1/genie/instant-offers/{open_offers[0]['id']}/accept")
+    ok = s == 200 and booking["status"] == "ACCEPTED" and booking["instant"]
+    check(ok, "the Genie accepts: an accepted Genie Now booking", booking.get("status") if isinstance(booking, dict) else booking)
+    if not ok:
+        return
+    expected = round(float(booking["serviceAmount"]) + float(booking["travelFee"]) + 30 - 20, 2)
+    check(float(booking["instantFee"]) == 30.0 and float(booking["discountAmount"]) == 20.0
+          and abs(float(booking["totalAmount"]) - expected) < 0.01, "it carries the Genie Now fee and the coupon", booking["totalAmount"])
+    s, done = customer.get(f"/api/v1/instant/requests/{search['id']}")
+    check(done["status"] == "BOOKED" and done["bookingId"] == booking["id"], "the customer's search turns BOOKED", done.get("status"))
+    s, again = genie.post(f"/api/v1/genie/instant-offers/{open_offers[0]['id']}/accept")
+    check(s == 409 and code_of(again) == "OFFER_GONE", "an offer can be accepted only once", again)
+    s, n = customer.get("/api/v1/notifications?size=5")
+    check(any(x["title"] == "A Genie is coming now" for x in n["items"]), "the customer is told a Genie is coming", None)
+
+    jobs = f"/api/v1/genie/bookings/{booking['id']}"
+    genie.post(jobs + "/travel")
+    _, sc = customer.post(f"/api/v1/bookings/{booking['id']}/start-code")
+    genie.post(jobs + "/start", {"code": sc["code"]})
+    s, completed = genie.post(jobs + "/complete", {"cashCollected": True})
+    _, w1 = genie.get("/api/v1/genie/wallet")
+    delta = round(float(w1["balance"]) - float(w0["balance"]), 2)
+    check(s == 200 and abs(delta - (20 - float(completed["commissionAmount"]))) < 0.01,
+          "cash job: the Genie keeps the Genie Now fee (collected in cash) and ProGenie pays the coupon", delta)
+    month = ist_now.strftime("%Y-%m")
+    _, csv = genie.get(f"/api/v1/genie/statements?month={month}&format=csv")
+    line = next((l for l in csv.decode("utf-8").splitlines() if booking["bookingRef"] in l), "") if isinstance(csv, bytes) else ""
+    check(",30.00," in line, "the monthly statement shows the Genie Now fee", line[:120])
+
+    s, search2 = customer.post("/api/v1/instant/requests", {**request, "couponCode": None})
+    s, open2 = genie.get("/api/v1/genie/instant-offers")
+    s, _ = genie.post(f"/api/v1/genie/instant-offers/{open2[0]['id']}/decline")
+    s, ended = customer.get(f"/api/v1/instant/requests/{search2['id']}")
+    check(ended["status"] == "NO_GENIE" and "time slot" in ended["message"],
+          "when the only free Genie passes: 'No Genie is free right now. Book a time slot instead.'", ended.get("status"))
+
+    s, search3 = customer.post("/api/v1/instant/requests", {**request, "couponCode": None})
+    s, open3 = genie.get("/api/v1/genie/instant-offers")
+    s, stopped = customer.post(f"/api/v1/instant/requests/{search3['id']}/cancel")
+    s2, late = genie.post(f"/api/v1/genie/instant-offers/{open3[0]['id']}/accept")
+    check(stopped["status"] == "CANCELLED" and s2 == 409, "stopping the search is free and withdraws the offer", (stopped.get("status"), s2))
+
+    genie.put("/api/v1/genie/availability", {"windows": saved_windows})
+    admin.put(f"/api/v1/admin/cities/{city['cityId']}/pricing", {**pricing, "instantFee": 0})
 
 if __name__ == "__main__":
     print(f"ProGenie API smoke test against {BASE} (run {RUN})")

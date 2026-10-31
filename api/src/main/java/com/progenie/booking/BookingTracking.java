@@ -39,11 +39,18 @@ public class BookingTracking {
     /** Average speed for the arrival estimate in city traffic. */
     static final double CITY_SPEED_KMH = 22.0;
 
-    /** A position from the Genie's phone (browser geolocation). */
+    /**
+     * A position from the Genie's phone (browser geolocation). {@code accuracyM} has no upper limit: a laptop without
+     * GPS reports its Wi-Fi/IP guess with an accuracy of tens or hundreds of km, and that is still sent (and shown to
+     * the customer as approximate) rather than refused.
+     */
     public record LocationRequest(@NotNull @DecimalMin("-90") @DecimalMax("90") Double lat,
                                   @NotNull @DecimalMin("-180") @DecimalMax("180") Double lng,
-                                  @DecimalMin("0") @DecimalMax("100000") Double accuracyM) {
+                                  @DecimalMin("0") Double accuracyM) {
     }
+
+    /** Stored accuracy is capped (the column holds up to 9,999 km); anything this vague is just "approximate". */
+    static final double MAX_STORED_ACCURACY_M = 1_000_000;
 
     /**
      * What the customer's map shows. {@code active} false (and no position) unless the booking is ON_THE_WAY;
@@ -90,7 +97,8 @@ public class BookingTracking {
         }
         jdbc.sql(QueryUtil.get(QueryConstants.UPSERT_BOOKING_TRACKING))
             .param("id", bookingId).param("lat", req.lat()).param("lng", req.lng())
-            .param("acc", req.accuracyM() == null ? null : BigDecimal.valueOf(req.accuracyM()).setScale(1, RoundingMode.HALF_UP))
+            .param("acc", req.accuracyM() == null ? null
+                : BigDecimal.valueOf(Math.min(req.accuracyM(), MAX_STORED_ACCURACY_M)).setScale(1, RoundingMode.HALF_UP))
             .param("km", km).param("method", method).param("eta", etaMinutes(km))
             .update();
         TrackingDto dto = toDto(row(bookingId).orElseThrow());

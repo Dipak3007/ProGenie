@@ -4,6 +4,6 @@
 export interface CheckRequest {
   addressId: string;
   code: string;
-  genieId: string;
+  genieId?: (string | null);
   serviceId: number;
 }

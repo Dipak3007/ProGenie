@@ -16,6 +16,7 @@ import com.progenie.booking.BookingQueryService.Viewer;
 import com.progenie.booking.domain.Booking;
 import com.progenie.booking.domain.BookingRepository;
 import com.progenie.booking.domain.BookingStatus;
+import com.progenie.booking.domain.PaymentMethod;
 import com.progenie.customer.AddressDtos.AddressDto;
 import com.progenie.customer.AddressService;
 import com.progenie.identity.AccountGuards;
@@ -35,6 +36,7 @@ import org.slf4j.LoggerFactory;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.jdbc.core.simple.JdbcClient;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.util.StringUtils;
 
@@ -153,6 +155,61 @@ public class BookingService {
         support.transitioned(booking, null, customerId, "CUSTOMER", BookingEvent.Type.REQUESTED, null, false);
         log.info("Booking {} requested by {} for Genie {}", booking.getBookingRef(), customerId, offer.genieId());
         return queries.detail(booking.getId(), Viewer.CUSTOMER, customerId);
+    }
+
+    /** What a Genie Now booking is made from (Phase 3C-9): the customer's request and the accepting Genie. */
+    record InstantOrder(UUID requestId, UUID customerId, UUID genieId, long serviceId, long cityId, UUID addressId,
+                        double lat, double lng, PaymentMethod paymentMethod, BigDecimal tipAmount, String notes,
+                        String couponCode, Duration arrivalWindow) {
+    }
+
+    /**
+     * Genie Now (Phase 3C-9): the booking for an accepted instant offer, created already ACCEPTED. The time it blocks
+     * is now → now + arrival window + the job's duration (the candidate search already skipped Genies with anything
+     * booked in the next 2 hours). The price is this Genie's, plus the city's instant fee. A coupon that stopped
+     * applying since the search started is left out rather than failing the booking.
+     */
+    @Transactional(propagation = Propagation.MANDATORY)
+    Booking createInstant(InstantOrder o) {
+        Offer offer = directory.bookableOffer(o.genieId(), o.serviceId());
+        PriceBreakdown quote = pricing.estimate(o.genieId(), o.serviceId(), o.lat(), o.lng(), o.tipAmount());
+        Booking.Price price = new Booking.Price(quote.serviceAmount(), quote.distanceKm(), quote.travelFee(),
+            quote.tipAmount(), quote.commissionRate(), quote.commissionAmount());
+        Instant now = clock.instant();
+        Instant end = now.plus(o.arrivalWindow()).plus(Duration.ofMinutes(offer.durationMinutes()));
+        Booking booking = Booking.request(nextBookingRef(now), o.customerId(), o.genieId(), o.serviceId(), o.cityId(),
+            o.addressId(), now, end, now.plus(Duration.ofMinutes(5)), price, o.paymentMethod(),
+            StringUtils.hasText(o.notes()) ? o.notes().trim() : null, null);
+        booking.markInstant(o.requestId(), pricing.instantFee(o.cityId()));
+        AppliedCoupon coupon = null;
+        if (StringUtils.hasText(o.couponCode())) {
+            coupon = coupons.tryApply(o.customerId(), o.couponCode(), o.serviceId(), o.cityId(), quote.serviceAmount())
+                .orElse(null);
+            if (coupon == null) {
+                log.warn("Genie Now request {}: coupon {} no longer applies, booking without it", o.requestId(), o.couponCode());
+            } else {
+                booking.applyCoupon(coupon.couponId(), coupon.discount());
+            }
+        }
+        booking.accept(now);
+        try {
+            booking = bookings.saveAndFlush(booking);
+        } catch (DataIntegrityViolationException e) {
+            if (String.valueOf(e.getMostSpecificCause().getMessage()).contains(OVERLAP_CONSTRAINT)) {
+                throw ApiException.conflict("GENIE_BUSY", "You already have a job at that time");
+            }
+            throw e;
+        }
+        jdbc.sql(QueryUtil.get(QueryConstants.UPDATE_BOOKING_SNAPSHOT_ADDRESS))
+            .param("bookingId", booking.getId())
+            .param("addressId", o.addressId())
+            .update();
+        if (coupon != null) {
+            coupons.recordUse(coupon, booking.getId(), booking.getBookingRef(), o.customerId());
+        }
+        support.transitioned(booking, null, o.genieId(), "GENIE", BookingEvent.Type.ACCEPTED, BookingEvent.GENIE_NOW, false);
+        log.info("Booking {} (Genie Now) accepted by Genie {} for {}", booking.getBookingRef(), o.genieId(), o.customerId());
+        return booking;
     }
 
     /** Free until the Genie accepts and until 2 h before the slot; later cancellations owe the late fee. */

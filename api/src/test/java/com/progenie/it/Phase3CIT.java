@@ -52,6 +52,17 @@ class Phase3CIT extends IntegrationTest {
         assertThat(second.status()).isEqualTo(200);
         JsonNode map = customer.get("/api/v1/bookings/" + id + "/tracking").body();
         assertThat(map.get("lat").asDouble()).isEqualTo(23.05);
+
+        // a laptop without GPS reports a km-wide guess: still accepted (shown as approximate), never a 400
+        ApiClient.Response vague = genie.put(jobs + "/location", "{\"lat\":23.0500,\"lng\":72.5550,\"accuracyM\":150000}");
+        assertThat(vague.status()).as(String.valueOf(vague.body())).isEqualTo(200);
+        assertThat(vague.body().get("accuracyM").decimalValue()).isEqualByComparingTo("150000");
+        // a real mistake gets the API's own error with the field, not Spring's generic "Invalid request content."
+        ApiClient.Response bad = genie.put(jobs + "/location", "{\"lat\":95,\"lng\":72.5550}");
+        assertThat(bad.status()).isEqualTo(400);
+        assertThat(bad.body().get("code").asString()).isEqualTo("VALIDATION_FAILED");
+        assertThat(bad.body().get("errors").has("lat")).isTrue();
+        genie.put(jobs + "/location", "{\"lat\":23.0500,\"lng\":72.5550,\"accuracyM\":8}");
         assertThat(map.get("distanceKm").decimalValue()).isPositive();
         assertThat(map.get("etaMinutes").asInt()).isPositive();
         assertThat(map.get("distanceMethod").asString()).isIn("ROAD", "ESTIMATE");

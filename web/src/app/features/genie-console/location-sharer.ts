@@ -26,6 +26,8 @@ export class LocationSharer {
   /** When the last position was accepted by the server. */
   readonly lastSentAt = signal<Date | null>(null);
   readonly error = signal<ShareError | null>(null);
+  /** Accuracy (m) of the latest fix; a laptop without GPS reports tens of km. */
+  readonly accuracyM = signal<number | null>(null);
 
   private watchId: number | null = null;
   private timer: ReturnType<typeof setInterval> | null = null;
@@ -49,6 +51,7 @@ export class LocationSharer {
     this.watchId = this.geo.watchPosition(
       (p) => {
         this.latest = { lat: p.coords.latitude, lng: p.coords.longitude, accuracyM: Number.isFinite(p.coords.accuracy) ? Math.round(p.coords.accuracy) : null };
+        this.accuracyM.set(this.latest.accuracyM);
         if (this.error() !== 'failed') this.error.set(null);
         void this.flush(false);
       },

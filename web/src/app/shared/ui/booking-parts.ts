@@ -81,6 +81,9 @@ export class BookingRow {
         <dt class="text-muted">Travel ({{ b.distanceKm }} km)</dt>
         <dd>{{ b.travelFee > 0 ? (b.travelFee | currency: 'INR') : 'Free' }}</dd>
       </div>
+      @if (b.instantFee > 0) {
+        <div class="flex justify-between gap-3"><dt class="text-muted">Genie Now fee</dt><dd>{{ b.instantFee | currency: 'INR' }}</dd></div>
+      }
       @if (b.extraAmount > 0) {
         <div class="flex justify-between gap-3">
           <dt class="text-muted">Extras{{ b.extraNote ? ' · ' + b.extraNote : '' }}</dt>

@@ -42,6 +42,7 @@ describe('LocationSharer', () => {
     geo.move(23.03, 72.56);
     await settle();
     expect(sent).toEqual([{ lat: 23.03, lng: 72.56, accuracyM: 12 }]);
+    expect(sharer.accuracyM()).toBe(12);
     expect(sharer.lastSentAt()).not.toBeNull();
 
     geo.move(23.031, 72.561); // too soon: kept as the latest, not sent

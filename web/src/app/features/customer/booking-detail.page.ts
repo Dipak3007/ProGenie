@@ -74,6 +74,9 @@ const TIP_PRESETS = [0, 20, 50, 100];
       <div class="mt-3 flex flex-wrap items-center gap-x-3 gap-y-2">
         <h1 class="text-2xl font-bold sm:text-3xl">{{ b.serviceName }}</h1>
         <pg-status [status]="b.status" />
+        @if (b.instant) {
+          <span class="chip bg-gold py-1 text-xs font-semibold text-ink">Genie Now</span>
+        }
       </div>
       <p class="mt-1 text-sm text-muted">{{ b.categoryName }} · {{ b.bookingRef }} · booked {{ b.createdAt | date: 'd MMM, h:mm a' }}</p>
 
@@ -100,7 +103,11 @@ const TIP_PRESETS = [0, 20, 50, 100];
                 <div class="flex gap-4 bg-brand-mist/60 p-5">
                   <svg [lucideIcon]="CalendarDays" [size]="24" class="shrink-0 text-brand-600" aria-hidden="true"></svg>
                   <div class="min-w-0 flex-1">
-                    <p class="font-semibold">Confirmed. {{ b.genie.name }} will arrive {{ b.slotStart | date: 'EEE d MMM' }} at {{ b.slotStart | date: 'h:mm a' }}.</p>
+                    @if (b.instant) {
+                      <p class="font-semibold">{{ b.genie.name }} accepted your Genie Now request and will arrive within about an hour.</p>
+                    } @else {
+                      <p class="font-semibold">Confirmed. {{ b.genie.name }} will arrive {{ b.slotStart | date: 'EEE d MMM' }} at {{ b.slotStart | date: 'h:mm a' }}.</p>
+                    }
                     <p class="mt-1 text-sm text-ink/75">When they arrive, give them your 4-digit start code. The job starts only with your code.</p>
                   </div>
                 </div>

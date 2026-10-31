@@ -29,7 +29,7 @@ public final class LedgerPostings {
     }
 
     public static List<Entry> bookingPaid(Payable b, boolean cash) {
-        BigDecimal share = b.serviceAmount().add(b.extraAmount()).add(b.travelFee()).subtract(b.commissionAmount());
+        BigDecimal share = b.serviceAmount().add(b.extraAmount()).add(b.travelFee()).add(b.instantFee()).subtract(b.commissionAmount());
         List<Entry> entries = new ArrayList<>();
         if (cash) {
             add(entries, b.bookingId(), b.genieId(), "GENIE_CASH", "D", b.totalAmount(), "Cash collected by Genie for " + b.bookingRef());

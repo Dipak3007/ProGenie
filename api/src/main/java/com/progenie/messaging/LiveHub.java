@@ -134,6 +134,20 @@ public class LiveHub {
         return List.copyOf(byUser.keySet());
     }
 
+    /** Users of a role with at least one open stream on this instance (Genie presence for Genie Now, Phase 3C-9). */
+    public List<UUID> connectedUsers(String role) {
+        return byUser.entrySet().stream()
+            .filter(e -> e.getValue().stream().anyMatch(c -> role.equals(c.role())))
+            .map(Map.Entry::getKey)
+            .toList();
+    }
+
+    /** True if the user has an open stream on this instance. */
+    public boolean isConnected(UUID userId) {
+        Set<Client> clients = byUser.get(userId);
+        return clients != null && !clients.isEmpty();
+    }
+
     private void send(Client client, SseEmitter.SseEventBuilder event) {
         try {
             client.emitter().send(event);

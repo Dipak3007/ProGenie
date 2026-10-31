@@ -5,6 +5,7 @@ import java.time.Clock;
 import java.time.Instant;
 import java.time.OffsetDateTime;
 import java.util.List;
+import java.util.Optional;
 import java.util.UUID;
 
 import com.progenie.promotion.CouponRules.Coupon;
@@ -60,7 +61,7 @@ public class CouponService {
 
     /** Public coupons for this checkout (Genie, service, address), each with its discount or why it doesn't apply. */
     @Transactional(readOnly = true)
-    public List<CouponOfferDto> available(UUID customerId, UUID genieId, long serviceId, UUID addressId) {
+    public List<CouponOfferDto> available(UUID customerId, @Nullable UUID genieId, long serviceId, UUID addressId) {
         Order order = order(customerId, genieId, serviceId, addressId);
         Instant now = clock.instant();
         boolean booked = customerHasBooked(customerId);
@@ -73,7 +74,7 @@ public class CouponService {
 
     /** A typed code (public or private) for this checkout. 404 COUPON_NOT_FOUND / 422 with the reason. */
     @Transactional(readOnly = true)
-    public CouponOfferDto check(UUID customerId, String code, UUID genieId, long serviceId, UUID addressId) {
+    public CouponOfferDto check(UUID customerId, String code, @Nullable UUID genieId, long serviceId, UUID addressId) {
         Order order = order(customerId, genieId, serviceId, addressId);
         Coupon c = find(code, false);
         CouponOfferDto offer = offer(c, order, usage(c, customerId, customerHasBooked(customerId)), clock.instant());
@@ -90,18 +91,44 @@ public class CouponService {
     @Transactional(propagation = Propagation.MANDATORY)
     public AppliedCoupon apply(UUID customerId, String code, long serviceId, long cityId, BigDecimal serviceAmount) {
         Coupon c = find(code, true);
+        Refusal refusal = refusal(c, customerId, serviceId, cityId, serviceAmount);
+        if (refusal != null) {
+            throw ApiException.unprocessable(refusal.code(), refusal.message());
+        }
+        return new AppliedCoupon(c.id(), c.code(), CouponRules.discount(c, serviceAmount));
+    }
+
+    /**
+     * Like {@link #apply} but never throws (so the surrounding transaction stays usable): empty when the code is
+     * unknown or no longer applies. Genie Now (Phase 3C-9) checks the coupon when the search starts and applies it
+     * here to the accepting Genie's price; if it stopped applying in between, the booking goes ahead without it.
+     */
+    @Transactional(propagation = Propagation.MANDATORY)
+    public Optional<AppliedCoupon> tryApply(UUID customerId, String code, long serviceId, long cityId, BigDecimal serviceAmount) {
+        String normalised = CouponRules.normalise(code);
+        if (!StringUtils.hasText(normalised)) {
+            return Optional.empty();
+        }
+        Optional<Coupon> found = jdbc.sql(QueryUtil.get(QueryConstants.LOCK_COUPON_BY_CODE))
+            .param("code", normalised).query(Coupon.class).optional();
+        if (found.isEmpty() || refusal(found.get(), customerId, serviceId, cityId, serviceAmount) != null) {
+            return Optional.empty();
+        }
+        return Optional.of(new AppliedCoupon(found.get().id(), found.get().code(), CouponRules.discount(found.get(), serviceAmount)));
+    }
+
+    private @Nullable Refusal refusal(Coupon c, UUID customerId, long serviceId, long cityId, BigDecimal serviceAmount) {
         long categoryId = jdbc.sql(QueryUtil.get(QueryConstants.GET_COUPON_SERVICE_CATEGORY))
             .param("serviceId", serviceId).query(Long.class).single();
         Order order = new Order(serviceId, categoryId, cityId, serviceAmount);
         Refusal refusal = CouponRules.check(c, order, usage(c, customerId, customerHasBooked(customerId)), clock.instant());
         if (refusal != null) {
-            throw ApiException.unprocessable(refusal.code(), refusal.message());
+            return refusal;
         }
-        BigDecimal discount = CouponRules.discount(c, serviceAmount);
-        if (discount.signum() <= 0) {
-            throw ApiException.unprocessable("COUPON_NOT_APPLICABLE", "This coupon gives no discount on this service");
+        if (CouponRules.discount(c, serviceAmount).signum() <= 0) {
+            return new Refusal("COUPON_NOT_APPLICABLE", "This coupon gives no discount on this service");
         }
-        return new AppliedCoupon(c.id(), c.code(), discount);
+        return null;
     }
 
     /** Records the use once the booking exists. */
@@ -124,8 +151,13 @@ public class CouponService {
 
     // ------------------------------------------------------------------ helpers
 
-    private Order order(UUID customerId, UUID genieId, long serviceId, UUID addressId) {
-        OrderRow row = jdbc.sql(QueryUtil.get(QueryConstants.GET_COUPON_CONTEXT))
+    /**
+     * The order a coupon is checked against. Without a Genie (Genie Now, Phase 3C-9: the Genie is not known yet) the
+     * service's base price is used; the booking applies the coupon to the accepting Genie's price.
+     */
+    private Order order(UUID customerId, @Nullable UUID genieId, long serviceId, UUID addressId) {
+        OrderRow row = jdbc.sql(QueryUtil.get(genieId == null ? QueryConstants.GET_COUPON_CONTEXT_SERVICE
+                : QueryConstants.GET_COUPON_CONTEXT))
             .param("customerId", customerId).param("genieId", genieId).param("serviceId", serviceId)
             .param("addressId", addressId)
             .query(OrderRow.class).optional()

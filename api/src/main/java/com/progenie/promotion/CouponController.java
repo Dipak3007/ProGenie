@@ -9,6 +9,7 @@ import jakarta.validation.Valid;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.NotNull;
 import jakarta.validation.constraints.Size;
+import org.jspecify.annotations.Nullable;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
@@ -21,7 +22,8 @@ import org.springframework.web.bind.annotation.RestController;
 @RequestMapping("/api/v1/coupons")
 public class CouponController {
 
-    public record CheckRequest(@NotBlank @Size(max = 30) String code, @NotNull UUID genieId, @NotNull Long serviceId,
+    /** {@code genieId} is left out for Genie Now (the Genie is not known yet: the service's base price is used). */
+    public record CheckRequest(@NotBlank @Size(max = 30) String code, @Nullable UUID genieId, @NotNull Long serviceId,
                                @NotNull UUID addressId) {
     }
 
@@ -33,7 +35,7 @@ public class CouponController {
 
     /** Public coupons for this order, with the discount each gives (or why it can't be used). */
     @GetMapping
-    public List<CouponOfferDto> available(@RequestParam UUID genieId, @RequestParam long serviceId,
+    public List<CouponOfferDto> available(@RequestParam(required = false) @Nullable UUID genieId, @RequestParam long serviceId,
                                           @RequestParam UUID addressId) {
         return coupons.available(CurrentUser.id(), genieId, serviceId, addressId);
     }
