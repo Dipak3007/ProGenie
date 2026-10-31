@@ -7,6 +7,7 @@ import { LEGAL_SLUG } from './account-api';
 import {
   AdminCategory,
   AdminCity,
+  AdminCoupon,
   AdminGenieDetail,
   AdminPincode,
   AdminService,
@@ -14,11 +15,16 @@ import {
   CategoryRequest,
   CityRequest,
   ContactMessage,
+  CouponRedemption,
+  CouponRequest,
   Decision,
+  DemandLayer,
+  DemandMap,
   FileLink,
   LegalDocument,
   LegalDraftRequest,
   LegalKind,
+  Page,
   Payout,
   PincodeRequest,
   PricingRequest,
@@ -51,6 +57,40 @@ export class AdminApi {
 
   documentLink(docId: string): Observable<FileLink> {
     return this.http.get<FileLink>(`${this.base}/genie-documents/${docId}/link`);
+  }
+
+  // --- coupons (Phase 3B)
+  coupons(status?: string, q?: string): Observable<AdminCoupon[]> {
+    const params: Record<string, string> = {};
+    if (status) params['status'] = status;
+    if (q) params['q'] = q;
+    return this.http.get<AdminCoupon[]>(`${this.base}/coupons`, { params });
+  }
+
+  createCoupon(body: CouponRequest): Observable<AdminCoupon> {
+    return this.http.post<AdminCoupon>(`${this.base}/coupons`, body);
+  }
+
+  updateCoupon(id: number, body: CouponRequest): Observable<AdminCoupon> {
+    return this.http.put<AdminCoupon>(`${this.base}/coupons/${id}`, body);
+  }
+
+  setCouponActive(id: number, active: boolean): Observable<AdminCoupon> {
+    return this.http.put<AdminCoupon>(`${this.base}/coupons/${id}/status`, { active });
+  }
+
+  couponRedemptions(id: number, page = 0): Observable<Page<CouponRedemption>> {
+    return this.http.get<Page<CouponRedemption>>(`${this.base}/coupons/${id}/redemptions`, { params: { page, size: 20 } });
+  }
+
+  /** A Genie's monthly earnings statement (month "2026-10") as a file to save. */
+  genieStatement(genieId: string, month: string, format: 'csv' | 'pdf'): Observable<Blob> {
+    return this.http.get(`${this.base}/genies/${genieId}/statements`, { params: { month, format }, responseType: 'blob' });
+  }
+
+  /** Recalculates every Genie's badges now (they are also recalculated every night). */
+  recalculateBadges(): Observable<{ genies: number }> {
+    return this.http.post<{ genies: number }>(`${this.base}/genies/badges/recalculate`, {});
   }
 
   settle(genieId: string, amount: number, reference: string): Observable<Wallet> {
@@ -167,5 +207,15 @@ export class AdminApi {
 
   publishLegal(id: string): Observable<LegalDocument> {
     return this.http.post<LegalDocument>(`${this.base}/legal/${id}/publish`, {});
+  }
+
+  /** Demand heatmap (Phase 3D): bookings or unmet demand by PIN code. */
+  demand(f: { layer: DemandLayer; days: number; cityId: number | null; categoryId: number | null; weekday: number | null; hour: number | null }): Observable<DemandMap> {
+    const params: Record<string, string | number> = { layer: f.layer, days: f.days };
+    if (f.cityId) params['cityId'] = f.cityId;
+    if (f.categoryId) params['categoryId'] = f.categoryId;
+    if (f.weekday) params['weekday'] = f.weekday;
+    if (f.hour !== null) params['hour'] = f.hour;
+    return this.http.get<DemandMap>(`${this.base}/demand`, { params });
   }
 }

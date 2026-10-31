@@ -8,13 +8,15 @@ Phase 2A: sign-up consent and phone verification (code read from Mailpit), recei
 admin takes, replies and resolves with a split partial refund → customer accepts and gets a credit note,
 one-time-code login, notification preferences, data export download, and publishing a policy that everyone must
 accept again (the consent dialog).
+Phase 3: job photos, statement, badges, coupons, live "on the way" tracking and Genie Now (the offer pops up on the
+Genie's open console and the customer's search turns into the booking).
 Every page is checked for horizontal overflow and console errors; screenshots land in scripts/ui-shots/.
 
 Needs: Mailpit on http://localhost:8025 (docker compose), the API started with relaxed timing (see docs/LOCAL_SETUP.md, step 12) on a freshly reset database,
 the web app on http://localhost:4200 (npm start), and `pip install playwright && python3 -m playwright install chromium`.
 Usage: python3 scripts/e2e_ui_walkthrough.py        (exit code 0 = all checks passed)
 """
-import os, re, sys, json, time, urllib.parse, urllib.request
+import os, re, sys, json, time, urllib.error, urllib.parse, urllib.request
 from playwright.sync_api import sync_playwright, expect
 
 BASE = "http://localhost:4200"
@@ -137,6 +139,23 @@ def login(page, who):
 
 import atexit
 PAGES = []
+
+def api(method, path, body=None, token=None):
+    """Direct API call for test set-up (through the web app's /api proxy)."""
+    req = urllib.request.Request(BASE + path, data=None if body is None else json.dumps(body).encode(), method=method,
+                                 headers={"Content-Type": "application/json", **({"Authorization": "Bearer " + token} if token else {})})
+    try:
+        with urllib.request.urlopen(req, timeout=20) as res:
+            raw = res.read()
+            return res.status, json.loads(raw) if raw else None
+    except urllib.error.HTTPError as e:
+        raw = e.read()
+        return e.code, json.loads(raw) if raw else None
+
+
+def api_token(who):
+    return api("POST", "/api/v1/auth/login", {"identifier": who, "password": PW})[1]["accessToken"]
+
 def dump():
     for i, pg in enumerate(PAGES):
         try:
@@ -160,6 +179,7 @@ with sync_playwright() as p:
         cp.get_by_role("button", name=re.compile("Fan installation")).first.click()
         cp.wait_for_timeout(600)
         ok(has(cp, "Offering"), "category page filters Genies by service")
+        ok(cp.locator("select option[value=RATING]").first.inner_text().strip() == "Recommended", "default Genie order is called Recommended")
         cp.goto(BASE + "/genies/1af855e6-31a8-5caa-bffa-6f864b9644ff"); settle(cp)
         cp.get_by_role("button", name=re.compile("Fan installation")).click()
         cp.wait_for_selector("h1 button[aria-pressed]")
@@ -181,11 +201,17 @@ with sync_playwright() as p:
         summary_when = cp.locator("#summary").inner_text()
         ok(f"{chosen[0][:3].title()} {chosen[1]}" in summary_when, f"summary date matches the chosen day chip ({chosen[:2]})")
         cp.get_by_role("radio", name=re.compile("Pay online after the job")).click()
-        cp.get_by_role("button", name="₹50").click()
+        cp.get_by_role("button", name="₹50", exact=True).click()
         cp.fill("#notes", "Two ceiling fans. Ladder available.")
         cp.wait_for_timeout(700)
         body = cp.inner_text("body")
         ok("Total" in body and "Travel" in body, "live quote shows travel fee and total")
+        # Phase 3B: public coupons listed with why they don't apply to this customer/order; a typed code is checked
+        cp.wait_for_selector("pg-coupon-picker ul button", timeout=10000)
+        ok(has(cp, "WELCOME50") and has(cp, "first booking only"), "checkout lists public coupons and says why one can't be used")
+        cp.fill("#coupon-code", "genie100")
+        cp.locator("pg-coupon-picker form button[type=submit]").click()
+        ok(has(cp, "at least ₹399"), "a typed private code that doesn't fit the order is refused with the reason")
         overflow(cp, "phone checkout")
         shot(cp, "phone-checkout-full")
 
@@ -228,10 +254,29 @@ with sync_playwright() as p:
         # ------------------------------------------------------------ customer start code
         print("CUSTOMER start code")
         ok(has(cp, "Confirmed", timeout=10000), "customer's open booking page turns Confirmed without a refresh (live stream)")
+
+        # ------------------------------------------------------------ Phase 3C-10: the Genie sets off, the customer follows
+        print("GENIE on the way (live tracking)")
+        ok(has(gp, "Leaving for this job?"), "the Genie is offered Start travelling")
+        gctx.grant_permissions(["geolocation"], origin=BASE)
+        gctx.set_geolocation({"latitude": 23.0450, "longitude": 72.5500, "accuracy": 15})
+        gp.get_by_role("button", name="Start travelling").click()
+        gp.wait_for_selector("[data-testid=sharing]", timeout=10000)
+        ok(has(gp, "last sent", timeout=15000), "the Genie's page shares the location while on the way")
+        ok(has(cp, "is on the way", timeout=10000), "customer's page turns 'on the way' without a refresh")
+        cp.wait_for_selector("[data-testid=eta]", timeout=30000)
+        eta = cp.locator("[data-testid=eta]").inner_text()
+        ok(re.search(r"About \d+ min away", eta) is not None, f"customer sees the arrival estimate ({eta.strip()})")
+        cp.wait_for_function("document.querySelectorAll('pg-tracking-map .leaflet-marker-icon').length === 2", timeout=15000)
+        ok(cp.locator("pg-tracking-map .leaflet-marker-icon").count() == 2, "the map shows the Genie and the customer's home")
+        ok(has(cp, "No route history is kept"), "the privacy note is shown under the map")
+        overflow(cp, "phone on the way")
+        shot(cp, "phone-genie-on-the-way")
+        shot(gp, "desktop-genie-on-the-way")
         cp.get_by_role("button", name="Show start code").click()
         cp.wait_for_timeout(800)
-        cp.wait_for_selector("p[aria-live=polite].font-display")
-        code = re.search(r"(\d{4})", cp.locator("p[aria-live=polite].font-display").inner_text()).group(1)
+        cp.wait_for_selector("p[aria-live=polite].font-display:not([data-testid=eta])")
+        code = re.search(r"(\d{4})", cp.locator("p[aria-live=polite].font-display:not([data-testid=eta])").inner_text()).group(1)
         ok(len(code) == 4, f"customer got a 4-digit start code ({code})")
         shot(cp, "phone-start-code", full=False)
 
@@ -241,13 +286,24 @@ with sync_playwright() as p:
         gp.get_by_role("button", name="Start job").click(); gp.wait_for_timeout(800)
         ok(has(gp, "not correct"), "wrong code is rejected with a clear message")
         gp.fill("#otp", code)
+        # Phase 3A-8: an optional before photo, picked before starting (a real JPEG: a screenshot of the page)
+        photo = os.path.join(OUT, "job-photo.jpg")
+        with open(photo, "wb") as f:
+            f.write(gp.screenshot(type="jpeg", quality=70))
+        gp.locator("pg-photo-picker input[type=file]").first.set_input_files(photo)
+        ok(gp.locator("pg-photo-picker img").count() == 1, "before photo previewed before starting")
         gp.get_by_role("button", name="Start job").click(); gp.wait_for_timeout(1200)
         ok(has(gp, "Finish the job"), "job in progress after the right code")
+        gp.wait_for_selector("pg-job-photos img", timeout=15000)
+        ok(gp.locator("pg-job-photos img").count() == 1, "the before photo is uploaded once the job starts")
         gp.get_by_role("button", name="Mark as completed").click()
         gp.fill("#extra", "120"); gp.fill("#extraNote", "1 fan capacitor")
+        gp.locator("dialog[open] pg-photo-picker input[type=file]").set_input_files(photo)
         shot(gp, "desktop-genie-complete-dialog", full=False)
-        gp.locator("dialog[open] form button[type=submit]").click(); gp.wait_for_timeout(1500)
+        gp.locator("dialog[open] form button[type=submit]").click(); gp.wait_for_timeout(2500)
         ok(has(gp, "Completed"), "job completed")
+        gp.wait_for_function("document.querySelectorAll('pg-job-photos img').length === 2", timeout=15000)
+        ok(gp.locator("pg-job-photos img").count() == 2, "before and after photos on the completed job")
         shot(gp, "desktop-genie-job-completed")
 
         # ------------------------------------------------------------ customer pays online + reviews
@@ -270,6 +326,7 @@ with sync_playwright() as p:
         print("CUSTOMER receipt + report a problem")
         cp.reload(); settle(cp)
         ok(has(cp, "Receipts"), "paid booking lists a receipt")
+        ok(has(cp, "Job photos") and cp.locator("pg-job-photos img").count() == 2, "the customer sees the before/after photos")
         name, size = download(cp, lambda: cp.locator("button[aria-label^='Download ']").first.click())
         ok(name.endswith(".pdf") and size > 1000, f"receipt PDF downloads ({name}, {size} bytes)")
         cp.get_by_role("button", name=re.compile("Report a problem")).click()
@@ -284,8 +341,9 @@ with sync_playwright() as p:
         ok(has(cp, "One fan wobbles"), "report opens as a ticket thread")
         cp.set_input_files("pg-ticket-thread input[type=file]", files=[{"name": "fan.png", "mimeType": "image/png",
             "buffer": bytes.fromhex("89504e470d0a1a0a0000000d49484452000000010000000108060000001f15c4890000000d49444154789c6360000002000154a24f5d0000000049454e44ae426082")}])
-        cp.wait_for_selector("pg-ticket-thread img", timeout=10000)
-        ok(cp.locator("pg-ticket-thread img").count() == 1, "photo attached to the report and shown")
+        cp.wait_for_function("document.querySelectorAll('pg-ticket-thread img').length === 3", timeout=10000)
+        ok(cp.locator("pg-ticket-thread pg-job-photos img").count() == 2, "the report shows the job's before/after photos")
+        ok(cp.locator("pg-ticket-thread img").count() == 3, "photo attached to the report and shown")
         overflow(cp, "phone ticket")
         shot(cp, "phone-ticket-open")
         cp.goto(BASE + "/account/bookings"); settle(cp)
@@ -325,6 +383,10 @@ with sync_playwright() as p:
         cp.get_by_role("button", name="Use my location").click()
         ok(has(cp, "PIN code 380015 filled in from the map"), "moving the pin fills in its PIN code")
         ok(cp.input_value("#a-pin") == "380015", "PIN code field updated from the pin")
+        try:  # the area comes from a second lookup (PIN code -> area) right after the PIN code is filled in
+            cp.wait_for_function("document.querySelector('#a-area')?.value === 'Satellite'", timeout=5000)
+        except Exception:
+            pass
         ok(cp.input_value("#a-area") == "Satellite", "area follows the new PIN code (it was filled in by us)")
         cp.fill("#a-pin", "380054")
         ok(has(cp, "Pin moved to 380054"), "typing a PIN code again moves the pin back")
@@ -351,9 +413,66 @@ with sync_playwright() as p:
         ok(has(gp, "Your reply"), "Genie replied to the review")
         gp.goto(BASE + "/genie/wallet"); settle(gp)
         ok(has(gp, "Job earnings"), "wallet shows ledger entries")
+        ok(has(gp, "Monthly statement"), "wallet offers the monthly statement")
+        name, size = download(gp, lambda: gp.get_by_role("button", name="PDF").click())
+        ok(re.fullmatch(r"progenie-earnings-\d{4}-\d{2}\.pdf", name) is not None and size > 1500, f"statement PDF downloads ({name}, {size} bytes)")
+        name, size = download(gp, lambda: gp.get_by_role("button", name=re.compile("^CSV")).click())
+        ok(name.endswith(".csv") and size > 200, f"statement CSV downloads ({name}, {size} bytes)")
         shot(gp, "desktop-genie-wallet")
+        gp.goto(BASE + "/genie"); settle(gp)
+        ok(has(gp, "Your badges"), "the Genie dashboard explains badges")
         gp.goto(BASE + "/genie/availability"); settle(gp)
         shot(gp, "desktop-genie-availability")
+
+        # ------------------------------------------------------------ Phase 3C-9: Genie Now
+        print("GENIE NOW (customer on a phone, Genie on desktop)")
+        g_token, a_token = api_token("genie@example.com"), api_token("admin@progenie.in")
+        saved_hours = api("GET", "/api/v1/genie/profile", token=g_token)[1]["availability"]
+        api("PUT", "/api/v1/genie/availability", {"windows": [{"dayOfWeek": d, "startTime": "00:00", "endTime": "23:45"} for d in range(1, 8)]}, g_token)
+        city = next(c for c in api("GET", "/api/v1/admin/cities", token=a_token)[1] if c["active"])
+        pricing = {k: city[k] for k in ("commissionRate", "travelFreeKm", "travelBaseFee", "travelPerKm", "travelFeeCap")}
+        api("PUT", f"/api/v1/admin/cities/{city['cityId']}/pricing", {**pricing, "instantFee": 20}, a_token)
+        gp.goto(BASE + "/genie"); settle(gp)
+        if gp.get_by_role("switch", name=re.compile("Go online")).count():
+            gp.get_by_role("switch", name=re.compile("Go online")).click(); gp.wait_for_timeout(800)
+        elif gp.get_by_role("button", name="Go online").count():
+            gp.get_by_role("button", name="Go online").click(); gp.wait_for_timeout(800)
+        ok(has(gp, "You're online"), "the Genie is online (ProGenie open) and can get Genie Now jobs")
+        cp.goto(BASE + "/services/electrician"); settle(cp)
+        cp.get_by_role("button", name=re.compile("Fan installation")).first.click()
+        cp.wait_for_selector("[data-testid=genie-now-link]", timeout=8000)
+        ok(cp.locator("[data-testid=genie-now-link]").count() == 1, "a Genie Now service offers 'Need it now?'")
+        cp.locator("[data-testid=genie-now-link]").click()
+        cp.wait_for_url(re.compile(r"/now/\d+"), timeout=10000); settle(cp)
+        cp.wait_for_selector("[data-testid=instant-quote] .font-display", timeout=15000)
+        quote_text = cp.locator("[data-testid=instant-quote]").inner_text()
+        ok("free near you" in quote_text and "Genie Now fee" in quote_text, "the customer sees free Genies nearby and the price range")
+        overflow(cp, "phone genie now")
+        shot(cp, "phone-genie-now")
+        cp.get_by_role("button", name="Find a Genie now").click()
+        cp.wait_for_selector("[data-testid=instant-search]", timeout=10000)
+        ok(has(cp, "Finding your Genie"), "the search screen asks one Genie at a time")
+        shot(cp, "phone-genie-now-searching", full=False)
+        try:
+            gp.wait_for_selector("[data-testid=instant-offer]", timeout=15000)
+            offered = True
+        except Exception:
+            offered = False
+        ok(offered, "the offer pops up on the Genie's open console (live stream), with a countdown")
+        if offered:
+            ok("you earn" in gp.locator("[data-testid=instant-offer]").inner_text().lower(), "the offer shows what the Genie earns")
+            shot(gp, "desktop-genie-now-offer", full=False)
+            gp.locator("[data-testid=instant-offer]").get_by_role("button", name="Accept job").click()
+            gp.wait_for_url(re.compile(r"/genie/bookings/[0-9a-f-]{36}"), timeout=15000); settle(gp)
+            ok(has(gp, "Genie Now"), "the Genie lands on the accepted job, marked Genie Now")
+            cp.wait_for_url(re.compile(r"/account/bookings/[0-9a-f-]{36}"), timeout=15000); settle(cp)
+            ok(has(cp, "within about an hour") and has(cp, "Genie Now fee"), "the customer's page opens the booking: arriving within an hour, with the fee")
+            shot(cp, "phone-genie-now-booked")
+            # free the Genie again for the rest of the walkthrough
+            now_booking_id = cp.url.rsplit("/", 1)[1]
+            api("POST", f"/api/v1/admin/bookings/{now_booking_id}/cancel", {"reason": "walkthrough", "waiveFee": True}, a_token)
+        api("PUT", "/api/v1/genie/availability", {"windows": saved_hours}, g_token)
+        api("PUT", f"/api/v1/admin/cities/{city['cityId']}/pricing", {**pricing, "instantFee": 0}, a_token)
 
         # ------------------------------------------------------------ new Genie onboarding
         print("NEW GENIE onboarding (phone)")
@@ -426,7 +545,14 @@ with sync_playwright() as p:
         ap.locator("aside").get_by_role("button", name="Approve").click()
         ap.locator("dialog[open] form button[type=submit]").click(); ap.wait_for_timeout(1500)
         ok(has(ap, "Approved"), "admin approved the new Genie")
+        ok(has(ap, "Earnings statement"), "admin can download a Genie's earnings statement")
         shot(ap, "desktop-admin-genie-review")
+        review_url = ap.url
+        ap.goto(BASE + "/admin/genies"); settle(ap)
+        ap.get_by_role("button", name="Recalculate badges").click()
+        ok(has(ap, "Badges updated for"), "admin recalculates badges")
+        ap.goto(review_url); settle(ap)
+        ok(has(ap, "New") and ap.locator("pg-genie-badges li").count() >= 1, "the newly approved Genie has the New badge")
         ap.goto(BASE + "/admin/bookings"); settle(ap)
         ap.locator("pg-booking-row").first.click(); settle(ap)
         ok(has(ap, "Timeline"), "admin booking detail with timeline")
@@ -462,6 +588,34 @@ with sync_playwright() as p:
         ok("Switched off" in card.inner_text(), "and switched off again")
         ap.goto(BASE + "/admin/users"); settle(ap)
         ap.goto(BASE + "/admin/inbox"); settle(ap)
+
+        print("ADMIN creates a coupon")
+        coupon_code = "WALK" + str(int(time.time()))[-6:]
+        ap.goto(BASE + "/admin/coupons"); settle(ap)
+        ap.get_by_role("button", name="New coupon").click()
+        ap.fill("#cp-code", coupon_code.lower())
+        ap.fill("#cp-title", "Rs 25 off for testers")
+        ap.fill("#cp-value", "25")
+        shot(ap, "desktop-admin-coupon-dialog", full=False)
+        ap.locator("dialog[open] form button[type=submit]").click()
+        ok(has(ap, coupon_code + " created"), "admin creates a coupon from the Coupons page")
+        ok(has(ap, coupon_code) and has(ap, "₹25 off"), "the new coupon is listed with its discount")
+        shot(ap, "desktop-admin-coupons")
+
+        # ------------------------------------------------------------ Phase 3D: demand heatmap
+        print("ADMIN demand map")
+        ap.goto(BASE + "/admin/demand"); settle(ap)
+        ap.wait_for_selector("[data-testid=demand-top] li", timeout=10000)
+        total = ap.locator("[data-testid=demand-total]").inner_text()
+        ok(re.search(r"[1-9]\d* bookings", total) is not None, f"the demand map counts this period's bookings ({total.strip()})")
+        ok(re.search(r"\d{6}", ap.locator("[data-testid=demand-top]").inner_text()) is not None, "top places are listed by PIN code")
+        ap.wait_for_function("document.querySelectorAll('.leaflet-heatmap-layer, canvas.leaflet-heatmap-layer').length > 0", timeout=10000)
+        ok(ap.locator("canvas.leaflet-heatmap-layer").count() == 1, "bookings are drawn as a heat layer")
+        shot(ap, "desktop-admin-demand-bookings")
+        ap.get_by_role("radio", name="Unmet demand").click(); ap.wait_for_timeout(1500)
+        ok(has(ap, "What people couldn") and has(ap, "PIN code we don"), "the unmet layer shows the unserved PIN code typed in the address form")
+        overflow(ap, "admin demand map")
+        shot(ap, "desktop-admin-demand-unmet")
 
         print("ADMIN complaint → split partial refund")
         ap.goto(BASE + "/admin/tickets"); settle(ap)
@@ -503,6 +657,29 @@ with sync_playwright() as p:
         cp.goto(booking_url); settle(cp)
         ok(has(cp, "Partly refunded") and has(cp, "Credit note"), "booking shows the partial refund and credit note")
         shot(cp, "phone-booking-refunded")
+
+        print("CUSTOMER books with a coupon")
+        cp.goto(BASE + "/book/1af855e6-31a8-5caa-bffa-6f864b9644ff"); settle(cp)
+        cp.wait_for_selector("pg-slot-picker button[aria-pressed]", timeout=15000)
+        cp.locator("pg-slot-picker button[aria-pressed]").first.click()
+        cp.wait_for_selector(f"pg-coupon-picker ul button:has-text('{coupon_code}')", timeout=10000)
+        before = cp.locator("#summary dl").inner_text()
+        cp.locator(f"pg-coupon-picker ul button:has-text('{coupon_code}')").click()
+        ok(has(cp, coupon_code + " applied"), "tapping a public coupon applies it")
+        cp.wait_for_timeout(400)
+        summary = cp.locator("#summary dl").inner_text()
+        ok(("Coupon " + coupon_code) in summary and "Coupon" not in before, "the summary shows the coupon discount")
+        shot(cp, "phone-checkout-coupon", full=False)
+        cp.locator("div.sticky button.btn-gold").click()
+        cp.wait_for_url(re.compile(r"/account/bookings/[0-9a-f-]{36}"), timeout=15000); settle(cp)
+        ok(has(cp, "Coupon " + coupon_code), "the booking shows the coupon in its price breakdown")
+        coupon_booking_url = cp.url
+        cp.get_by_role("button", name="Cancel booking").first.click(); cp.wait_for_timeout(500)
+        cp.get_by_role("button", name="Cancel booking").last.click(); cp.wait_for_timeout(1500)
+        ok(has(cp, "Cancelled"), "the coupon booking is cancelled (the use is given back)")
+        ap.goto(BASE + "/admin/coupons"); settle(ap)
+        row = ap.locator("tr", has_text=coupon_code)
+        ok("0" in row.locator("td").nth(3).inner_text(), "admin sees the use given back after the cancellation")
 
         print("CUSTOMER settings & privacy")
         cp.goto(BASE + "/account/privacy"); settle(cp)
@@ -573,7 +750,7 @@ with sync_playwright() as p:
         tctx = browser.new_context(viewport={"width": 768, "height": 1024}, **IN)
         tp = tctx.new_page(); watch(tp, "tablet-admin")
         login(tp, "admin@progenie.in")
-        for path in ["/admin", "/admin/genies", "/admin/bookings", "/admin/users", "/admin/catalog", "/admin/finance", "/admin/inbox",
+        for path in ["/admin", "/admin/genies", "/admin/bookings", "/admin/users", "/admin/catalog", "/admin/finance", "/admin/coupons", "/admin/demand", "/admin/inbox",
                      "/admin/tickets", f"/admin/tickets/{ticket_id}", f"/admin/bookings/{booking_id}", "/admin/messages", "/admin/legal",
                      "/admin/legal/privacy", "/admin/deletions", "/admin/settings"]:
             tp.goto(BASE + path); settle(tp); tp.wait_for_timeout(300)

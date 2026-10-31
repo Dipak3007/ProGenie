@@ -14,17 +14,19 @@ import {
 
 import { ConsoleShell, NavItem } from '../../shared/ui/kit';
 import { GenieStore } from './genie-store';
+import { InstantOfferPanel } from './instant-offer-panel';
 import { liveReload } from '../../core/live/live-stream';
 
 /** Genie console layout. Loads the profile once; child pages read it from GenieStore. */
 @Component({
   selector: 'pg-genie-console-page',
-  imports: [RouterOutlet, ConsoleShell],
+  imports: [RouterOutlet, ConsoleShell, InstantOfferPanel],
   changeDetection: ChangeDetectionStrategy.OnPush,
   template: `
     <pg-console-shell eyebrow="Genie console" [title]="store.profile()?.fullName ?? 'Genie console'" [items]="nav()">
       <router-outlet />
     </pg-console-shell>
+    <pg-instant-offer-panel />
   `,
 })
 export default class GenieConsolePage {

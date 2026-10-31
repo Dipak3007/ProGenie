@@ -1,6 +1,7 @@
 package com.progenie.booking;
 
 import java.math.BigDecimal;
+import java.time.Instant;
 import java.time.OffsetDateTime;
 import java.util.List;
 import java.util.UUID;
@@ -29,7 +30,8 @@ public final class BookingDtos {
         @NotNull OffsetDateTime slotStart,
         @NotNull PaymentMethod paymentMethod,
         @DecimalMin("0") @DecimalMax("2000") BigDecimal tipAmount,
-        @Size(max = 500) String notes) {
+        @Size(max = 500) String notes,
+        @Size(max = 30) String couponCode) {
     }
 
     public record CancelRequest(@Size(max = 300) String reason) {
@@ -78,7 +80,7 @@ public final class BookingDtos {
      * One booking as seen by {@code viewer}. Contact details are only shared while the job is active
      * and accepted; the Genie sees the full address only after accepting.
      *
-     * @param allowedActions what this viewer can do next, e.g. CANCEL, RESCHEDULE, PAY, ACCEPT, START
+     * @param allowedActions what this viewer can do next, e.g. CANCEL, RESCHEDULE, PAY, TRACK, ACCEPT, START_TRAVEL, START
      */
     public record BookingDetailDto(UUID id, String bookingRef, String status, long serviceId, String serviceName,
                                    String categoryName, String categorySlug, PartyDto genie, PartyDto customer,
@@ -92,6 +94,18 @@ public final class BookingDtos {
                                    @Nullable String cancelledByRole, int rescheduledCount, boolean reviewed,
                                    OffsetDateTime createdAt, @Nullable OffsetDateTime acceptedAt, @Nullable OffsetDateTime startedAt,
                                    @Nullable OffsetDateTime completedAt, @Nullable OffsetDateTime cancelledAt,
-                                   List<String> allowedActions, List<HistoryDto> history) {
+                                   List<String> allowedActions, List<HistoryDto> history, List<BookingPhotoDto> photos,
+                                   BigDecimal discountAmount, @Nullable String couponCode,
+                                   @Nullable OffsetDateTime travelStartedAt, BigDecimal instantFee, boolean instant) {
+    }
+
+    /**
+     * A before/after job photo. {@code url} opens the image directly and stops working at {@code expiresAt}
+     * (a few minutes); fetch the booking again for fresh links.
+     *
+     * @param stage BEFORE (taken when starting the job) or AFTER (when finishing it)
+     */
+    public record BookingPhotoDto(UUID id, String stage, String url, Instant expiresAt, String contentType,
+                                  int sizeBytes, OffsetDateTime createdAt) {
     }
 }

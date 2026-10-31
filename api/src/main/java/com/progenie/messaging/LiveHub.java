@@ -67,6 +67,7 @@ public class LiveHub {
                 oldest.emitter().complete();
             });
         }
+        log.debug("Live stream opened for user {} ({} open in total)", userId, total.get());
         send(client, SseEmitter.event().name("ready").reconnectTime(3000).data(Map.of("role", role == null ? "" : role),
             MediaType.APPLICATION_JSON));
         return emitter;
@@ -131,6 +132,20 @@ public class LiveHub {
 
     List<UUID> connectedUsers() {
         return List.copyOf(byUser.keySet());
+    }
+
+    /** Users of a role with at least one open stream on this instance (Genie presence for Genie Now, Phase 3C-9). */
+    public List<UUID> connectedUsers(String role) {
+        return byUser.entrySet().stream()
+            .filter(e -> e.getValue().stream().anyMatch(c -> role.equals(c.role())))
+            .map(Map.Entry::getKey)
+            .toList();
+    }
+
+    /** True if the user has an open stream on this instance. */
+    public boolean isConnected(UUID userId) {
+        Set<Client> clients = byUser.get(userId);
+        return clients != null && !clients.isEmpty();
     }
 
     private void send(Client client, SseEmitter.SseEventBuilder event) {

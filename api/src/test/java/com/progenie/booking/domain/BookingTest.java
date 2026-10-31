@@ -30,6 +30,19 @@ class BookingTest {
         assertThat(b.getGeniePayout()).isEqualByComparingTo("578.05");   // total − 24.95 commission
     }
 
+    /** Genie Now (3C-9): the instant fee is added to what the customer pays and to the Genie's earnings, not to commission. */
+    @Test
+    void theInstantFeeIsPaidByTheCustomerAndEarnedByTheGenie() {
+        Booking b = booking(PaymentMethod.CASH);
+        UUID request = UUID.randomUUID();
+        b.markInstant(request, new BigDecimal("25"));
+        assertThat(b.getInstantFee()).isEqualByComparingTo("25.00");
+        assertThat(b.getInstantRequestId()).isEqualTo(request);
+        assertThat(b.getTotalAmount()).isEqualByComparingTo("628.00");   // 603 + 25
+        assertThat(b.getGeniePayout()).isEqualByComparingTo("603.05");   // 628 − 24.95
+        assertThatThrownBy(() -> b.markInstant(UUID.randomUUID(), BigDecimal.ONE)).isInstanceOf(ApiException.class);
+    }
+
     @Test
     void happyPathThroughEveryState() {
         Booking b = booking(PaymentMethod.CASH);

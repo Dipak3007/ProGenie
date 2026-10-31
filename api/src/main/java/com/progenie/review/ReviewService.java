@@ -14,6 +14,8 @@ import com.progenie.shared.web.PageResponse;
 import jakarta.validation.constraints.Max;
 import jakarta.validation.constraints.Min;
 import jakarta.validation.constraints.Size;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.jspecify.annotations.Nullable;
 import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.dao.DuplicateKeyException;
@@ -28,6 +30,8 @@ import org.springframework.util.StringUtils;
  */
 @Service
 public class ReviewService {
+
+    private static final Logger log = LoggerFactory.getLogger(ReviewService.class);
 
     public record ReviewRequest(@Min(1) @Max(5) int rating, @Size(max = 1000) String comment) {
     }
@@ -67,6 +71,7 @@ public class ReviewService {
             throw ApiException.conflict("ALREADY_REVIEWED", "You have already reviewed this booking");
         }
         genies.refreshRating(booking.genieId());
+        log.info("Review {} ({} stars) for Genie {} on booking {}", id, req.rating(), booking.genieId(), bookingId);
         events.publishEvent(new ReviewSubmitted(id, booking.genieId(), req.rating()));
         return get(id);
     }

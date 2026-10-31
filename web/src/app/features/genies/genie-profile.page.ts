@@ -18,10 +18,11 @@ import { AuthStore } from '../../core/auth/auth-store';
 import { ToastService } from '../../core/ui/feedback';
 import { Avatar } from '../../shared/ui/avatar';
 import { CategoryVisual } from '../../shared/ui/category-visual';
+import { GenieBadges } from '../../shared/ui/genie-badges';
 
 @Component({
   selector: 'pg-genie-profile-page',
-  imports: [RouterLink, CurrencyPipe, DatePipe, DecimalPipe, LucideDynamicIcon, Avatar, CategoryVisual],
+  imports: [RouterLink, CurrencyPipe, DatePipe, DecimalPipe, LucideDynamicIcon, Avatar, CategoryVisual, GenieBadges],
   changeDetection: ChangeDetectionStrategy.OnPush,
   template: `
     @if (detail.value(); as d) {
@@ -48,6 +49,7 @@ import { CategoryVisual } from '../../shared/ui/category-visual';
                 </button>
               }
             </h1>
+            <pg-genie-badges class="mt-2 block" [badges]="d.genie.badges" [explain]="true" />
             <p class="mt-1 text-muted">{{ d.genie.categories }} · {{ d.genie.experienceYears }} years experience</p>
           </div>
           <dl class="grid grid-cols-3 gap-3 text-center sm:gap-6">

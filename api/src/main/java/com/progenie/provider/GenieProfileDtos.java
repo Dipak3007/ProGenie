@@ -32,7 +32,8 @@ public final class GenieProfileDtos {
                                BigDecimal avgRating, int ratingCount, int completedJobs, int cancellationCount,
                                @Nullable OffsetDateTime submittedAt, @Nullable OffsetDateTime approvedAt,
                                List<MyServiceDto> services, List<AvailabilityDto> availability,
-                               List<KycDocumentDto> documents, List<Step> missingSteps, boolean canSubmit) {
+                               List<KycDocumentDto> documents, List<Step> missingSteps, boolean canSubmit,
+                               List<String> badges) {
     }
 
     /** Flat row read from genie_profiles + users; lists are loaded separately. */
@@ -86,7 +87,7 @@ public final class GenieProfileDtos {
 
     public record LocationRequest(@NotNull @DecimalMin("-90") @DecimalMax("90") Double lat,
                                   @NotNull @DecimalMin("-180") @DecimalMax("180") Double lng,
-                                  @Min(0) @Max(10000) Integer accuracyM) {
+                                  @Min(0) Integer accuracyM) {   // no upper limit: laptops report km-wide guesses
     }
 
     public record ReplyRequest(@NotBlank @Size(max = 600) String reply) {

@@ -1,10 +1,12 @@
-import { ChangeDetectionStrategy, Component, computed, inject, input, signal } from '@angular/core';
+import { ChangeDetectionStrategy, Component, DestroyRef, computed, effect, inject, input, signal, untracked } from '@angular/core';
+import { firstValueFrom } from 'rxjs';
 import { httpResource } from '@angular/common/http';
 import { CurrencyPipe, DatePipe } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { RouterLink } from '@angular/router';
 import {
   LucideArrowLeft as ArrowLeft,
+  LucideCamera as Camera,
   LucideDynamicIcon,
   LucideHourglass as Hourglass,
   LucideKeyRound as KeyRound,
@@ -16,21 +18,25 @@ import {
 
 import { API, errorCode, errorMessage } from '../../core/api/api';
 import { GenieApi } from '../../core/api/genie-api';
-import { BookingDetail } from '../../core/api/models';
+import { BookingDetail, BookingPhoto, Tracking } from '../../core/api/models';
 import { ReportDialog } from '../support/report-dialog';
 import { ConfirmService, ToastService } from '../../core/ui/feedback';
 import { liveReload } from '../../core/live/live-stream';
 import { inr, mapsLink, telLink } from '../../shared/format';
+import { shrinkImage } from '../../shared/image';
 import { Avatar } from '../../shared/ui/avatar';
 import { PriceSummary, Timeline } from '../../shared/ui/booking-parts';
 import { Dialog } from '../../shared/ui/dialog';
+import { JobPhotos, PhotoStage, editableStages } from '../../shared/ui/job-photos';
 import { EmptyState, Skeleton, Spinner } from '../../shared/ui/kit';
+import { PhotoPicker } from '../../shared/ui/photo-picker';
 import { StatusBadge } from '../../shared/ui/status-badge';
 import { GenieStore } from './genie-store';
+import { LocationSharer } from './location-sharer';
 
 @Component({
   selector: 'pg-job-detail-page',
-  imports: [RouterLink, CurrencyPipe, DatePipe, FormsModule, LucideDynamicIcon, Avatar, Dialog, EmptyState, PriceSummary, ReportDialog, Skeleton, Spinner, StatusBadge, Timeline],
+  imports: [RouterLink, CurrencyPipe, DatePipe, FormsModule, LucideDynamicIcon, Avatar, Dialog, EmptyState, JobPhotos, PhotoPicker, PriceSummary, ReportDialog, Skeleton, Spinner, StatusBadge, Timeline],
   changeDetection: ChangeDetectionStrategy.OnPush,
   template: `
     <a routerLink="/genie/jobs" class="inline-flex items-center gap-1 text-sm font-semibold text-muted hover:text-brand">
@@ -41,6 +47,9 @@ import { GenieStore } from './genie-store';
       <div class="mt-3 flex flex-wrap items-center gap-x-3 gap-y-2">
         <h1 class="text-2xl font-bold sm:text-3xl">{{ b.serviceName }}</h1>
         <pg-status [status]="b.status" [label]="b.status === 'REQUESTED' ? 'Needs your reply' : null" />
+        @if (b.instant) {
+          <span class="chip bg-gold py-1 text-xs font-semibold text-ink">Genie Now · arrive within an hour</span>
+        }
       </div>
       <p class="mt-1 text-sm text-muted">{{ b.bookingRef }} · {{ b.slotStart | date: 'EEEE d MMM, h:mm a' }} – {{ b.slotEnd | date: 'h:mm a' }}</p>
 
@@ -60,6 +69,67 @@ import { GenieStore } from './genie-store';
                 <button type="button" class="btn-primary min-h-12 flex-1" [disabled]="busy()" (click)="accept()">Accept job</button>
                 <button type="button" class="btn-ghost min-h-12 flex-1" [disabled]="busy()" (click)="decline()">Decline</button>
               </div>
+            </section>
+          }
+
+          @if (can('START_TRAVEL')) {
+            <section class="card overflow-hidden" aria-labelledby="travel-h">
+              <div class="flex gap-4 bg-sky-50 p-5">
+                <svg [lucideIcon]="Navigation" [size]="24" class="shrink-0 text-sky-700" aria-hidden="true"></svg>
+                <div>
+                  <h2 id="travel-h" class="font-semibold">Leaving for this job?</h2>
+                  <p class="mt-1 text-sm text-ink/75">
+                    Tap <span class="font-semibold">Start travelling</span> when you set off. {{ b.customer.name.split(' ')[0] }} will see you on a map with an
+                    arrival estimate. Keep this page open on the way; your location is shared only until you start the job.
+                  </p>
+                </div>
+              </div>
+              <div class="p-5">
+                <button type="button" class="btn-primary min-h-12 w-full sm:w-auto" [disabled]="busy()" (click)="startTravel()">
+                  <svg [lucideIcon]="Navigation" [size]="18" aria-hidden="true"></svg> Start travelling
+                </button>
+              </div>
+            </section>
+          }
+
+          @if (b.status === 'ON_THE_WAY') {
+            <section class="card p-5" aria-labelledby="otw-h" data-testid="sharing">
+              <h2 id="otw-h" class="flex items-center gap-2 text-lg font-bold">
+                <svg [lucideIcon]="Navigation" [size]="20" class="text-sky-700" aria-hidden="true"></svg> You're on the way
+              </h2>
+              @switch (sharer.error()) {
+                @case ('denied') {
+                  <p class="mt-2 rounded-xl bg-rose-50 px-3 py-2 text-sm text-rose-800" role="alert">
+                    Location access is blocked, so {{ b.customer.name.split(' ')[0] }} can't see you coming. Allow location for ProGenie in your browser settings, then try again.
+                  </p>
+                  <button type="button" class="btn-ghost mt-3" (click)="sharer.start()">Try again</button>
+                }
+                @case ('unsupported') {
+                  <p class="mt-2 text-sm text-muted" role="status">This browser can't share your location. The customer sees that you're on the way, without a map.</p>
+                }
+                @default {
+                  <p class="mt-1 text-sm text-muted" aria-live="polite">
+                    @if (sharer.lastSentAt(); as at) {
+                      Sharing your location with {{ b.customer.name.split(' ')[0] }} · last sent {{ at | date: 'h:mm:ss a' }}
+                      @if (lastTrip(); as t) {
+                        · {{ t.distanceKm }} km, about {{ t.etaMinutes }} min
+                      }
+                    } @else {
+                      Finding your location…
+                    }
+                  </p>
+                  @if ((sharer.accuracyM() ?? 0) > 1000) {
+                    <p class="mt-2 rounded-xl bg-amber-50 px-3 py-2 text-sm text-amber-900" role="status" data-testid="rough-location">
+                      This device only knows your location roughly (within about {{ km(sharer.accuracyM()!) }} km), so the customer's map and
+                      arrival time won't be accurate. Open ProGenie on your phone with location (GPS) on.
+                    </p>
+                  }
+                  @if (sharer.error() === 'unavailable' || sharer.error() === 'failed') {
+                    <p class="mt-2 text-sm text-amber-800" role="status">Couldn't {{ sharer.error() === 'failed' ? 'send' : 'get' }} your location just now. Retrying…</p>
+                  }
+                }
+              }
+              <p class="mt-3 text-xs text-muted">Keep this page open until you arrive. Only your latest position is shared, and it's deleted when the job starts.</p>
             </section>
           }
 
@@ -87,11 +157,16 @@ import { GenieStore } from './genie-store';
               @if (codeError()) {
                 <p class="mt-2 text-sm text-rose-700" role="alert">{{ codeError() }}</p>
               }
+              <div class="mt-4 border-t border-line pt-4">
+                <p class="text-sm font-semibold">Before photos <span class="font-normal text-muted">(optional, up to 3)</span></p>
+                <p class="mt-0.5 text-xs text-muted">How things looked when you arrived. Only the customer and ProGenie see them.</p>
+                <pg-photo-picker class="mt-3 block" label="Before photo" [(files)]="beforeFiles" />
+              </div>
             </section>
-          } @else if (b.status === 'ACCEPTED') {
+          } @else if (b.status === 'ACCEPTED' && !can('START_TRAVEL')) {
             <section class="card p-5">
               <p class="font-semibold">Confirmed for {{ b.slotStart | date: 'EEE d MMM, h:mm a' }}</p>
-              <p class="mt-1 text-sm text-muted">You can start up to 30 minutes before the slot with the customer's code.</p>
+              <p class="mt-1 text-sm text-muted">On the day, tap Start travelling when you set off (from about 2½ hours before). Start the job with the customer's code from 30 minutes before the slot.</p>
             </section>
           }
 
@@ -100,6 +175,25 @@ import { GenieStore } from './genie-store';
               <h2 id="done-h" class="text-lg font-bold">Finish the job</h2>
               <p class="mt-1 text-sm text-muted">Started {{ b.startedAt | date: 'h:mm a' }}. Add parts or materials if you used any.</p>
               <button type="button" class="btn-gold mt-4 min-h-12" (click)="completeOpen.set(true)">Mark as completed</button>
+            </section>
+          }
+
+          @if (b.photos.length || addable().length) {
+            <section class="card p-5" aria-labelledby="photos-h">
+              <h2 id="photos-h" class="flex items-center gap-2 text-lg font-bold">
+                <svg [lucideIcon]="Camera" [size]="20" class="text-brand" aria-hidden="true"></svg> Job photos
+              </h2>
+              <p class="mt-1 text-sm text-muted">Optional. Seen only by you, the customer and ProGenie, and kept for a year.</p>
+              <pg-job-photos
+                class="mt-4 block"
+                [photos]="b.photos"
+                [addable]="addable()"
+                [editable]="editable()"
+                [busy]="uploading()"
+                (add)="addPhoto($event.stage, $event.file)"
+                (remove)="removePhoto($event)"
+                (expired)="detail.reload()"
+              />
             </section>
           }
 
@@ -193,6 +287,12 @@ import { GenieStore } from './genie-store';
             <p class="text-sm text-muted">Customer pays</p>
             <p class="font-display text-3xl font-bold">{{ b.totalAmount + (+extraAmount || 0) | currency: 'INR' }}</p>
           </div>
+          @if (afterSlots(b) > 0) {
+            <div>
+              <p class="label">After photos <span class="font-normal text-muted">(optional)</span></p>
+              <pg-photo-picker label="After photo" [max]="afterSlots(b)" [(files)]="afterFiles" />
+            </div>
+          }
           @if (b.paymentMethod === 'CASH') {
             <label class="flex items-start gap-3 rounded-2xl border border-line p-4 text-sm">
               <input type="checkbox" name="cash" class="mt-0.5 size-5 rounded accent-brand" [(ngModel)]="cashCollected" />
@@ -205,7 +305,7 @@ import { GenieStore } from './genie-store';
               @if (busy()) {
                 <pg-spinner />
               }
-              Complete job
+              {{ uploading() === 'AFTER' ? 'Uploading photos…' : 'Complete job' }}
             </button>
           </div>
         </form>
@@ -231,8 +331,25 @@ export default class JobDetailPage {
   protected readonly reportOpen = signal(false);
 
   /** Accepted, and the slot ended less than 7 days ago. */
+  /** Shares the Genie's position while the booking is ON_THE_WAY (Phase 3C-10). */
+  protected readonly sharer = new LocationSharer(async (fix) => {
+    try {
+      this.lastTrip.set(await firstValueFrom(this.api.sendTravelLocation(this.id(), fix.lat, fix.lng, fix.accuracyM)));
+    } catch (err) {
+      // the job started or was cancelled elsewhere: refresh, which stops sharing
+      if (['NOT_ON_THE_WAY', 'BOOKING_NOT_FOUND'].includes(errorCode(err) ?? '')) this.detail.reload();
+      throw err;
+    }
+  });
+  protected readonly lastTrip = signal<Tracking | null>(null);
+
   constructor() {
     liveReload('booking', (e) => e.bookingId === this.id(), () => this.detail.reload());
+    effect(() => {
+      const onTheWay = this.detail.value()?.status === 'ON_THE_WAY';
+      untracked(() => (onTheWay ? this.sharer.start() : this.sharer.stop()));
+    });
+    inject(DestroyRef).onDestroy(() => this.sharer.stop());
   }
 
   protected canReport(b: BookingDetail): boolean {
@@ -247,6 +364,25 @@ export default class JobDetailPage {
   protected cashCollected = true;
 
   protected readonly tel = computed(() => telLink(this.detail.value()?.customer.phone));
+  protected readonly beforeFiles = signal<File[]>([]);
+  protected readonly afterFiles = signal<File[]>([]);
+  protected readonly uploading = signal<PhotoStage | false>(false);
+  protected readonly addable = computed<PhotoStage[]>(() =>
+    (['BEFORE', 'AFTER'] as PhotoStage[]).filter((stage) => this.can('ADD_PHOTO_' + stage)),
+  );
+  protected readonly editable = computed<PhotoStage[]>(() => {
+    const b = this.detail.value();
+    return b ? editableStages(b.status, b.completedAt) : [];
+  });
+
+  /** How many after photos can still be added (3 per stage). */
+  protected afterSlots(b: BookingDetail): number {
+    return Math.max(0, 3 - b.photos.filter((p) => p.stage === 'AFTER').length);
+  }
+
+  protected km(metres: number): number {
+    return Math.max(1, Math.round(metres / 1000));
+  }
 
   protected can(action: string): boolean {
     return this.detail.value()?.allowedActions.includes(action as never) ?? false;
@@ -267,7 +403,7 @@ export default class JobDetailPage {
   private failed(err: unknown): void {
     this.busy.set(false);
     this.toast.error(errorMessage(err));
-    if (['INVALID_STATE', 'REQUEST_EXPIRED'].includes(errorCode(err) ?? '')) this.detail.reload();
+    if (['INVALID_STATE', 'REQUEST_EXPIRED', 'TOO_EARLY'].includes(errorCode(err) ?? '')) this.detail.reload();
   }
 
   protected accept(): void {
@@ -287,13 +423,29 @@ export default class JobDetailPage {
     this.api.decline(this.id(), value).subscribe({ next: (b) => this.done(b, 'Request declined'), error: (e) => this.failed(e) });
   }
 
+  protected startTravel(): void {
+    this.busy.set(true);
+    this.api.startTravel(this.id()).subscribe({
+      next: (b) => this.done(b, 'Have a safe trip. The customer can now see you on the map.'),
+      error: (e) => this.failed(e),
+    });
+  }
+
   protected start(): void {
     this.busy.set(true);
     this.codeError.set(null);
     this.api.start(this.id(), this.code).subscribe({
-      next: (b) => {
+      next: async (b) => {
         this.code = '';
         this.done(b, 'Job started. Good luck!');
+        const files = this.beforeFiles();
+        if (files.length) {
+          this.uploading.set('BEFORE');
+          await this.uploadPhotos('BEFORE', files);
+          this.beforeFiles.set([]);
+          this.uploading.set(false);
+          this.detail.reload();
+        }
       },
       error: (err) => {
         this.busy.set(false);
@@ -309,9 +461,17 @@ export default class JobDetailPage {
     });
   }
 
-  protected complete(b: BookingDetail): void {
+  protected async complete(b: BookingDetail): Promise<void> {
     const extra = Number(this.extraAmount) || 0;
     this.busy.set(true);
+    const files = this.afterFiles();
+    if (files.length) {
+      // uploaded while the job is still in progress, so they are part of the job when it completes
+      this.uploading.set('AFTER');
+      await this.uploadPhotos('AFTER', files);
+      this.afterFiles.set([]);
+      this.uploading.set(false);
+    }
     this.api
       .complete(this.id(), {
         extraAmount: extra > 0 ? extra : null,
@@ -325,6 +485,45 @@ export default class JobDetailPage {
         },
         error: (e) => this.failed(e),
       });
+  }
+
+  /** Shrinks and uploads photos one by one; reports the ones that failed (the job action itself has succeeded). */
+  private async uploadPhotos(stage: PhotoStage, files: File[]): Promise<void> {
+    let failed = 0;
+    let lastError: unknown = null;
+    for (const file of files) {
+      try {
+        await firstValueFrom(this.api.addPhoto(this.id(), stage, await shrinkImage(file)));
+      } catch (err) {
+        failed++;
+        lastError = err;
+      }
+    }
+    if (failed) this.toast.error(`${failed} photo${failed > 1 ? 's' : ''} could not be uploaded. ${errorMessage(lastError)}`);
+  }
+
+  protected async addPhoto(stage: PhotoStage, file: File): Promise<void> {
+    this.uploading.set(stage);
+    try {
+      await firstValueFrom(this.api.addPhoto(this.id(), stage, await shrinkImage(file)));
+      this.toast.success('Photo added');
+    } catch (err) {
+      this.toast.error(errorMessage(err));
+    }
+    this.uploading.set(false);
+    this.detail.reload();
+  }
+
+  protected async removePhoto(photo: BookingPhoto): Promise<void> {
+    const { confirmed } = await this.confirm.ask({ title: 'Remove this photo?', confirmLabel: 'Remove', tone: 'danger' });
+    if (!confirmed) return;
+    this.api.deletePhoto(this.id(), photo.id).subscribe({
+      next: () => {
+        this.toast.success('Photo removed');
+        this.detail.reload();
+      },
+      error: (err) => this.toast.error(errorMessage(err)),
+    });
   }
 
   protected async cancel(): Promise<void> {
@@ -342,6 +541,7 @@ export default class JobDetailPage {
   }
 
   protected readonly ArrowLeft = ArrowLeft;
+  protected readonly Camera = Camera;
   protected readonly Hourglass = Hourglass;
   protected readonly KeyRound = KeyRound;
   protected readonly LifeBuoy = LifeBuoy;

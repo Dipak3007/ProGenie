@@ -6,6 +6,7 @@ export interface ServiceDto {
   description: (string | null);
   durationMinutes: number;
   id: number;
+  instantEnabled: boolean;
   name: string;
   slug: string;
 }

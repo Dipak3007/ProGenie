@@ -90,11 +90,24 @@ export function errorCode(err: unknown): string | null {
   return null;
 }
 
-/** Turns an HttpErrorResponse into a human message (uses the API's ProblemDetail when present). */
+/** The error's ID (errorId in the body, else the X-Request-Id header), to quote when reporting a problem. */
+export function errorId(err: unknown): string | null {
+  if (err instanceof HttpErrorResponse) {
+    const body = err.error as ProblemDetail | null;
+    return body?.errorId ?? err.headers?.get('X-Request-Id') ?? null;
+  }
+  return null;
+}
+
+/**
+ * Turns an HttpErrorResponse into a human message (uses the API's ProblemDetail when present).
+ * Unexpected errors (server errors, or no message from the API) end with "Error ID: …" so testers can report them;
+ * ordinary business answers ("That slot was just taken") don't.
+ */
 export function errorMessage(err: unknown, fallback = 'Something went wrong. Please try again.'): string {
   if (err instanceof HttpErrorResponse) {
     if (err.status === 0) {
-      return 'Cannot reach the server. Is the API running on port 8080?';
+      return 'Cannot reach the server. Check your connection and try again.';
     }
     const body = err.error as ProblemDetail | null;
     if (body?.errors) {
@@ -102,7 +115,10 @@ export function errorMessage(err: unknown, fallback = 'Something went wrong. Ple
         .map(([field, msg]) => `${field}: ${msg}`)
         .join(' · ');
     }
-    return body?.detail ?? fallback;
+    const id = errorId(err);
+    const unexpected = err.status >= 500 || !body?.detail;
+    const text = body?.detail ?? fallback;
+    return unexpected && id ? `${text} Error ID: ${id}` : text;
   }
   return fallback;
 }

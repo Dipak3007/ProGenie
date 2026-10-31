@@ -22,7 +22,7 @@ public class BookingPayments {
                           String paymentMethod, String paymentStatus, BigDecimal serviceAmount, BigDecimal extraAmount,
                           BigDecimal travelFee, BigDecimal tipAmount, BigDecimal commissionAmount,
                           BigDecimal totalAmount, BigDecimal geniePayout, BigDecimal cancellationFee,
-                          String cancellationFeeStatus) {
+                          String cancellationFeeStatus, BigDecimal discountAmount, BigDecimal instantFee) {
     }
 
     private final BookingRepository bookings;
@@ -61,6 +61,7 @@ public class BookingPayments {
         return new Payable(b.getId(), b.getBookingRef(), b.getCustomerId(), b.getGenieId(), b.getStatus().name(),
             b.getPaymentMethod().name(), b.getPaymentStatus().name(), b.getServiceAmount(), b.getExtraAmount(),
             b.getTravelFee(), b.getTipAmount(), b.getCommissionAmount(), b.getTotalAmount(), b.getGeniePayout(),
-            b.getCancellationFee(), b.getCancellationFeeStatus() == null ? null : b.getCancellationFeeStatus().name());
+            b.getCancellationFee(), b.getCancellationFeeStatus() == null ? null : b.getCancellationFeeStatus().name(),
+            b.getDiscountAmount(), b.getInstantFee());
     }
 }

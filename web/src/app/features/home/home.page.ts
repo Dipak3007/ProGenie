@@ -146,7 +146,7 @@ import { ContactSection } from './contact-section';
           }
         </div>
       } @else if (categories.error()) {
-        <p class="card mt-10 p-6 text-sm text-red-700">Could not load categories. Make sure the API is running on port 8080.</p>
+        <p class="card mt-10 p-6 text-sm text-red-700">Could not load categories. Please refresh in a moment.</p>
       } @else {
         <div class="mt-10 grid auto-rows-[11rem] grid-cols-2 gap-3 sm:auto-rows-[14rem] sm:gap-4 md:grid-cols-4">
           @for (c of categories.value(); track c.id; let i = $index) {

@@ -90,6 +90,7 @@ public class DataExportService {
         }
         UUID id = jdbc.sql(QueryUtil.get(QueryConstants.INSERT_EXPORT_REQUEST)).param("u", userId)
             .query(UUID.class).single();
+        log.info("Data export {} requested by user {}", id, userId);
         return get(userId, id);
     }
 

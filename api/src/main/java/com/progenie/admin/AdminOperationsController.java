@@ -6,6 +6,7 @@ import java.util.UUID;
 import com.progenie.booking.BookingDtos.BookingDetailDto;
 import com.progenie.booking.BookingDtos.BookingSummaryDto;
 import com.progenie.booking.BookingQueryService;
+import com.progenie.booking.BookingTracking;
 import com.progenie.booking.BookingQueryService.Viewer;
 import com.progenie.booking.BookingService;
 import com.progenie.identity.domain.UserStatus;
@@ -51,9 +52,11 @@ public class AdminOperationsController {
     private final BookingService bookings;
     private final AccountService accounts;
     private final SupportInboxService inbox;
+    private final BookingTracking tracking;
 
     public AdminOperationsController(BookingQueryService bookingQueries, BookingService bookings,
-                                     AccountService accounts, SupportInboxService inbox) {
+                                     AccountService accounts, SupportInboxService inbox, BookingTracking tracking) {
+        this.tracking = tracking;
         this.bookingQueries = bookingQueries;
         this.bookings = bookings;
         this.accounts = accounts;
@@ -76,6 +79,11 @@ public class AdminOperationsController {
     @GetMapping("/bookings/{id}")
     public BookingDetailDto booking(@PathVariable UUID id) {
         return bookingQueries.detail(id, Viewer.ADMIN, CurrentUser.id());
+    }
+
+    @GetMapping("/bookings/{id}/tracking")
+    public BookingTracking.TrackingDto tracking(@PathVariable UUID id) {
+        return tracking.get(id, Viewer.ADMIN, CurrentUser.id());
     }
 
     @PostMapping("/bookings/{id}/cancel")

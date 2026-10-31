@@ -10,6 +10,7 @@ export interface AdminServiceDto {
   durationMinutes: number;
   genieCount: number;
   id: number;
+  instantEnabled: boolean;
   name: string;
   slug: string;
 }

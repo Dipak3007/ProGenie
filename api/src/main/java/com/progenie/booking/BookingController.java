@@ -38,8 +38,11 @@ public class BookingController {
     private final BookingService bookings;
     private final BookingQueryService queries;
     private final SlotService slots;
+    private final BookingTracking tracking;
 
-    public BookingController(BookingService bookings, BookingQueryService queries, SlotService slots) {
+    public BookingController(BookingService bookings, BookingQueryService queries, SlotService slots,
+                             BookingTracking tracking) {
+        this.tracking = tracking;
         this.bookings = bookings;
         this.queries = queries;
         this.slots = slots;
@@ -81,6 +84,12 @@ public class BookingController {
     @GetMapping("/api/v1/bookings/{id}")
     public BookingDetailDto get(@PathVariable UUID id) {
         return queries.detail(id, Viewer.CUSTOMER, CurrentUser.id());
+    }
+
+    /** Live map while the Genie is on the way (Phase 3C); updates also arrive as {@code tracking} stream events. */
+    @GetMapping("/api/v1/bookings/{id}/tracking")
+    public BookingTracking.TrackingDto tracking(@PathVariable UUID id) {
+        return tracking.get(id, Viewer.CUSTOMER, CurrentUser.id());
     }
 
     @PostMapping("/api/v1/bookings/{id}/cancel")

@@ -3,6 +3,7 @@
 
 export interface GenieCardDto {
   avgRating: number;
+  badges: Array<string>;
   baseArea: (string | null);
   bio: (string | null);
   categories: string;

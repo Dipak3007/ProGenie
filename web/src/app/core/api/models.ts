@@ -7,6 +7,7 @@ import type {
   AddressRequest,
   AddressView,
   AdminCategoryDto,
+  AdminCouponDto,
   AdminCityDto,
   AdminGenieDetailDto,
   AdminPincodeDto,
@@ -17,6 +18,7 @@ import type {
   AvailabilityDto,
   Blocker,
   BookingDetailDto,
+  BookingPhotoDto,
   BookingSummaryDto,
   CategoryDetailDto,
   CategoryDto,
@@ -26,6 +28,8 @@ import type {
   CityDto,
   CityRequest,
   CompanyDto,
+  CouponOfferDto,
+  CouponRequest as CouponRequestDto,
   ConsentDto,
   ContactMessageDto,
   ContactRequest,
@@ -83,8 +87,15 @@ import type {
   TicketMessageDto,
   TicketSummary,
   TimeOffDto,
+  InstantOfferDto,
+  DemandCell,
+  DemandMapDto,
+  InstantQuoteDto,
+  InstantRequestDto,
+  TrackingDto,
   UserDto,
   UserRowDto,
+  RedemptionDto,
   VerificationEventDto,
   VersionDto,
   WalletDto,
@@ -165,7 +176,7 @@ export type Address = AddressDto;
 
 // ---------------------------------------------------------------- bookings
 
-export type BookingStatus = 'REQUESTED' | 'ACCEPTED' | 'IN_PROGRESS' | 'COMPLETED' | 'CANCELLED' | 'REJECTED' | 'EXPIRED';
+export type BookingStatus = 'REQUESTED' | 'ACCEPTED' | 'ON_THE_WAY' | 'IN_PROGRESS' | 'COMPLETED' | 'CANCELLED' | 'REJECTED' | 'EXPIRED';
 export type PaymentMethod = 'CASH' | 'ONLINE';
 export type PaymentStatus = 'UNPAID' | 'PAID' | 'PARTIALLY_REFUNDED' | 'REFUNDED' | 'WAIVED';
 export type FeeStatus = 'DUE' | 'PAID' | 'WAIVED';
@@ -181,7 +192,10 @@ export type BookingAction =
   | 'ACCEPT'
   | 'DECLINE'
   | 'START'
-  | 'COMPLETE';
+  | 'COMPLETE'
+  | 'START_TRAVEL'
+  | 'SHARE_LOCATION'
+  | 'TRACK';
 
 export type Party = PartyDto;
 
@@ -189,6 +203,21 @@ export type Party = PartyDto;
 export type HistoryItem = HistoryDto;
 
 export type BookingDetail = BookingDetailDto;
+/** Genie Now (Phase 3C-9): price range before searching, the search itself, and an offer as a Genie sees it. */
+export type InstantQuote = InstantQuoteDto;
+export type InstantRequest = InstantRequestDto;
+export type InstantOffer = InstantOfferDto;
+/** Admin demand heatmap (Phase 3D). */
+export type DemandMap = DemandMapDto;
+export type { DemandCell };
+export type DemandLayer = 'BOOKINGS' | 'UNMET';
+
+export type InstantStatus = 'SEARCHING' | 'BOOKED' | 'NO_GENIE' | 'CANCELLED';
+
+/** Live "on the way" map: the Genie's latest position, distance and arrival estimate (Phase 3C-10). */
+export type Tracking = TrackingDto;
+/** A before/after job photo with a short-lived link (Phase 3A-8). */
+export type BookingPhoto = BookingPhotoDto;
 
 export type BookingSummary = BookingSummaryDto;
 
@@ -254,7 +283,7 @@ export type AdminCity = AdminCityDto;
 export type AdminPincode = AdminPincodeDto;
 
 
-export type PricingRequest = Pick<AdminCity, 'commissionRate' | 'travelFreeKm' | 'travelBaseFee' | 'travelPerKm' | 'travelFeeCap'>;
+export type PricingRequest = Pick<AdminCity, 'commissionRate' | 'travelFreeKm' | 'travelBaseFee' | 'travelPerKm' | 'travelFeeCap' | 'instantFee'>;
 
 export type ContactMessage = ContactMessageDto;
 
@@ -333,6 +362,8 @@ export interface ProblemDetail {
   detail?: string;
   code?: string;
   errors?: Record<string, string>;
+  /** The request's ID (also in the X-Request-Id header): quote it when reporting a problem. */
+  errorId?: string;
   /** Extra fields some errors carry. */
   retryAfterSeconds?: number;
   attemptsLeft?: number;
@@ -342,3 +373,10 @@ export interface ProblemDetail {
 }
 
 export type GenieSort = 'RATING' | 'PRICE' | 'EXPERIENCE';
+
+// --- coupons (Phase 3B)
+/** A coupon at checkout, with the discount it gives on this order or why it can't be used. */
+export type CouponOffer = CouponOfferDto;
+export type AdminCoupon = AdminCouponDto;
+export type CouponRequest = CouponRequestDto;
+export type CouponRedemption = RedemptionDto;

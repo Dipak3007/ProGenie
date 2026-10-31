@@ -33,7 +33,8 @@
               }
             ],
             "allowedCommonJsDependencies": [
-              "leaflet"
+              "leaflet",
+              "leaflet.heat"
             ]
           },
           "configurations": {

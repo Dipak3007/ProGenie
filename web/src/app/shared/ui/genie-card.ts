@@ -12,12 +12,13 @@ import {
 import { GenieCard as GenieCardModel } from '../../core/api/models';
 import { Avatar } from './avatar';
 import { CategoryVisual } from './category-visual';
+import { GenieBadges } from './genie-badges';
 import { Rating } from './rating';
 
 /** Genie listing card: category photo on top, overlapping avatar, key facts and price. */
 @Component({
   selector: 'pg-genie-card',
-  imports: [RouterLink, CurrencyPipe, LucideDynamicIcon, Avatar, CategoryVisual, Rating],
+  imports: [RouterLink, CurrencyPipe, LucideDynamicIcon, Avatar, CategoryVisual, GenieBadges, Rating],
   changeDetection: ChangeDetectionStrategy.OnPush,
   template: `
     @let g = genie();
@@ -51,6 +52,7 @@ import { Rating } from './rating';
           }
           <span>{{ g.completedJobs }} jobs</span>
         </p>
+        <pg-genie-badges class="mt-2 block" [badges]="g.badges" />
 
         @if (g.bio) {
           <p class="mt-3 line-clamp-2 text-sm text-ink/75">{{ g.bio }}</p>

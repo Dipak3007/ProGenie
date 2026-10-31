@@ -4,12 +4,21 @@ import { Observable, Subject, filter, firstValueFrom, map } from 'rxjs';
 
 import { API } from '../api/api';
 import { AuthStore } from '../auth/auth-store';
+import type { InstantOffer, InstantRequest, Tracking } from '../api/models';
 
-/** What the server pushes. The payloads only say what changed; pages reload the details themselves. */
+/** What the server pushes. The payloads mostly say what changed (pages reload the details themselves); tracking carries the position. */
 export interface LiveEvents {
   notification: { type: string; title: string; link: string | null };
   booking: { bookingId: string; change: string };
   ticket: { ticketId: string; bookingId: string | null; change: string };
+  /** The Genie's latest position on the way to the customer (Phase 3C-10). */
+  tracking: Tracking;
+  /** Genie Now (3C-9), to the customer: their search changed (next Genie asked, booked, nobody free). */
+  instant: InstantRequest;
+  /** Genie Now, to a Genie: a new offer (the full offer), or `{offerId, change}` when it is gone. */
+  instant_offer: InstantOffer | { offerId: number; change: 'EXPIRED' | 'WITHDRAWN' | 'TAKEN' };
+  /** To a Genie: switched offline because ProGenie was closed for 2 minutes. */
+  presence: { online: boolean };
 }
 
 type LiveMessage = { [K in keyof LiveEvents]: { type: K; data: LiveEvents[K] } }[keyof LiveEvents];

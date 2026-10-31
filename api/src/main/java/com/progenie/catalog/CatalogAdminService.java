@@ -19,6 +19,8 @@ import jakarta.validation.constraints.Size;
 import org.jspecify.annotations.Nullable;
 import com.progenie.catalog.CatalogCaches.CatalogChanged;
 import com.progenie.catalog.CatalogCaches.EvictsCatalog;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.dao.DuplicateKeyException;
 import org.springframework.jdbc.core.simple.JdbcClient;
@@ -28,6 +30,8 @@ import org.springframework.transaction.annotation.Transactional;
 /** Admin maintenance of the catalog (categories, services) and of cities: PIN codes, pricing, go-live. */
 @Service
 public class CatalogAdminService {
+
+    private static final Logger log = LoggerFactory.getLogger(CatalogAdminService.class);
 
     private static final String SLUG = "^[a-z0-9]+(-[a-z0-9]+)*$";
 
@@ -46,7 +50,8 @@ public class CatalogAdminService {
                                  @Size(max = 500) String description,
                                  @NotNull @DecimalMin("1") @DecimalMax("100000") BigDecimal basePrice,
                                  @Min(15) @Max(720) int durationMinutes,
-                                 boolean active) {
+                                 boolean active,
+                                 @Nullable Boolean instantEnabled) {
     }
 
     public record AdminCategoryDto(long id, String slug, String name, @Nullable String description, @Nullable String icon, @Nullable String imageUrl,
@@ -55,21 +60,22 @@ public class CatalogAdminService {
 
     public record AdminServiceDto(long id, long categoryId, String categoryName, String slug, String name,
                                   @Nullable String description, BigDecimal basePrice, int durationMinutes, boolean active,
-                                  int genieCount) {
+                                  int genieCount, boolean instantEnabled) {
     }
 
     public record PricingRequest(@NotNull @DecimalMin("0") @DecimalMax("0.5") BigDecimal commissionRate,
                                  @NotNull @DecimalMin("0") @DecimalMax("50") BigDecimal travelFreeKm,
                                  @NotNull @DecimalMin("0") @DecimalMax("1000") BigDecimal travelBaseFee,
                                  @NotNull @DecimalMin("0") @DecimalMax("200") BigDecimal travelPerKm,
-                                 @NotNull @DecimalMin("0") @DecimalMax("5000") BigDecimal travelFeeCap) {
+                                 @NotNull @DecimalMin("0") @DecimalMax("5000") BigDecimal travelFeeCap,
+                                 @DecimalMin("0") @DecimalMax("1000") BigDecimal instantFee) {
     }
 
     /** A city as admins see it: live or not, its centre and radius, how many PIN codes, and its pricing. */
     public record AdminCityDto(long cityId, String slug, String name, String state, boolean active, @Nullable Double centerLat,
                                @Nullable Double centerLng, BigDecimal radiusKm, int pincodeCount, BigDecimal commissionRate,
                                BigDecimal travelFreeKm, BigDecimal travelBaseFee, BigDecimal travelPerKm,
-                               BigDecimal travelFeeCap, String currency) {
+                               BigDecimal travelFeeCap, String currency, BigDecimal instantFee) {
     }
 
     /** Create or edit a city. A new city starts switched off, with default pricing. */
@@ -107,6 +113,12 @@ public class CatalogAdminService {
         this.events = events;
     }
 
+    /** Logs the admin change (the admin's ID is on the log line) and tells other modules (Genie caches). */
+    private void changed(String what) {
+        log.info("Catalog change by admin: {}", what);
+        events.publishEvent(new CatalogChanged(what));
+    }
+
     // ------------------------------------------------------------------ categories
 
     @Transactional(readOnly = true)
@@ -118,7 +130,7 @@ public class CatalogAdminService {
     @Transactional
     @EvictsCatalog
     public AdminCategoryDto createCategory(CategoryRequest req) {
-        events.publishEvent(new CatalogChanged("category"));
+        changed("category");
         try {
             long id = jdbc.sql(QueryUtil.get(QueryConstants.INSERT_CATALOG_CATEGORY))
                 .params(categoryParams(req)).query(Long.class).single();
@@ -131,7 +143,7 @@ public class CatalogAdminService {
     @Transactional
     @EvictsCatalog
     public AdminCategoryDto updateCategory(long id, CategoryRequest req) {
-        events.publishEvent(new CatalogChanged("category"));
+        changed("category");
         try {
             int rows = jdbc.sql(QueryUtil.get(QueryConstants.UPDATE_CATALOG_CATEGORY))
                 .params(categoryParams(req)).param("id", id).update();
@@ -172,7 +184,7 @@ public class CatalogAdminService {
     @Transactional
     @EvictsCatalog
     public AdminServiceDto createService(ServiceRequest req) {
-        events.publishEvent(new CatalogChanged("service"));
+        changed("service");
         requireCategory(req.categoryId());
         try {
             long id = jdbc.sql(QueryUtil.get(QueryConstants.INSERT_CATALOG_SERVICE))
@@ -187,7 +199,7 @@ public class CatalogAdminService {
     @Transactional
     @EvictsCatalog
     public AdminServiceDto updateService(long id, ServiceRequest req) {
-        events.publishEvent(new CatalogChanged("service"));
+        changed("service");
         requireCategory(req.categoryId());
         try {
             int rows = jdbc.sql(QueryUtil.get(QueryConstants.UPDATE_CATALOG_SERVICE))
@@ -223,6 +235,7 @@ public class CatalogAdminService {
         p.put("price", req.basePrice());
         p.put("duration", req.durationMinutes());
         p.put("active", req.active());
+        p.put("instant", req.instantEnabled());
         return p;
     }
 
@@ -238,7 +251,7 @@ public class CatalogAdminService {
     @Transactional
     @EvictsCatalog
     public AdminCityDto createCity(CityRequest req) {
-        events.publishEvent(new CatalogChanged("city"));
+        changed("city");
         serviceability.requireInIndia(req.centerLat(), req.centerLng());
         long id;
         try {
@@ -254,7 +267,7 @@ public class CatalogAdminService {
     @Transactional
     @EvictsCatalog
     public AdminCityDto updateCity(long id, CityRequest req) {
-        events.publishEvent(new CatalogChanged("city"));
+        changed("city");
         requireCity(id);
         serviceability.requireInIndia(req.centerLat(), req.centerLng());
         Map<String, Object> p = cityParams(req);
@@ -274,7 +287,7 @@ public class CatalogAdminService {
     @Transactional
     @EvictsCatalog
     public AdminCityDto setCityActive(long id, boolean active) {
-        events.publishEvent(new CatalogChanged("city"));
+        changed("city");
         Readiness r = readiness(id);
         if (r.active() == active) {
             return city(id);
@@ -304,7 +317,7 @@ public class CatalogAdminService {
     @Transactional
     @EvictsCatalog
     public AdminPincodeDto savePincode(long cityId, String pincode, PincodeRequest req) {
-        events.publishEvent(new CatalogChanged("pincode"));
+        changed("pincode");
         requireCity(cityId);
         if (pincode == null || !pincode.matches(ServiceabilityService.PINCODE)) {
             throw ApiException.badRequest("INVALID_PINCODE", "Enter a valid 6-digit PIN code");
@@ -337,7 +350,7 @@ public class CatalogAdminService {
     @Transactional
     @EvictsCatalog
     public void deletePincode(long cityId, String pincode) {
-        events.publishEvent(new CatalogChanged("pincode"));
+        changed("pincode");
         requireCity(cityId);
         requireOtherActivePincode(cityId, pincode);
         int removed = jdbc.sql(QueryUtil.get(QueryConstants.DELETE_CATALOG_CITY_PINCODE))
@@ -397,11 +410,12 @@ public class CatalogAdminService {
     @Transactional
     @EvictsCatalog
     public AdminCityDto updatePricing(long cityId, PricingRequest req) {
-        events.publishEvent(new CatalogChanged("pricing"));
+        changed("pricing");
         requireCity(cityId);
         jdbc.sql(QueryUtil.get(QueryConstants.UPSERT_CATALOG_CITY_PRICING))
             .param("id", cityId).param("rate", req.commissionRate()).param("free", req.travelFreeKm())
             .param("base", req.travelBaseFee()).param("perKm", req.travelPerKm()).param("cap", req.travelFeeCap())
+            .param("instantFee", req.instantFee())
             .update();
         return city(cityId);
     }

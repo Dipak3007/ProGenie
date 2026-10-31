@@ -30,6 +30,12 @@ export const routes: Routes = [
     loadComponent: () => import('./features/customer/checkout.page'),
   },
   {
+    path: 'now/:serviceId',
+    title: 'Genie Now · ProGenie',
+    canActivate: [requireRole('CUSTOMER')],
+    loadComponent: () => import('./features/customer/genie-now.page'),
+  },
+  {
     path: 'account',
     canActivate: [requireRole('CUSTOMER')],
     loadComponent: () => import('./features/account/account.page'),
@@ -86,6 +92,8 @@ export const routes: Routes = [
       { path: 'users', title: 'Users · Admin', loadComponent: () => import('./features/admin-console/users.page') },
       { path: 'catalog', title: 'Catalog · Admin', loadComponent: () => import('./features/admin-console/catalog.page') },
       { path: 'finance', title: 'Finance · Admin', loadComponent: () => import('./features/admin-console/finance.page') },
+      { path: 'coupons', title: 'Coupons · Admin', loadComponent: () => import('./features/admin-console/coupons.page') },
+      { path: 'demand', title: 'Demand map · Admin', loadComponent: () => import('./features/admin-console/demand.page') },
       { path: 'inbox', title: 'Inbox · Admin', loadComponent: () => import('./features/admin-console/inbox.page') },
       { path: 'tickets', title: 'Complaints · Admin', loadComponent: () => import('./features/admin-console/tickets.page') },
       { path: 'tickets/:id', title: 'Complaint · Admin', loadComponent: () => import('./features/admin-console/ticket.page') },

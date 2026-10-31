@@ -47,6 +47,17 @@ public enum MessageTemplate {
 
             Please accept or decline within {minutes} minutes, or the request expires."""),
 
+    BOOKING_ON_THE_WAY(MessageCategory.BOOKING, false, false,
+        "ProGenie: {genie} is on the way for {ref}. Track them in the app. Share your start code only when they arrive.",
+        "Hi {name}, *{genie}* is on the way for your booking {ref} ({service}). See them on the map: {link}. Share your 4-digit start code only when they arrive.",
+        "{genie} is on the way",
+        """
+            Hi {name},
+
+            {genie} is on the way for your booking {ref} ({service}). You can follow them on the map in the app.
+
+            Share your 4-digit start code only when your Genie is at your door."""),
+
     BOOKING_ACCEPTED(MessageCategory.BOOKING, false, false,
         "ProGenie: {genie} accepted {ref} for {service} on {when}. Share your start code only when they arrive.",
         "Hi {name}, *{genie}* accepted your booking {ref} for {service} on {when}. Share your 4-digit start code only when they arrive. Details: {link}",

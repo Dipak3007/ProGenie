@@ -22,6 +22,7 @@
     "@angular/router": "^21.2.0",
     "@lucide/angular": "^1.48.0",
     "leaflet": "^1.9.4",
+    "leaflet.heat": "^0.2.0",
     "marked": "^16.4.2",
     "rxjs": "~7.8.0",
     "tslib": "^2.3.0"
@@ -32,6 +33,7 @@
     "@angular/compiler-cli": "^21.2.0",
     "@tailwindcss/postcss": "^4.3.3",
     "@types/leaflet": "^1.9.22",
+    "@types/leaflet.heat": "^0.2.4",
     "jsdom": "^28.0.0",
     "ng-openapi-gen": "^1.1.0",
     "postcss": "^8.5.28",

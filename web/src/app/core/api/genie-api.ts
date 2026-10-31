@@ -6,6 +6,7 @@ import { API } from './api';
 import {
   AvailabilityWindow,
   BookingDetail,
+  BookingPhoto,
   DocType,
   FileLink,
   GenieDocument,
@@ -14,6 +15,8 @@ import {
   ProfileRequest,
   Review,
   TimeOff,
+  InstantOffer,
+  Tracking,
 } from './models';
 
 /** Genie self-service commands: onboarding, availability, jobs and reviews. */
@@ -92,12 +95,51 @@ export class GenieApi {
     return this.http.post<BookingDetail>(`${this.base}/bookings/${id}/cancel`, { reason });
   }
 
+  // --- Genie Now offers (Phase 3C-9)
+  instantOffers(): Observable<InstantOffer[]> {
+    return this.http.get<InstantOffer[]>(`${this.base}/instant-offers`);
+  }
+
+  acceptOffer(id: number): Observable<BookingDetail> {
+    return this.http.post<BookingDetail>(`${this.base}/instant-offers/${id}/accept`, {});
+  }
+
+  declineOffer(id: number): Observable<void> {
+    return this.http.post<void>(`${this.base}/instant-offers/${id}/decline`, {});
+  }
+
+  /** "Start travelling": the booking becomes ON_THE_WAY and the customer can follow the Genie on a map. */
+  startTravel(id: string): Observable<BookingDetail> {
+    return this.http.post<BookingDetail>(`${this.base}/bookings/${id}/travel`, {});
+  }
+
+  /** The Genie's latest position while on the way (sent about every 20 seconds). */
+  sendTravelLocation(id: string, lat: number, lng: number, accuracyM: number | null): Observable<Tracking> {
+    return this.http.put<Tracking>(`${this.base}/bookings/${id}/location`, { lat, lng, accuracyM });
+  }
+
   start(id: string, code: string): Observable<BookingDetail> {
     return this.http.post<BookingDetail>(`${this.base}/bookings/${id}/start`, { code });
   }
 
   complete(id: string, body: { extraAmount: number | null; extraNote: string | null; cashCollected: boolean }): Observable<BookingDetail> {
     return this.http.post<BookingDetail>(`${this.base}/bookings/${id}/complete`, body);
+  }
+
+  /** Optional job photo; send it through shrinkImage() first. */
+  addPhoto(bookingId: string, stage: 'BEFORE' | 'AFTER', file: File): Observable<BookingPhoto> {
+    const form = new FormData();
+    form.append('file', file);
+    return this.http.post<BookingPhoto>(`${this.base}/bookings/${bookingId}/photos`, form, { params: { stage } });
+  }
+
+  deletePhoto(bookingId: string, photoId: string): Observable<void> {
+    return this.http.delete<void>(`${this.base}/bookings/${bookingId}/photos/${photoId}`);
+  }
+
+  /** Monthly earnings statement (month "2026-10") as a file to save. */
+  statement(month: string, format: 'csv' | 'pdf'): Observable<Blob> {
+    return this.http.get(`${this.base}/statements`, { params: { month, format }, responseType: 'blob' });
   }
 
   reply(reviewId: string, reply: string): Observable<Review> {

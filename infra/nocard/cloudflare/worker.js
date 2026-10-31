@@ -52,6 +52,8 @@ async function forward(request, env, url) {
   headers.set('x-pg-edge', env.EDGE_SECRET);
   headers.set('x-pg-client-ip', request.headers.get('cf-connecting-ip') ?? '');
   headers.set('x-pg-host', url.host);
+  // Cloudflare's Ray ID becomes the API's request ID, so a request is found in both Cloudflare's and Render's logs
+  headers.set('x-request-id', request.headers.get('cf-ray') ?? crypto.randomUUID());
   if (request.headers.has('authorization')) {
     headers.set('x-pg-authorization', request.headers.get('authorization'));
   }

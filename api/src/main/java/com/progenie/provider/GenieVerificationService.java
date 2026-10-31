@@ -12,6 +12,8 @@ import com.progenie.shared.config.QueryConstants;
 import com.progenie.shared.error.ApiException;
 import com.progenie.shared.util.QueryUtil;
 import com.progenie.shared.web.PageResponse;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.jspecify.annotations.Nullable;
 import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.jdbc.core.simple.JdbcClient;
@@ -26,6 +28,8 @@ import org.springframework.util.StringUtils;
  */
 @Service
 public class GenieVerificationService {
+
+    private static final Logger log = LoggerFactory.getLogger(GenieVerificationService.class);
 
     public enum Decision { APPROVE, NEEDS_CHANGES, REJECT, SUSPEND, REINSTATE }
 
@@ -121,6 +125,7 @@ public class GenieVerificationService {
             .param("reason", StringUtils.hasText(note) ? note.trim() : decision.name())
             .param("admin", adminId)
             .update();
+        log.info("Genie {}: {} -> {} ({} by admin {})", genieId, from, to, decision, adminId);
         events.publishEvent(new GenieVerificationDecided(genieId, from, to, note));
         return detail(genieId);
     }
@@ -139,6 +144,7 @@ public class GenieVerificationService {
         if (rows == 0) {
             throw ApiException.notFound("DOCUMENT_NOT_FOUND", "Document not found");
         }
+        log.info("KYC document {} {} by admin {}", docId, approve ? "approved" : "rejected", adminId);
     }
 
     @Transactional

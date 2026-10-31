@@ -18,7 +18,7 @@ public final class GenieDtos {
                                BigDecimal avgRating, int ratingCount, int completedJobs,
                                @Nullable String baseArea, boolean online, BigDecimal startingPrice,
                                String categories, String categorySlug, @Nullable String coverImage,
-                               @Nullable String citySlug, @Nullable String cityName) {
+                               @Nullable String citySlug, @Nullable String cityName, List<String> badges) {
     }
 
     public record GenieServiceDto(long serviceId, String name, BigDecimal price, int durationMinutes) {

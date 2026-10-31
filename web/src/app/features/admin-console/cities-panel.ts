@@ -141,6 +141,10 @@ function slugify(text: string): string {
                 <label class="label" [for]="'cap-' + c.cityId">Travel fee cap (₹)</label>
                 <input [id]="'cap-' + c.cityId" [name]="'cap-' + c.cityId" type="number" min="0" class="field" [(ngModel)]="c.travelFeeCap" />
               </div>
+              <div>
+                <label class="label" [for]="'if-' + c.cityId">Genie Now fee (₹)</label>
+                <input [id]="'if-' + c.cityId" [name]="'if-' + c.cityId" type="number" min="0" max="1000" class="field" [(ngModel)]="c.instantFee" />
+              </div>
             </div>
             <div class="mt-4 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
               <p class="text-sm text-muted">
@@ -384,6 +388,7 @@ export class AdminCities {
         travelBaseFee: Number(c.travelBaseFee),
         travelPerKm: Number(c.travelPerKm),
         travelFeeCap: Number(c.travelFeeCap),
+        instantFee: Number(c.instantFee),
       })
       .subscribe({
         next: () => {

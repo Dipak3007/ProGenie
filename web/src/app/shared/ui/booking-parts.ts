@@ -81,6 +81,9 @@ export class BookingRow {
         <dt class="text-muted">Travel ({{ b.distanceKm }} km)</dt>
         <dd>{{ b.travelFee > 0 ? (b.travelFee | currency: 'INR') : 'Free' }}</dd>
       </div>
+      @if (b.instantFee > 0) {
+        <div class="flex justify-between gap-3"><dt class="text-muted">Genie Now fee</dt><dd>{{ b.instantFee | currency: 'INR' }}</dd></div>
+      }
       @if (b.extraAmount > 0) {
         <div class="flex justify-between gap-3">
           <dt class="text-muted">Extras{{ b.extraNote ? ' · ' + b.extraNote : '' }}</dt>
@@ -90,10 +93,18 @@ export class BookingRow {
       @if (b.tipAmount > 0) {
         <div class="flex justify-between gap-3"><dt class="text-muted">Tip</dt><dd>{{ b.tipAmount | currency: 'INR' }}</dd></div>
       }
+      @if (b.discountAmount > 0) {
+        <div class="flex justify-between gap-3 text-emerald-700">
+          <dt>Coupon {{ b.couponCode }}</dt><dd>− {{ b.discountAmount | currency: 'INR' }}</dd>
+        </div>
+      }
       <div class="flex justify-between gap-3 border-t border-line pt-2 text-base font-bold">
-        <dt>Total</dt><dd>{{ b.totalAmount | currency: 'INR' }}</dd>
+        <dt>{{ audience() === 'CUSTOMER' ? 'Total' : 'Customer pays' }}</dt><dd>{{ b.totalAmount | currency: 'INR' }}</dd>
       </div>
       @if (audience() !== 'CUSTOMER') {
+        @if (b.discountAmount > 0) {
+          <div class="flex justify-between gap-3 text-muted"><dt>Coupon, paid by ProGenie</dt><dd class="whitespace-nowrap">+ {{ b.discountAmount | currency: 'INR' }}</dd></div>
+        }
         <div class="flex justify-between gap-3 text-muted"><dt>ProGenie commission ({{ rate() }}% of service)</dt><dd class="whitespace-nowrap">− {{ b.commissionAmount | currency: 'INR' }}</dd></div>
         <div class="flex justify-between gap-3 font-semibold text-emerald-700"><dt>Genie earns</dt><dd>{{ b.geniePayout | currency: 'INR' }}</dd></div>
       }

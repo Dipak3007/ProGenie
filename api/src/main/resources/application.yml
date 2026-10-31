@@ -118,6 +118,13 @@ progenie:
     genie-cancellation-flag-window: 30d
     max-reschedules: 2
     reminder-lead: 60m                      # WhatsApp reminder to both sides this long before the slot
+  instant:                                  # Genie Now: the nearest free Genie right away (Phase 3C-9; see InstantProperties)
+    offer-timeout: 45s                      # one Genie at a time gets the offer for this long
+    max-genies: 5                           # Genies asked before "No Genie is free right now"
+    busy-window: 2h                         # Genies with a booking or time off within this are not asked
+    arrival-window: 60m                     # the Genie arrives within this
+  genie:
+    offline-after: 2m                       # "online" = ProGenie open: switched offline this long after the page closed
   payments:
     gateway: ${PROGENIE_PAYMENT_GATEWAY:fake}   # "fake" simulates a gateway locally (no real money)
     webhook-secret: ${PROGENIE_PAYMENT_WEBHOOK_SECRET:local-dev-webhook-secret}
@@ -194,7 +201,11 @@ progenie:
       create-bucket: ${S3_CREATE_BUCKET:false}         # local SeaweedFS only; on Supabase create it in the dashboard
 
 logging:
+  pattern:
+    # [request or job ID|user ID] on every line, e.g. "INFO [K7Q2M9XF3T1A|6f1c…] …": the ID is the errorId users see
+    level: "%5p [%X{requestId:-}|%X{userId:-}]"
   level:
     com.progenie: ${PROGENIE_LOG_LEVEL:DEBUG}
+    com.progenie.access: ${PROGENIE_ACCESS_LOG_LEVEL:INFO}   # INFO: failed and slow requests; DEBUG: every request
     org.flywaydb: INFO
     org.apache.pdfbox.pdmodel.font: ERROR   # harmless notices about unused standard fonts

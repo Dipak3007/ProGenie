@@ -60,7 +60,8 @@ public class ReceiptService {
     record Source(UUID bookingId, String bookingRef, UUID customerId, String customerName, String customerEmail,
                   String customerPhone, String genieName, String service, OffsetDateTime slotStart, String area,
                   String city, String pincode, BigDecimal serviceAmount, BigDecimal travelFee, BigDecimal extraAmount,
-                  String extraNote, BigDecimal tipAmount, BigDecimal cancellationFee) {
+                  String extraNote, BigDecimal tipAmount, BigDecimal cancellationFee, BigDecimal discountAmount,
+                  String couponCode, BigDecimal instantFee) {
     }
 
     record PaymentInfo(UUID id, String purpose, String method, String provider, String providerRef, BigDecimal amount,
@@ -291,11 +292,18 @@ public class ReceiptService {
             if (s.travelFee() != null && s.travelFee().signum() > 0) {
                 lines.add(new Line("Travel fee", null, s.travelFee()));
             }
+            if (s.instantFee() != null && s.instantFee().signum() > 0) {
+                lines.add(new Line("Genie Now fee", "Instant booking", s.instantFee()));
+            }
             if (s.extraAmount() != null && s.extraAmount().signum() > 0) {
                 lines.add(new Line("Parts and extras", s.extraNote(), s.extraAmount()));
             }
             if (s.tipAmount() != null && s.tipAmount().signum() > 0) {
                 lines.add(new Line("Tip for your Genie", null, s.tipAmount()));
+            }
+            if (s.discountAmount() != null && s.discountAmount().signum() > 0) {
+                lines.add(new Line("Coupon " + (s.couponCode() == null ? "" : s.couponCode()), "Discount paid by ProGenie",
+                    s.discountAmount().negate()));
             }
             notes.add("Thank you for choosing ProGenie. Questions? Write to " + orDash(company.supportEmail()) + ".");
         }

@@ -1,4 +1,4 @@
-import { ChangeDetectionStrategy, Component, input, linkedSignal, signal } from '@angular/core';
+import { ChangeDetectionStrategy, Component, inject, input, linkedSignal, signal } from '@angular/core';
 import { httpResource } from '@angular/common/http';
 import { DatePipe } from '@angular/common';
 import { RouterLink } from '@angular/router';
@@ -11,18 +11,27 @@ import {
   LucideShieldCheck as ShieldCheck,
 } from '@lucide/angular';
 
-import { API, query } from '../../core/api/api';
+import { API, errorMessage, query } from '../../core/api/api';
+import { AdminApi } from '../../core/api/admin-api';
 import { Page, QueueItem } from '../../core/api/models';
 import { Avatar } from '../../shared/ui/avatar';
-import { EmptyState, PageHead, Pager, Skeleton, TabItem, Tabs } from '../../shared/ui/kit';
+import { ToastService } from '../../core/ui/feedback';
+import { EmptyState, PageHead, Pager, Skeleton, Spinner, TabItem, Tabs } from '../../shared/ui/kit';
 import { StatusBadge } from '../../shared/ui/status-badge';
 
 @Component({
   selector: 'pg-admin-genies-page',
-  imports: [RouterLink, DatePipe, LucideDynamicIcon, Avatar, EmptyState, PageHead, Pager, Skeleton, StatusBadge, Tabs],
+  imports: [RouterLink, DatePipe, LucideDynamicIcon, Avatar, EmptyState, PageHead, Pager, Skeleton, Spinner, StatusBadge, Tabs],
   changeDetection: ChangeDetectionStrategy.OnPush,
   template: `
-    <pg-page-head title="Genies" subtitle="Verify new Genies, follow up on flags and manage suspensions." />
+    <pg-page-head title="Genies" subtitle="Verify new Genies, follow up on flags and manage suspensions.">
+      <button type="button" class="btn-ghost min-h-10" [disabled]="recalculating()" (click)="recalculateBadges()" title="Badges are recalculated every night; this does it now.">
+        @if (recalculating()) {
+          <pg-spinner />
+        }
+        Recalculate badges
+      </button>
+    </pg-page-head>
 
     <div class="mt-5 flex flex-col gap-3 lg:flex-row lg:items-center">
       <pg-tabs class="min-w-0 flex-1" [items]="tabs" [value]="statusTab()" label="Verification status" (valueChange)="setStatus($event)" />
@@ -115,6 +124,24 @@ export default class AdminGeniesPage {
   protected setStatus(status: string): void {
     this.statusTab.set(status);
     this.page$.set(0);
+  }
+
+  private readonly adminApi = inject(AdminApi);
+  private readonly toast = inject(ToastService);
+  protected readonly recalculating = signal(false);
+
+  protected recalculateBadges(): void {
+    this.recalculating.set(true);
+    this.adminApi.recalculateBadges().subscribe({
+      next: (r) => {
+        this.recalculating.set(false);
+        this.toast.success(`Badges updated for ${r.genies} Genies`);
+      },
+      error: (err) => {
+        this.recalculating.set(false);
+        this.toast.error(errorMessage(err));
+      },
+    });
   }
 
   protected readonly ChevronRight = ChevronRight;

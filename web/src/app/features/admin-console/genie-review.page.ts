@@ -22,7 +22,9 @@ import { ConfirmService, ToastService } from '../../core/ui/feedback';
 import { DAY_NAMES, hhmm, humanize, inr, openInNewTab, statusMeta } from '../../shared/format';
 import { Avatar } from '../../shared/ui/avatar';
 import { Dialog } from '../../shared/ui/dialog';
+import { GenieBadges } from '../../shared/ui/genie-badges';
 import { EmptyState, Skeleton, Spinner } from '../../shared/ui/kit';
+import { StatementDownload } from '../../shared/ui/statement-download';
 import { StatusBadge } from '../../shared/ui/status-badge';
 import { AdminCounts } from './admin-console.page';
 
@@ -46,7 +48,7 @@ const DECISION_TEXT: Record<Decision, { label: string; tone: 'primary' | 'danger
 
 @Component({
   selector: 'pg-admin-genie-review-page',
-  imports: [RouterLink, CurrencyPipe, DatePipe, DecimalPipe, LowerCasePipe, FormsModule, LucideDynamicIcon, Avatar, Dialog, EmptyState, Skeleton, Spinner, StatusBadge],
+  imports: [RouterLink, CurrencyPipe, DatePipe, DecimalPipe, LowerCasePipe, FormsModule, LucideDynamicIcon, Avatar, Dialog, EmptyState, GenieBadges, Skeleton, Spinner, StatementDownload, StatusBadge],
   changeDetection: ChangeDetectionStrategy.OnPush,
   template: `
     <a routerLink="/admin/genies" class="inline-flex items-center gap-1 text-sm font-semibold text-muted hover:text-brand">
@@ -122,6 +124,7 @@ const DECISION_TEXT: Record<Decision, { label: string; tone: 'primary' | 'danger
             <div>
               <p class="text-xs font-semibold uppercase tracking-wider text-muted">Track record</p>
               <p class="mt-1 font-semibold">{{ p.completedJobs }} jobs · {{ p.ratingCount ? (p.avgRating | number: '1.1-1') + '★' : 'no ratings' }} · {{ p.cancellationCount }} cancellations</p>
+              <pg-genie-badges class="mt-2 block" [badges]="p.badges" />
             </div>
             <div class="sm:col-span-2">
               <p class="text-xs font-semibold uppercase tracking-wider text-muted">Services ({{ p.services.length }})</p>
@@ -210,6 +213,11 @@ const DECISION_TEXT: Record<Decision, { label: string; tone: 'primary' | 'danger
               @if (w.commissionDue > 0) {
                 <button type="button" class="btn-ghost mt-4 w-full" (click)="settleOpen.set(true)">Record commission payment</button>
               }
+            </section>
+            <section class="card p-5" aria-labelledby="st-h">
+              <h2 id="st-h" class="text-lg font-bold">Earnings statement</h2>
+              <p class="mt-1 text-sm text-muted">Jobs, payouts and wallet entries for a month.</p>
+              <pg-statement-download class="mt-3 block" [genieId]="id()" />
             </section>
           }
         </aside>

@@ -8,6 +8,7 @@ export interface AdminCityDto {
   cityId: number;
   commissionRate: number;
   currency: string;
+  instantFee: number;
   name: string;
   pincodeCount: number;
   radiusKm: number;

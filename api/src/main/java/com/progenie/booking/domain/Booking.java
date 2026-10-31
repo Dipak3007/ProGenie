@@ -99,6 +99,12 @@ public class Booking {
     @Column(name = "genie_payout", nullable = false)
     private BigDecimal geniePayout;
 
+    @Column(name = "coupon_id", updatable = false)
+    private Long couponId;                 // Phase 3B: the coupon used, if any
+
+    @Column(name = "discount_amount", nullable = false)
+    private BigDecimal discountAmount = BigDecimal.ZERO.setScale(2);
+
     @Enumerated(EnumType.STRING)
     @Column(name = "payment_method", nullable = false)
     private PaymentMethod paymentMethod;
@@ -140,6 +146,15 @@ public class Booking {
 
     @Column(name = "accepted_at")
     private Instant acceptedAt;
+
+    @Column(name = "travel_started_at")
+    private Instant travelStartedAt;
+
+    @Column(name = "instant_fee", nullable = false, updatable = false)
+    private BigDecimal instantFee = BigDecimal.ZERO.setScale(2);   // Phase 3C-9: Genie Now fee (goes to the Genie)
+
+    @Column(name = "instant_request_id", updatable = false)
+    private UUID instantRequestId;
 
     @Column(name = "started_at")
     private Instant startedAt;
@@ -233,9 +248,16 @@ public class Booking {
         status = BookingStatus.EXPIRED;
     }
 
+    /** The Genie sets off to the customer (Phase 3C): their live position is shared until the job starts. */
+    public void startTravel(Instant now) {
+        require(BookingStatus.ACCEPTED, "start travelling to");
+        status = BookingStatus.ON_THE_WAY;
+        travelStartedAt = now;
+    }
+
     /** Cancels an active, not yet started booking. A positive fee becomes due from the customer. */
     public void cancel(Instant now, UUID actorId, String reason, BigDecimal fee) {
-        if (status != BookingStatus.REQUESTED && status != BookingStatus.ACCEPTED) {
+        if (status != BookingStatus.REQUESTED && !status.isConfirmed()) {
             throw invalid("cancel");
         }
         status = BookingStatus.CANCELLED;
@@ -265,14 +287,18 @@ public class Booking {
 
     /** Stores the hash of a fresh start code (the customer reads the code to the Genie at the door). */
     public void issueStartCode(String codeHash) {
-        require(BookingStatus.ACCEPTED, "create a start code for");
+        if (!status.isConfirmed()) {
+            throw invalid("create a start code for");
+        }
         startOtpHash = codeHash;
         startOtpAttempts = 0;
     }
 
     /** Starts the job if the start code matches; wrong codes are counted and lock after 5 tries. */
     public void start(Instant now, boolean codeMatches) {
-        require(BookingStatus.ACCEPTED, "start");
+        if (!status.isConfirmed()) {
+            throw invalid("start");
+        }
         if (startOtpHash == null) {
             throw ApiException.unprocessable("START_CODE_MISSING", "Ask the customer to open the booking and share the start code");
         }
@@ -338,9 +364,38 @@ public class Booking {
         cancellationFeeStatus = FeeStatus.WAIVED;
     }
 
+    /**
+     * A coupon on a new booking: the customer pays {@code discount} less (ProGenie pays it to the Genie). The discount
+     * is on the service amount only, so it never exceeds it; commission and the Genie's payout don't change.
+     */
+    public void applyCoupon(long couponId, BigDecimal discount) {
+        if (this.couponId != null || status != BookingStatus.REQUESTED) {
+            throw invalid("apply a coupon to");
+        }
+        this.couponId = couponId;
+        this.discountAmount = discount.min(serviceAmount).setScale(2, RoundingMode.HALF_UP);
+        recalculate();
+    }
+
+    /**
+     * A Genie Now booking (Phase 3C-9), before it is accepted: the request it came from and the city's instant fee,
+     * which the customer pays on top and the Genie earns in full (like the travel fee).
+     */
+    public void markInstant(UUID requestId, BigDecimal fee) {
+        if (this.instantRequestId != null || status != BookingStatus.REQUESTED) {
+            throw invalid("mark as instant");
+        }
+        this.instantRequestId = requestId;
+        this.instantFee = fee.setScale(2, RoundingMode.HALF_UP);
+        recalculate();
+    }
+
+    /** total = what the customer pays; geniePayout = what the Genie earns (the discount is paid by ProGenie). */
     private void recalculate() {
-        totalAmount = serviceAmount.add(extraAmount).add(travelFee).add(tipAmount).setScale(2, RoundingMode.HALF_UP);
-        geniePayout = totalAmount.subtract(commissionAmount);
+        BigDecimal gross = serviceAmount.add(extraAmount).add(travelFee).add(instantFee).add(tipAmount)
+            .setScale(2, RoundingMode.HALF_UP);
+        totalAmount = gross.subtract(discountAmount);
+        geniePayout = gross.subtract(commissionAmount);
     }
 
     private void require(BookingStatus expected, String action) {
@@ -420,6 +475,22 @@ public class Booking {
         return totalAmount;
     }
 
+    public BigDecimal getInstantFee() {
+        return instantFee;
+    }
+
+    public UUID getInstantRequestId() {
+        return instantRequestId;
+    }
+
+    public Long getCouponId() {
+        return couponId;
+    }
+
+    public BigDecimal getDiscountAmount() {
+        return discountAmount;
+    }
+
     public BigDecimal getGeniePayout() {
         return geniePayout;
     }
@@ -450,6 +521,10 @@ public class Booking {
 
     public Instant getExpiresAt() {
         return expiresAt;
+    }
+
+    public Instant getTravelStartedAt() {
+        return travelStartedAt;
     }
 
     public Instant getCompletedAt() {

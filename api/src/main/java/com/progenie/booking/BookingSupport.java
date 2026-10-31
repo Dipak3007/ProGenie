@@ -4,15 +4,20 @@ import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
 import java.security.SecureRandom;
+import java.util.EnumSet;
 import java.util.HexFormat;
+import java.util.Set;
 import java.util.UUID;
 
 import com.progenie.booking.domain.Booking;
 import com.progenie.booking.domain.BookingRepository;
 import com.progenie.booking.domain.BookingStatus;
+import com.progenie.promotion.CouponService;
 import com.progenie.shared.config.QueryConstants;
 import com.progenie.shared.error.ApiException;
 import com.progenie.shared.util.QueryUtil;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.jdbc.core.simple.JdbcClient;
 import org.springframework.stereotype.Component;
@@ -21,13 +26,21 @@ import org.springframework.stereotype.Component;
 @Component
 class BookingSupport {
 
+    private static final Logger log = LoggerFactory.getLogger(BookingSupport.class);
+
     private static final SecureRandom RANDOM = new SecureRandom();
+
+    /** A booking that ends in one of these never had its job started: its coupon use is given back. */
+    private static final Set<BookingStatus> ENDED_BEFORE_START =
+        EnumSet.of(BookingStatus.CANCELLED, BookingStatus.REJECTED, BookingStatus.EXPIRED);
 
     private final BookingRepository bookings;
     private final JdbcClient jdbc;
     private final ApplicationEventPublisher events;
+    private final CouponService coupons;
 
-    BookingSupport(BookingRepository bookings, JdbcClient jdbc, ApplicationEventPublisher events) {
+    BookingSupport(BookingRepository bookings, JdbcClient jdbc, ApplicationEventPublisher events, CouponService coupons) {
+        this.coupons = coupons;
         this.bookings = bookings;
         this.jdbc = jdbc;
         this.events = events;
@@ -64,6 +77,14 @@ class BookingSupport {
             // the new time gets its own reminder
             jdbc.sql(QueryUtil.get(QueryConstants.UPDATE_BOOKING_CLEAR_REMINDER)).param("id", b.getId()).update();
         }
+        if (from == BookingStatus.ON_THE_WAY && b.getStatus() != BookingStatus.ON_THE_WAY) {
+            // the live position is only shared while travelling: gone once the job starts or is cancelled
+            jdbc.sql(QueryUtil.get(QueryConstants.DELETE_BOOKING_TRACKING)).param("id", b.getId()).update();
+        }
+        if (b.getCouponId() != null && from != b.getStatus() && ENDED_BEFORE_START.contains(b.getStatus())) {
+            coupons.release(b.getId(), b.getBookingRef());
+        }
+        log.info("Booking {} {}: {} -> {} by {} {}", b.getBookingRef(), type, from, b.getStatus(), actorRole, actorId);
         events.publishEvent(new BookingEvent(type, b.getId(), b.getBookingRef(), b.getCustomerId(), b.getGenieId(),
             b.getSlotStart(), actorRole, reason, cashCollected));
         // Same-transaction listeners (e.g. cash payment) may have changed the booking again.

@@ -5,6 +5,7 @@ import { RouterLink } from '@angular/router';
 import {
   LucideClock as Clock,
   LucideDynamicIcon,
+  LucideZap as Zap,
 } from '@lucide/angular';
 
 import { API, geniesUrl } from '../../core/api/api';
@@ -59,8 +60,11 @@ import { CityStore } from '../../core/city/city-store';
                   <div>
                     <p class="font-semibold">{{ s.name }}</p>
                     <p class="mt-1 text-sm text-muted">{{ s.description }}</p>
-                    <p class="mt-2 inline-flex items-center gap-1 text-xs text-muted">
-                      <svg [lucideIcon]="Clock" [size]="14" aria-hidden="true"></svg> ~{{ s.durationMinutes }} min
+                    <p class="mt-2 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-muted">
+                      <span class="inline-flex items-center gap-1"><svg [lucideIcon]="Clock" [size]="14" aria-hidden="true"></svg> ~{{ s.durationMinutes }} min</span>
+                      @if (s.instantEnabled) {
+                        <span class="inline-flex items-center gap-1 font-semibold text-amber-800"><svg [lucideIcon]="Zap" [size]="13" aria-hidden="true"></svg> Genie Now</span>
+                      }
                     </p>
                   </div>
                   <p class="shrink-0 font-display text-lg font-bold">{{ s.basePrice | currency: 'INR' : 'symbol' : '1.0-0' }}</p>
@@ -70,6 +74,19 @@ import { CityStore } from '../../core/city/city-store';
             }
           </ul>
           <p class="mt-3 text-xs text-muted">Base prices. Genies may set their own price; travel fee depends on distance. Tap a service to see only the Genies who offer it.</p>
+          @if (selectedService()?.instantEnabled) {
+            <a
+              [routerLink]="['/now', selectedService()!.id]"
+              class="mt-4 flex items-center gap-4 rounded-2xl bg-navy p-4 text-white shadow-lg transition hover:bg-navy/90"
+              data-testid="genie-now-link"
+            >
+              <span class="grid size-11 shrink-0 place-items-center rounded-xl bg-gold text-ink"><svg [lucideIcon]="Zap" [size]="22" aria-hidden="true"></svg></span>
+              <span class="min-w-0">
+                <span class="block font-bold">Need it now? Genie Now</span>
+                <span class="block text-sm text-brand-mist">The nearest free Genie for {{ selectedService()!.name }}, usually within an hour.</span>
+              </span>
+            </a>
+          }
         </section>
 
         <!-- Genies -->
@@ -87,7 +104,7 @@ import { CityStore } from '../../core/city/city-store';
             <label class="flex items-center gap-2 text-sm">
               <span class="text-muted">Sort by</span>
               <select class="field w-auto py-2" [value]="sort()" (change)="sort.set($any($event.target).value)">
-                <option value="RATING">Top rated</option>
+                <option value="RATING">Recommended</option>
                 <option value="PRICE">Lowest price</option>
                 <option value="EXPERIENCE">Most experienced</option>
               </select>
@@ -143,4 +160,5 @@ export default class CategoryPage {
 
   protected readonly icon = categoryIcon;
   protected readonly Clock = Clock;
+  protected readonly Zap = Zap;
 }

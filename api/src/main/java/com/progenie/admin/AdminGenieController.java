@@ -1,11 +1,14 @@
 package com.progenie.admin;
 
+import java.util.Map;
 import java.util.UUID;
 
+import com.progenie.payment.EarningsStatements;
 import com.progenie.payment.PaymentDtos.SettlementRequest;
 import com.progenie.payment.PaymentDtos.WalletDto;
 import com.progenie.payment.PayoutService;
 import com.progenie.payment.WalletService;
+import com.progenie.provider.GenieBadges;
 import com.progenie.provider.GenieDocumentService;
 import com.progenie.provider.GenieProfileController;
 import com.progenie.provider.GenieVerificationService.AdminGenieDetailDto;
@@ -45,9 +48,14 @@ public class AdminGenieController {
     private final GenieDocumentService documents;
     private final WalletService wallets;
     private final PayoutService payouts;
+    private final EarningsStatements statements;
+    private final GenieBadges badges;
 
     public AdminGenieController(GenieVerificationService verification, GenieDocumentService documents,
-                                WalletService wallets, PayoutService payouts) {
+                                WalletService wallets, PayoutService payouts, EarningsStatements statements,
+                                GenieBadges badges) {
+        this.statements = statements;
+        this.badges = badges;
         this.verification = verification;
         this.documents = documents;
         this.wallets = wallets;
@@ -107,5 +115,18 @@ public class AdminGenieController {
     public WalletDto settlement(@PathVariable UUID id, @Valid @RequestBody SettlementRequest req) {
         payouts.recordSettlement(id, req.amount(), req.reference());
         return wallets.wallet(id);
+    }
+
+    /** A Genie's monthly earnings statement: month=YYYY-MM, format=csv|pdf. */
+    @GetMapping("/genies/{id}/statements")
+    public ResponseEntity<byte[]> statement(@PathVariable UUID id, @RequestParam String month,
+                                            @RequestParam(defaultValue = "pdf") String format) {
+        return statements.file(id, month, EarningsStatements.format(format), "ADMIN").asDownload();
+    }
+
+    /** Recalculates every Genie's badges now instead of waiting for the nightly job. */
+    @PostMapping("/genies/badges/recalculate")
+    public Map<String, Integer> recalculateBadges() {
+        return Map.of("genies", badges.recalculate());
     }
 }

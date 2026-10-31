@@ -15,6 +15,8 @@ import com.progenie.shared.config.QueryConstants;
 import com.progenie.shared.error.ApiException;
 import com.progenie.shared.storage.FileStorage;
 import com.progenie.shared.util.QueryUtil;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.jdbc.core.simple.JdbcClient;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -28,6 +30,8 @@ import org.springframework.web.multipart.MultipartFile;
  */
 @Service
 public class GenieDocumentService {
+
+    private static final Logger log = LoggerFactory.getLogger(GenieDocumentService.class);
 
     static final Set<String> DOC_TYPES = Set.of("AADHAAR", "PAN", "SELFIE", "CERTIFICATE", "OTHER");
     private static final Map<String, String> EXTENSIONS = Map.of(
@@ -81,6 +85,7 @@ public class GenieDocumentService {
         UUID docId = UUID.randomUUID();
         String key = "kyc/" + genieId + "/" + docId + "." + EXTENSIONS.get(contentType);
         storage.put(key, new ByteArrayInputStream(bytes), bytes.length, contentType);
+        log.info("Genie {} uploaded a {} document ({}, {} bytes)", genieId, type, contentType, bytes.length);
         return jdbc.sql(QueryUtil.get(QueryConstants.INSERT_GENIE_DOCUMENT_UPLOAD))
             .param("id", docId)
             .param("g", genieId)

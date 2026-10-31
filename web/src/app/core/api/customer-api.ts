@@ -7,11 +7,16 @@ import {
   Address,
   AddressRequest,
   BookingDetail,
+  CouponOffer,
   CreateBookingRequest,
   Payment,
   PaymentOrder,
   Review,
   StartCode,
+  InstantQuote,
+  InstantRequest,
+  PaymentMethod,
+  Tracking,
   User,
 } from './models';
 
@@ -60,6 +65,20 @@ export class CustomerApi {
   }
 
   // --- bookings
+  // --- coupons (Phase 3B)
+  /** Public coupons for this checkout, each with its discount or why it can't be used. */
+  /** Public coupons for an order. `genieId` null = Genie Now (the service's base price is used). */
+  coupons(genieId: string | null, serviceId: number, addressId: string): Observable<CouponOffer[]> {
+    const params: Record<string, string | number> = { serviceId, addressId };
+    if (genieId) params['genieId'] = genieId;
+    return this.http.get<CouponOffer[]>(`${API}/coupons`, { params });
+  }
+
+  /** A typed code: the offer, or 404 COUPON_NOT_FOUND / 422 COUPON_* with the reason. */
+  checkCoupon(code: string, genieId: string | null, serviceId: number, addressId: string): Observable<CouponOffer> {
+    return this.http.post<CouponOffer>(`${API}/coupons/check`, { code, genieId, serviceId, addressId });
+  }
+
   createBooking(body: CreateBookingRequest, idempotencyKey: string): Observable<BookingDetail> {
     return this.http.post<BookingDetail>(`${API}/bookings`, body, { headers: { 'Idempotency-Key': idempotencyKey } });
   }
@@ -78,6 +97,35 @@ export class CustomerApi {
 
   startCode(id: string): Observable<StartCode> {
     return this.http.post<StartCode>(`${API}/bookings/${id}/start-code`, {});
+  }
+
+  // --- Genie Now (Phase 3C-9)
+  instantQuote(serviceId: number, addressId: string): Observable<InstantQuote> {
+    return this.http.get<InstantQuote>(`${API}/instant/quote`, { params: { serviceId, addressId } });
+  }
+
+  startInstant(body: {
+    serviceId: number;
+    addressId: string;
+    paymentMethod: PaymentMethod;
+    tipAmount: number;
+    notes: string | null;
+    couponCode: string | null;
+  }): Observable<InstantRequest> {
+    return this.http.post<InstantRequest>(`${API}/instant/requests`, body);
+  }
+
+  instantRequest(id: string): Observable<InstantRequest> {
+    return this.http.get<InstantRequest>(`${API}/instant/requests/${id}`);
+  }
+
+  cancelInstant(id: string): Observable<InstantRequest> {
+    return this.http.post<InstantRequest>(`${API}/instant/requests/${id}/cancel`, {});
+  }
+
+  /** The Genie's live position while on the way (also pushed as the live "tracking" event). */
+  tracking(id: string): Observable<Tracking> {
+    return this.http.get<Tracking>(`${API}/bookings/${id}/tracking`);
   }
 
   review(id: string, body: { rating: number; comment: string | null }): Observable<Review> {

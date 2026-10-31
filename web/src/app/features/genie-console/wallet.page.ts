@@ -14,6 +14,7 @@ import { API, query } from '../../core/api/api';
 import { LedgerLine, Page, Payout, Wallet } from '../../core/api/models';
 import { inr } from '../../shared/format';
 import { EmptyState, PageHead, Pager, StatTile, TabItem, Tabs } from '../../shared/ui/kit';
+import { StatementDownload } from '../../shared/ui/statement-download';
 import { StatusBadge } from '../../shared/ui/status-badge';
 
 const ACCOUNT_TEXT: Record<string, string> = {
@@ -26,7 +27,7 @@ const ACCOUNT_TEXT: Record<string, string> = {
 
 @Component({
   selector: 'pg-wallet-page',
-  imports: [DayPipe, CurrencyPipe, DatePipe, EmptyState, PageHead, Pager, StatTile, StatusBadge, Tabs],
+  imports: [DayPipe, CurrencyPipe, DatePipe, EmptyState, PageHead, Pager, StatTile, StatementDownload, StatusBadge, Tabs],
   changeDetection: ChangeDetectionStrategy.OnPush,
   template: `
     <pg-page-head title="Earnings" subtitle="Every rupee, recorded. Payouts go to your UPI ID every Monday." />
@@ -50,6 +51,12 @@ const ACCOUNT_TEXT: Record<string, string> = {
         }
       </div>
     }
+
+    <section class="card mt-6 p-5" aria-labelledby="statement-h">
+      <h2 id="statement-h" class="text-lg font-bold">Monthly statement</h2>
+      <p class="mt-1 text-sm text-muted">Every job, tip, commission, refund and payout for a month, with your opening and closing balance. PDF to keep, CSV for Excel.</p>
+      <pg-statement-download class="mt-4 block" />
+    </section>
 
     <pg-tabs class="mt-8" [items]="tabs" [value]="tab()" (valueChange)="tab.set($any($event))" />
 

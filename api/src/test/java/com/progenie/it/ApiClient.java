@@ -48,6 +48,24 @@ final class ApiClient {
             .PUT(HttpRequest.BodyPublishers.ofString(json == null ? "{}" : json)));
     }
 
+    Response delete(String path) {
+        return send(request(path).DELETE());
+    }
+
+    /** POST one file as multipart/form-data. */
+    Response upload(String path, String field, String fileName, String contentType, byte[] content) {
+        String boundary = "----progenie-it-" + java.util.UUID.randomUUID();
+        java.io.ByteArrayOutputStream body = new java.io.ByteArrayOutputStream();
+        byte[] head = ("--" + boundary + "\r\nContent-Disposition: form-data; name=\"" + field + "\"; filename=\""
+            + fileName + "\"\r\nContent-Type: " + contentType + "\r\n\r\n").getBytes(java.nio.charset.StandardCharsets.UTF_8);
+        byte[] tail = ("\r\n--" + boundary + "--\r\n").getBytes(java.nio.charset.StandardCharsets.UTF_8);
+        body.writeBytes(head);
+        body.writeBytes(content);
+        body.writeBytes(tail);
+        return send(request(path).header("Content-Type", "multipart/form-data; boundary=" + boundary)
+            .POST(HttpRequest.BodyPublishers.ofByteArray(body.toByteArray())));
+    }
+
     /** GET an absolute or site-relative URL without the token (like a browser opening a download link). */
     Response open(String url) {
         String full = url.startsWith("http") ? url : base + url;

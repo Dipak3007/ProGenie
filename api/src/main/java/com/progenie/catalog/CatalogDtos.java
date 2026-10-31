@@ -57,8 +57,9 @@ public final class CatalogDtos {
                               @Nullable String imageUrl, int serviceCount, @Nullable BigDecimal startingPrice) {
     }
 
+    /** {@code instantEnabled}: can be booked with Genie Now (nearest free Genie, Phase 3C-9). */
     public record ServiceDto(long id, String slug, String name, @Nullable String description,
-                             BigDecimal basePrice, int durationMinutes) {
+                             BigDecimal basePrice, int durationMinutes, boolean instantEnabled) {
     }
 
     public record CategoryDetailDto(CategoryDto category, List<ServiceDto> services) {

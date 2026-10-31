@@ -3,7 +3,10 @@ package com.progenie.provider;
 import java.util.List;
 import java.util.UUID;
 
+import com.progenie.demand.DemandRecorder;
 import com.progenie.provider.GenieDtos.GenieCardDto;
+import com.progenie.shared.security.CurrentUser;
+import jakarta.servlet.http.HttpServletRequest;
 import com.progenie.provider.GenieDtos.GenieDetailDto;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
@@ -18,8 +21,11 @@ public class GenieController {
 
     private final GenieQueryService genies;
 
-    public GenieController(GenieQueryService genies) {
+    private final DemandRecorder demand;
+
+    public GenieController(GenieQueryService genies, DemandRecorder demand) {
         this.genies = genies;
+        this.demand = demand;
     }
 
     /** Example: GET /api/v1/genies?city=ahmedabad&category=plumbing&sort=PRICE */
@@ -28,8 +34,14 @@ public class GenieController {
                                    @RequestParam(required = false) String category,
                                    @RequestParam(required = false) Long serviceId,
                                    @RequestParam(defaultValue = "RATING") GenieQueryService.Sort sort,
-                                   @RequestParam(defaultValue = "20") int limit) {
-        return genies.list(blankToNull(city), category, serviceId, sort, limit);
+                                   @RequestParam(defaultValue = "20") int limit,
+                                   HttpServletRequest request) {
+        List<GenieCardDto> list = genies.list(blankToNull(city), category, serviceId, sort, limit);
+        if (list.isEmpty() && blankToNull(city) != null && (category != null || serviceId != null)) {
+            // a category or service page with no Genie in this city: unmet demand (3D)
+            demand.recordNoGenieListed(city.trim(), category, serviceId, CurrentUser.idOrNull(), DemandRecorder.who(request));
+        }
+        return list;
     }
 
     @GetMapping("/{id}")

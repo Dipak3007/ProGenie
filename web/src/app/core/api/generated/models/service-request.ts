@@ -7,6 +7,7 @@ export interface ServiceRequest {
   categoryId: number;
   description?: (string | null);
   durationMinutes: number;
+  instantEnabled?: (boolean | null);
   name: string;
   slug: string;
 }
