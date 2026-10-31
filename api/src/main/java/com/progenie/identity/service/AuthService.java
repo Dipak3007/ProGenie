@@ -35,6 +35,7 @@ import com.progenie.shared.config.AppProperties;
 import com.progenie.shared.config.QueryConstants;
 import com.progenie.shared.error.ApiException;
 import com.progenie.shared.security.JwtTokenService;
+import com.progenie.shared.util.Masking;
 import com.progenie.shared.util.Phones;
 import com.progenie.shared.util.QueryUtil;
 import com.progenie.shared.util.Times;
@@ -154,12 +155,15 @@ public class AuthService {
             if (lockedUntil != null) {
                 throw locked(lockedUntil, now);
             }
+            log.info("Login failed for {}{}", Masking.destination(identifier), user == null ? " (no such account)" : "");
             throw ApiException.unauthorized("INVALID_CREDENTIALS", "Wrong email/mobile or password");
         }
         if (!user.isActive()) {
+            log.info("Login refused for user {}: account {}", user.getId(), user.getStatus());
             throw ApiException.unauthorized("ACCOUNT_DISABLED", "This account is not active");
         }
         loginGuard.clear(user.getId());
+        log.info("Login: user {} ({}) with password", user.getId(), user.getRole());
         return issueTokens(user, UUID.randomUUID(), userAgent);
     }
 
@@ -181,6 +185,7 @@ public class AuthService {
         User user = users.findById(v.userId()).orElseThrow();
         return switch (v.purpose()) {
             case LOGIN -> {
+                log.info("Login: user {} ({}) with a one-time code", user.getId(), user.getRole());
                 AuthResult a = issueTokens(user, UUID.randomUUID(), userAgent);
                 yield new OtpResult(new OtpVerifyResponse(v.purpose().name(), a.response().accessToken(),
                     a.response().expiresIn(), a.response().user(), null, null), a.refreshToken());

@@ -16,6 +16,8 @@ import com.progenie.shared.config.QueryConstants;
 import com.progenie.shared.error.ApiException;
 import com.progenie.shared.util.QueryUtil;
 import com.progenie.shared.web.PageResponse;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.jspecify.annotations.Nullable;
 import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.jdbc.core.simple.JdbcClient;
@@ -28,6 +30,8 @@ import org.springframework.util.StringUtils;
 @Service
 @org.springframework.modulith.NamedInterface("accounts") // used by the admin module (user search and suspension)
 public class AccountService {
+
+    private static final Logger log = LoggerFactory.getLogger(AccountService.class);
 
     private final UserRepository users;
     private final RefreshTokenRepository refreshTokens;
@@ -60,6 +64,7 @@ public class AccountService {
     /** Changes the password and signs out every other device (the current login keeps working). */
     @Transactional
     public void changePassword(UUID userId, String currentPassword, String newPassword, String currentRefreshToken) {
+        log.info("Password change requested by user {}", userId);
         User user = load(userId);
         if (!passwordEncoder.matches(currentPassword, user.getPasswordHash())) {
             throw ApiException.badRequest("WRONG_PASSWORD", "The current password is not correct");
@@ -77,6 +82,7 @@ public class AccountService {
     public void changeStatus(UUID userId, UserStatus status) {
         User user = load(userId);
         user.changeStatus(status);
+        log.info("User {} is now {}", userId, status);
         if (status != UserStatus.ACTIVE) {
             refreshTokens.revokeAllForUser(userId, null, Instant.now());
         }

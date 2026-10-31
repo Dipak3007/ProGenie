@@ -67,6 +67,7 @@ public class LiveHub {
                 oldest.emitter().complete();
             });
         }
+        log.debug("Live stream opened for user {} ({} open in total)", userId, total.get());
         send(client, SseEmitter.event().name("ready").reconnectTime(3000).data(Map.of("role", role == null ? "" : role),
             MediaType.APPLICATION_JSON));
         return emitter;

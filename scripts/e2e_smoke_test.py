@@ -592,6 +592,8 @@ def main():
     launch_readiness(anon, customer, genie, admin,
                      {"book": book, "genie_id": genie_id, "service_id": service_id, "b1": b1, "b2": b2})
 
+    phase3a(anon, customer, genie, admin, {"book": book, "genie_id": genie_id, "service_id": service_id})
+
     customer.delete(f"/api/v1/me/favourites/{genie_id}")
     customer.delete(f"/api/v1/me/addresses/{address_id}")
 
@@ -992,6 +994,110 @@ def launch_readiness(anon, customer, genie, admin, ctx):
     check(s == 204 and me["deletionScheduledFor"] is None, "the user cancels it during the grace period", (s, me.get("deletionScheduledFor")))
     s, dl = admin.get("/api/v1/admin/deletion-requests")
     check(s == 200 and dl["total"] >= 1, "admin sees deletion requests", s)
+
+
+
+# ====================================================================== Phase 3A
+
+def raw_get(path, headers=None):
+    """GET returning (status, headers, body) for header checks."""
+    req = urllib.request.Request(BASE + path, headers={"Accept": "application/json", **(headers or {})})
+    try:
+        with urllib.request.urlopen(req, timeout=30) as res:
+            return res.status, res.headers, res.read()
+    except urllib.error.HTTPError as e:
+        return e.code, e.headers, e.read()
+
+
+def phase3a(anon, customer, genie, admin, ctx):
+    book, genie_id, service_id = ctx["book"], ctx["genie_id"], ctx["service_id"]
+
+    # ------------------------------------------------------------------ 3A-0 error IDs
+    section("Phase 3A: error IDs")
+    rid = f"smoke-{RUN}-req0001"
+    s, h, raw = raw_get("/api/v1/categories/no-such-category-" + RUN, {"X-Request-Id": rid})
+    body = json.loads(raw) if raw else {}
+    check(s == 404 and h.get("X-Request-Id") == rid and body.get("errorId") == rid,
+          "an error reply carries the caller's request ID as errorId and header", (s, h.get("X-Request-Id"), body.get("errorId")))
+    s, h, raw = raw_get("/api/v1/categories", {"X-Request-Id": "<bad id>"})
+    check(s == 200 and h.get("X-Request-Id") and h.get("X-Request-Id") != "<bad id>",
+          "an unusable incoming ID is replaced by a generated one", h.get("X-Request-Id"))
+    s, body = anon.get("/api/v1/me")
+    check(s == 401 and code_of(body) == "NOT_AUTHENTICATED" and body.get("errorId"), "401 is a ProblemDetail with an error ID", body)
+    s, body = genie.get("/api/v1/admin/users")
+    check(s == 403 and code_of(body) == "FORBIDDEN" and body.get("errorId"), "403 is a ProblemDetail with an error ID", body)
+
+    # ------------------------------------------------------------------ 3A-8 photos
+    section("Phase 3A: before/after job photos")
+    slot = free_slots(anon, genie_id, service_id)[0]
+    s, b = book(slot, "CASH")
+    bid = b["id"]
+    genie.post(f"/api/v1/genie/bookings/{bid}/accept")
+    photos = f"/api/v1/genie/bookings/{bid}/photos"
+    jpeg = b"\xff\xd8\xff\xe0" + b"\x00" * 64
+
+    def upload(stage, content=jpeg, who=genie):
+        data, ctype = multipart({}, "file", "photo.jpg", content, "image/jpeg")
+        return who.post(f"{photos}?stage={stage}", raw=data, content_type=ctype)
+
+    s, body = upload("BEFORE")
+    check(s == 422 and code_of(body) == "PHOTOS_CLOSED", "no photos before the job has started", body)
+    _, sc = customer.post(f"/api/v1/bookings/{bid}/start-code")
+    s, st = genie.post(f"/api/v1/genie/bookings/{bid}/start", {"code": sc["code"]})
+    check("ADD_PHOTO_BEFORE" in st["allowedActions"] and "ADD_PHOTO_AFTER" in st["allowedActions"],
+          "once started, the Genie can add before and after photos", st["allowedActions"])
+    results = [upload("BEFORE")[0] for _ in range(3)]
+    s, body = upload("BEFORE")
+    check(results == [201] * 3 and s == 422 and code_of(body) == "TOO_MANY_PHOTOS", "up to 3 before photos", (results, body))
+    s, body = upload("AFTER", b"%PDF-1.4 not a photo")
+    check(s == 400 and code_of(body) == "UNSUPPORTED_FILE", "a file that is not a photo is refused by its bytes", body)
+    s, after = upload("AFTER")
+    s2, body = upload("AFTER", who=customer)
+    check(s == 201 and s2 == 403, "after photo added; the customer cannot add photos", (s, s2))
+    s, cview = customer.get(f"/api/v1/bookings/{bid}")
+    check(s == 200 and len(cview["photos"]) == 4, "the customer sees the 4 photos", len(cview.get("photos", [])))
+    ls, lf, _ = open_link(cview["photos"][0])
+    check(ls == 200 and lf[:3] == b"\xff\xd8\xff", "a photo opens from its short-lived link without login", ls)
+    s, _ = genie.delete(f"{photos}/{after['id']}")
+    check(s == 204, "the Genie removes a photo", s)
+    s, done = genie.post(f"/api/v1/genie/bookings/{bid}/complete", {"cashCollected": True})
+    check(s == 200 and "ADD_PHOTO_AFTER" in done["allowedActions"] and "ADD_PHOTO_BEFORE" not in done["allowedActions"],
+          "after completing, only after photos can still be added (24 h)", done.get("allowedActions"))
+    s, body = upload("BEFORE")
+    check(s == 422 and code_of(body) == "PHOTOS_CLOSED", "before photos are closed after the job", body)
+    s, aview = admin.get(f"/api/v1/admin/bookings/{bid}")
+    check(s == 200 and len(aview["photos"]) == 3, "the admin sees the job photos", len(aview.get("photos", [])))
+    s, gpub = anon.get(f"/api/v1/genies/{genie_id}")
+    check(s == 200 and "photos" not in json.dumps(gpub), "photos are not on the public profile", None)
+
+    # ------------------------------------------------------------------ 3A-7 badges
+    section("Phase 3A: badges")
+    s, r = admin.post("/api/v1/admin/genies/badges/recalculate")
+    check(s == 200 and r["genies"] > 0, "admin recalculates badges", r)
+    s, cards = anon.get("/api/v1/genies?sort=RATING")
+    check(s == 200 and all(isinstance(c["badges"], list) for c in cards), "every Genie card lists its badges", s)
+    s, me = genie.get("/api/v1/genie/profile")
+    check(s == 200 and isinstance(me["badges"], list), "the Genie sees their own badges", me.get("badges"))
+    s, _ = genie.post("/api/v1/admin/genies/badges/recalculate")
+    check(s == 403, "only admins can recalculate badges", s)
+
+    # ------------------------------------------------------------------ 3A-6 earnings statement
+    section("Phase 3A: earnings statement")
+    month = (dt.datetime.now(dt.timezone.utc) + dt.timedelta(hours=5, minutes=30)).strftime("%Y-%m")
+    s, csv = genie.get(f"/api/v1/genie/statements?month={month}&format=csv")
+    text = csv.decode("utf-8") if isinstance(csv, bytes) else ""
+    _, w = genie.get("/api/v1/genie/wallet")
+    closing = f"Closing balance,{float(w['balance']):.2f}"
+    check(s == 200 and b["bookingRef"] in text and closing in text,
+          "CSV statement lists the job and closes at the wallet balance", (s, closing))
+    s, pdf = genie.get(f"/api/v1/genie/statements?month={month}&format=pdf")
+    check(s == 200 and pdf[:5] == b"%PDF-", "PDF statement downloads", s)
+    s, body = genie.get("/api/v1/genie/statements?month=2099-01")
+    check(s == 400 and code_of(body) == "INVALID_MONTH", "a future month is refused", body)
+    s, pdf = admin.get(f"/api/v1/admin/genies/{genie_id}/statements?month={month}&format=pdf")
+    check(s == 200 and pdf[:5] == b"%PDF-", "admin downloads a Genie's statement", s)
+    s, _ = customer.get(f"/api/v1/genie/statements?month={month}")
+    check(s == 403, "customers have no statements", s)
 
 
 if __name__ == "__main__":

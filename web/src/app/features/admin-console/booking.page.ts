@@ -14,6 +14,7 @@ import { ConfirmService, ToastService } from '../../core/ui/feedback';
 import { liveReload } from '../../core/live/live-stream';
 import { Avatar } from '../../shared/ui/avatar';
 import { PriceSummary, Timeline } from '../../shared/ui/booking-parts';
+import { JobPhotos } from '../../shared/ui/job-photos';
 import { Dialog } from '../../shared/ui/dialog';
 import { EmptyState, Skeleton, Spinner } from '../../shared/ui/kit';
 import { StatusBadge } from '../../shared/ui/status-badge';
@@ -21,7 +22,7 @@ import { RefundFields, newRefund, refundValid, refundable } from './refund-field
 
 @Component({
   selector: 'pg-admin-booking-page',
-  imports: [RouterLink, CurrencyPipe, DatePipe, LowerCasePipe, FormsModule, LucideDynamicIcon, Avatar, Dialog, EmptyState, PriceSummary, RefundFields, Skeleton, Spinner, StatusBadge, Timeline],
+  imports: [RouterLink, CurrencyPipe, DatePipe, LowerCasePipe, FormsModule, LucideDynamicIcon, Avatar, Dialog, EmptyState, JobPhotos, PriceSummary, RefundFields, Skeleton, Spinner, StatusBadge, Timeline],
   changeDetection: ChangeDetectionStrategy.OnPush,
   template: `
     <a routerLink="/admin/bookings" class="inline-flex items-center gap-1 text-sm font-semibold text-muted hover:text-brand">
@@ -131,6 +132,14 @@ import { RefundFields, newRefund, refundValid, refundable } from './refund-field
               </ul>
             }
           </section>
+
+          @if (b.photos.length) {
+            <section class="card p-5" aria-labelledby="photos-h">
+              <h2 id="photos-h" class="text-lg font-bold">Job photos</h2>
+              <p class="mt-1 text-sm text-muted">Taken by the Genie at the start and end of the job (kept for a year).</p>
+              <pg-job-photos class="mt-4 block" [photos]="b.photos" (expired)="detail.reload()" />
+            </section>
+          }
 
           <section class="card p-5" aria-labelledby="h-h">
             <h2 id="h-h" class="text-lg font-bold">Timeline</h2>

@@ -22,12 +22,13 @@ import { inr } from '../../shared/format';
 import { BookingRow } from '../../shared/ui/booking-parts';
 import { ChartPoint, ColumnChart } from '../../shared/ui/charts';
 import { EmptyState, PageHead, Spinner, StatTile } from '../../shared/ui/kit';
+import { GenieBadges } from '../../shared/ui/genie-badges';
 import { StatusBadge } from '../../shared/ui/status-badge';
 import { ALL_STEPS, GenieStore, STEP_TEXT } from './genie-store';
 
 @Component({
   selector: 'pg-genie-dashboard-page',
-  imports: [RouterLink, DecimalPipe, LucideDynamicIcon, BookingRow, ColumnChart, EmptyState, PageHead, Spinner, StatTile, StatusBadge],
+  imports: [RouterLink, DecimalPipe, LucideDynamicIcon, BookingRow, ColumnChart, EmptyState, GenieBadges, PageHead, Spinner, StatTile, StatusBadge],
   changeDetection: ChangeDetectionStrategy.OnPush,
   template: `
     @if (store.profile(); as p) {
@@ -145,6 +146,16 @@ import { ALL_STEPS, GenieStore, STEP_TEXT } from './genie-store';
           <pg-stat label="Rating" [value]="p.ratingCount ? (p.avgRating | number: '1.1-1') + '★' : 'New'" [hint]="p.ratingCount + ' reviews'" [icon]="Star" />
           <pg-stat label="Acceptance" [value]="stats.value()?.acceptanceRate != null ? stats.value()!.acceptanceRate + '%' : '—'" hint="Last 30 days" [icon]="Briefcase" />
         </div>
+
+        <section class="card mt-6 p-5" aria-labelledby="badges-h">
+          <h2 id="badges-h" class="text-lg font-bold">Your badges</h2>
+          @if (p.badges.length) {
+            <pg-genie-badges class="mt-3 block" [badges]="p.badges" [explain]="true" />
+            <p class="mt-2 text-xs text-muted">Customers see them on your card and profile. Top Genie and Quick responder also move you up in "Recommended". Updated every night.</p>
+          } @else {
+            <p class="mt-1 text-sm text-muted">Earn <strong>Top Genie</strong> (4.8★ or more from 20+ ratings, rarely cancelling) and <strong>Quick responder</strong> (accepting within 10 minutes) to move up in "Recommended". Badges are updated every night.</p>
+          }
+        </section>
 
         <div class="mt-6 grid gap-6 xl:grid-cols-2">
           <!-- Requests -->

@@ -98,6 +98,8 @@ public class PaymentService {
             .param("b", bookingId).param("c", customerId).param("provider", gateway.name())
             .param("order", order.orderId()).param("amount", amount).param("purpose", purpose)
             .query(UUID.class).single();
+        log.info("Payment order {} created for {} ({}, {} {} via {})", paymentId, b.bookingRef(), purpose, amount, currency,
+            gateway.name());
         return new PaymentOrderDto(paymentId, gateway.name(), order.orderId(), amount, currency, purpose, b.bookingRef(),
             gateway.publicKey());
     }
@@ -116,6 +118,7 @@ public class PaymentService {
         }
         if (!gateway.verifyPaymentSignature(p.providerOrderId(), providerPaymentId, signature)) {
             fail(p.id(), "Invalid signature");
+            log.warn("Payment {} confirmation refused: invalid signature", p.id());
             throw ApiException.badRequest("INVALID_SIGNATURE", "Payment could not be verified");
         }
         succeed(p, providerPaymentId);
@@ -148,6 +151,7 @@ public class PaymentService {
     @Transactional(noRollbackFor = ApiException.class)
     public void webhook(String provider, String rawBody, String signature, String eventIdHeader) {
         if (!gateway.name().equals(provider) || !gateway.verifyWebhookSignature(rawBody, signature)) {
+            log.warn("Rejected a {} webhook: bad signature or provider", provider);
             throw ApiException.unauthorized("INVALID_SIGNATURE", "Webhook signature is not valid");
         }
         WebhookEvent event = gateway.parseWebhook(rawBody, eventIdHeader);

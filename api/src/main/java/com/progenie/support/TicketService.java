@@ -14,6 +14,8 @@ import java.util.List;
 import java.util.Locale;
 import java.util.UUID;
 
+import com.progenie.booking.BookingDtos.BookingPhotoDto;
+import com.progenie.booking.BookingPhotos;
 import com.progenie.shared.config.AppProperties;
 import com.progenie.shared.config.QueryConstants;
 import com.progenie.shared.error.ApiException;
@@ -79,7 +81,7 @@ public class TicketService {
                                @Nullable String resolutionActions, @Nullable String resolutionNote, @Nullable UUID refundId, @Nullable UUID redoBookingId,
                                @Nullable String redoBookingRef, OffsetDateTime createdAt, List<TicketMessageDto> messages,
                                List<AttachmentDto> attachments, boolean canReply, boolean canAddPhotos,
-                               boolean canAccept, boolean canReopen) {
+                               boolean canAccept, boolean canReopen, List<BookingPhotoDto> jobPhotos) {
     }
 
     /** The row plus the booking parties, for access checks and events. */
@@ -105,9 +107,11 @@ public class TicketService {
     private final ApplicationEventPublisher events;
     private final Clock clock;
     private final ZoneId zone;
+    private final BookingPhotos bookingPhotos;
 
     public TicketService(JdbcClient jdbc, FileStorage storage, ApplicationEventPublisher events, Clock clock,
-                         AppProperties props) {
+                         AppProperties props, BookingPhotos bookingPhotos) {
+        this.bookingPhotos = bookingPhotos;
         this.jdbc = jdbc;
         this.storage = storage;
         this.events = events;
@@ -225,7 +229,8 @@ public class TicketService {
             r.resolvedAt(), r.closedAt(), r.resolutionActions(), r.resolutionNote(), r.refundId(), r.redoBookingId(),
             r.redoBookingRef(), r.createdAt(), messages, attachments,
             t.isOpen(), t.isOpen() && attachments.size() < MAX_PHOTOS && (admin || t.isParty(viewerId)),
-            raiser && reopenable && "RESOLVED".equals(t.status()), raiser && reopenable);
+            raiser && reopenable && "RESOLVED".equals(t.status()), raiser && reopenable,
+            r.bookingId() == null ? List.of() : bookingPhotos.list(r.bookingId()));
     }
 
     // ------------------------------------------------------------------ thread

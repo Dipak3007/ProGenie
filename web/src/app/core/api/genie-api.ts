@@ -6,6 +6,7 @@ import { API } from './api';
 import {
   AvailabilityWindow,
   BookingDetail,
+  BookingPhoto,
   DocType,
   FileLink,
   GenieDocument,
@@ -98,6 +99,22 @@ export class GenieApi {
 
   complete(id: string, body: { extraAmount: number | null; extraNote: string | null; cashCollected: boolean }): Observable<BookingDetail> {
     return this.http.post<BookingDetail>(`${this.base}/bookings/${id}/complete`, body);
+  }
+
+  /** Optional job photo; send it through shrinkImage() first. */
+  addPhoto(bookingId: string, stage: 'BEFORE' | 'AFTER', file: File): Observable<BookingPhoto> {
+    const form = new FormData();
+    form.append('file', file);
+    return this.http.post<BookingPhoto>(`${this.base}/bookings/${bookingId}/photos`, form, { params: { stage } });
+  }
+
+  deletePhoto(bookingId: string, photoId: string): Observable<void> {
+    return this.http.delete<void>(`${this.base}/bookings/${bookingId}/photos/${photoId}`);
+  }
+
+  /** Monthly earnings statement (month "2026-10") as a file to save. */
+  statement(month: string, format: 'csv' | 'pdf'): Observable<Blob> {
+    return this.http.get(`${this.base}/statements`, { params: { month, format }, responseType: 'blob' });
   }
 
   reply(reviewId: string, reply: string): Observable<Review> {

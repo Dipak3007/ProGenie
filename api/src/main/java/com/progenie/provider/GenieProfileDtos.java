@@ -32,7 +32,8 @@ public final class GenieProfileDtos {
                                BigDecimal avgRating, int ratingCount, int completedJobs, int cancellationCount,
                                @Nullable OffsetDateTime submittedAt, @Nullable OffsetDateTime approvedAt,
                                List<MyServiceDto> services, List<AvailabilityDto> availability,
-                               List<KycDocumentDto> documents, List<Step> missingSteps, boolean canSubmit) {
+                               List<KycDocumentDto> documents, List<Step> missingSteps, boolean canSubmit,
+                               List<String> badges) {
     }
 
     /** Flat row read from genie_profiles + users; lists are loaded separately. */

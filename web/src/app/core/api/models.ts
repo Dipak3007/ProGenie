@@ -17,6 +17,7 @@ import type {
   AvailabilityDto,
   Blocker,
   BookingDetailDto,
+  BookingPhotoDto,
   BookingSummaryDto,
   CategoryDetailDto,
   CategoryDto,
@@ -189,6 +190,8 @@ export type Party = PartyDto;
 export type HistoryItem = HistoryDto;
 
 export type BookingDetail = BookingDetailDto;
+/** A before/after job photo with a short-lived link (Phase 3A-8). */
+export type BookingPhoto = BookingPhotoDto;
 
 export type BookingSummary = BookingSummaryDto;
 
@@ -333,6 +336,8 @@ export interface ProblemDetail {
   detail?: string;
   code?: string;
   errors?: Record<string, string>;
+  /** The request's ID (also in the X-Request-Id header): quote it when reporting a problem. */
+  errorId?: string;
   /** Extra fields some errors carry. */
   retryAfterSeconds?: number;
   attemptsLeft?: number;

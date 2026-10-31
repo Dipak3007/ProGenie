@@ -53,6 +53,16 @@ export class AdminApi {
     return this.http.get<FileLink>(`${this.base}/genie-documents/${docId}/link`);
   }
 
+  /** A Genie's monthly earnings statement (month "2026-10") as a file to save. */
+  genieStatement(genieId: string, month: string, format: 'csv' | 'pdf'): Observable<Blob> {
+    return this.http.get(`${this.base}/genies/${genieId}/statements`, { params: { month, format }, responseType: 'blob' });
+  }
+
+  /** Recalculates every Genie's badges now (they are also recalculated every night). */
+  recalculateBadges(): Observable<{ genies: number }> {
+    return this.http.post<{ genies: number }>(`${this.base}/genies/badges/recalculate`, {});
+  }
+
   settle(genieId: string, amount: number, reference: string): Observable<Wallet> {
     return this.http.post<Wallet>(`${this.base}/genies/${genieId}/settlements`, { amount, reference });
   }

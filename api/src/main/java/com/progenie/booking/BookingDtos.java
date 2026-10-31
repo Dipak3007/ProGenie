@@ -1,6 +1,7 @@
 package com.progenie.booking;
 
 import java.math.BigDecimal;
+import java.time.Instant;
 import java.time.OffsetDateTime;
 import java.util.List;
 import java.util.UUID;
@@ -92,6 +93,16 @@ public final class BookingDtos {
                                    @Nullable String cancelledByRole, int rescheduledCount, boolean reviewed,
                                    OffsetDateTime createdAt, @Nullable OffsetDateTime acceptedAt, @Nullable OffsetDateTime startedAt,
                                    @Nullable OffsetDateTime completedAt, @Nullable OffsetDateTime cancelledAt,
-                                   List<String> allowedActions, List<HistoryDto> history) {
+                                   List<String> allowedActions, List<HistoryDto> history, List<BookingPhotoDto> photos) {
+    }
+
+    /**
+     * A before/after job photo. {@code url} opens the image directly and stops working at {@code expiresAt}
+     * (a few minutes); fetch the booking again for fresh links.
+     *
+     * @param stage BEFORE (taken when starting the job) or AFTER (when finishing it)
+     */
+    public record BookingPhotoDto(UUID id, String stage, String url, Instant expiresAt, String contentType,
+                                  int sizeBytes, OffsetDateTime createdAt) {
     }
 }

@@ -29,6 +29,7 @@ import { liveReload } from '../../core/live/live-stream';
 import { inr, downloadLink, telLink } from '../../shared/format';
 import { Avatar } from '../../shared/ui/avatar';
 import { PriceSummary, Timeline } from '../../shared/ui/booking-parts';
+import { JobPhotos } from '../../shared/ui/job-photos';
 import { Dialog } from '../../shared/ui/dialog';
 import { EmptyState, Skeleton, Spinner } from '../../shared/ui/kit';
 import { SlotPicker } from '../../shared/ui/slot-picker';
@@ -49,6 +50,7 @@ const TIP_PRESETS = [0, 20, 50, 100];
     Avatar,
     Dialog,
     EmptyState,
+    JobPhotos,
     PaymentDialog,
     PriceSummary,
     ReportDialog,
@@ -256,6 +258,14 @@ const TIP_PRESETS = [0, 20, 50, 100];
                 <textarea id="review-comment" name="comment" class="field min-h-24" maxlength="1000" [(ngModel)]="comment" placeholder="On time? Tidy? Fair price?"></textarea>
                 <button type="submit" class="btn-primary mt-4" [disabled]="rating() === 0 || busy()">Post review</button>
               </form>
+            </section>
+          }
+
+          @if (b.photos.length) {
+            <section class="card p-5" aria-labelledby="photos-h">
+              <h2 id="photos-h" class="text-lg font-bold">Job photos</h2>
+              <p class="mt-1 text-sm text-muted">Taken by your Genie when starting and finishing the job. Only you, the Genie and ProGenie can see them.</p>
+              <pg-job-photos class="mt-4 block" [photos]="b.photos" (expired)="detail.reload()" />
             </section>
           }
 

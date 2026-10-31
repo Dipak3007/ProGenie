@@ -1,10 +1,12 @@
 import { ChangeDetectionStrategy, Component, computed, inject, input, signal } from '@angular/core';
+import { firstValueFrom } from 'rxjs';
 import { httpResource } from '@angular/common/http';
 import { CurrencyPipe, DatePipe } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { RouterLink } from '@angular/router';
 import {
   LucideArrowLeft as ArrowLeft,
+  LucideCamera as Camera,
   LucideDynamicIcon,
   LucideHourglass as Hourglass,
   LucideKeyRound as KeyRound,
@@ -16,21 +18,24 @@ import {
 
 import { API, errorCode, errorMessage } from '../../core/api/api';
 import { GenieApi } from '../../core/api/genie-api';
-import { BookingDetail } from '../../core/api/models';
+import { BookingDetail, BookingPhoto } from '../../core/api/models';
 import { ReportDialog } from '../support/report-dialog';
 import { ConfirmService, ToastService } from '../../core/ui/feedback';
 import { liveReload } from '../../core/live/live-stream';
 import { inr, mapsLink, telLink } from '../../shared/format';
+import { shrinkImage } from '../../shared/image';
 import { Avatar } from '../../shared/ui/avatar';
 import { PriceSummary, Timeline } from '../../shared/ui/booking-parts';
 import { Dialog } from '../../shared/ui/dialog';
+import { JobPhotos, PhotoStage, editableStages } from '../../shared/ui/job-photos';
 import { EmptyState, Skeleton, Spinner } from '../../shared/ui/kit';
+import { PhotoPicker } from '../../shared/ui/photo-picker';
 import { StatusBadge } from '../../shared/ui/status-badge';
 import { GenieStore } from './genie-store';
 
 @Component({
   selector: 'pg-job-detail-page',
-  imports: [RouterLink, CurrencyPipe, DatePipe, FormsModule, LucideDynamicIcon, Avatar, Dialog, EmptyState, PriceSummary, ReportDialog, Skeleton, Spinner, StatusBadge, Timeline],
+  imports: [RouterLink, CurrencyPipe, DatePipe, FormsModule, LucideDynamicIcon, Avatar, Dialog, EmptyState, JobPhotos, PhotoPicker, PriceSummary, ReportDialog, Skeleton, Spinner, StatusBadge, Timeline],
   changeDetection: ChangeDetectionStrategy.OnPush,
   template: `
     <a routerLink="/genie/jobs" class="inline-flex items-center gap-1 text-sm font-semibold text-muted hover:text-brand">
@@ -87,6 +92,11 @@ import { GenieStore } from './genie-store';
               @if (codeError()) {
                 <p class="mt-2 text-sm text-rose-700" role="alert">{{ codeError() }}</p>
               }
+              <div class="mt-4 border-t border-line pt-4">
+                <p class="text-sm font-semibold">Before photos <span class="font-normal text-muted">(optional, up to 3)</span></p>
+                <p class="mt-0.5 text-xs text-muted">How things looked when you arrived. Only the customer and ProGenie see them.</p>
+                <pg-photo-picker class="mt-3 block" label="Before photo" [(files)]="beforeFiles" />
+              </div>
             </section>
           } @else if (b.status === 'ACCEPTED') {
             <section class="card p-5">
@@ -100,6 +110,25 @@ import { GenieStore } from './genie-store';
               <h2 id="done-h" class="text-lg font-bold">Finish the job</h2>
               <p class="mt-1 text-sm text-muted">Started {{ b.startedAt | date: 'h:mm a' }}. Add parts or materials if you used any.</p>
               <button type="button" class="btn-gold mt-4 min-h-12" (click)="completeOpen.set(true)">Mark as completed</button>
+            </section>
+          }
+
+          @if (b.photos.length || addable().length) {
+            <section class="card p-5" aria-labelledby="photos-h">
+              <h2 id="photos-h" class="flex items-center gap-2 text-lg font-bold">
+                <svg [lucideIcon]="Camera" [size]="20" class="text-brand" aria-hidden="true"></svg> Job photos
+              </h2>
+              <p class="mt-1 text-sm text-muted">Optional. Seen only by you, the customer and ProGenie, and kept for a year.</p>
+              <pg-job-photos
+                class="mt-4 block"
+                [photos]="b.photos"
+                [addable]="addable()"
+                [editable]="editable()"
+                [busy]="uploading()"
+                (add)="addPhoto($event.stage, $event.file)"
+                (remove)="removePhoto($event)"
+                (expired)="detail.reload()"
+              />
             </section>
           }
 
@@ -193,6 +222,12 @@ import { GenieStore } from './genie-store';
             <p class="text-sm text-muted">Customer pays</p>
             <p class="font-display text-3xl font-bold">{{ b.totalAmount + (+extraAmount || 0) | currency: 'INR' }}</p>
           </div>
+          @if (afterSlots(b) > 0) {
+            <div>
+              <p class="label">After photos <span class="font-normal text-muted">(optional)</span></p>
+              <pg-photo-picker label="After photo" [max]="afterSlots(b)" [(files)]="afterFiles" />
+            </div>
+          }
           @if (b.paymentMethod === 'CASH') {
             <label class="flex items-start gap-3 rounded-2xl border border-line p-4 text-sm">
               <input type="checkbox" name="cash" class="mt-0.5 size-5 rounded accent-brand" [(ngModel)]="cashCollected" />
@@ -205,7 +240,7 @@ import { GenieStore } from './genie-store';
               @if (busy()) {
                 <pg-spinner />
               }
-              Complete job
+              {{ uploading() === 'AFTER' ? 'Uploading photos…' : 'Complete job' }}
             </button>
           </div>
         </form>
@@ -247,6 +282,21 @@ export default class JobDetailPage {
   protected cashCollected = true;
 
   protected readonly tel = computed(() => telLink(this.detail.value()?.customer.phone));
+  protected readonly beforeFiles = signal<File[]>([]);
+  protected readonly afterFiles = signal<File[]>([]);
+  protected readonly uploading = signal<PhotoStage | false>(false);
+  protected readonly addable = computed<PhotoStage[]>(() =>
+    (['BEFORE', 'AFTER'] as PhotoStage[]).filter((stage) => this.can('ADD_PHOTO_' + stage)),
+  );
+  protected readonly editable = computed<PhotoStage[]>(() => {
+    const b = this.detail.value();
+    return b ? editableStages(b.status, b.completedAt) : [];
+  });
+
+  /** How many after photos can still be added (3 per stage). */
+  protected afterSlots(b: BookingDetail): number {
+    return Math.max(0, 3 - b.photos.filter((p) => p.stage === 'AFTER').length);
+  }
 
   protected can(action: string): boolean {
     return this.detail.value()?.allowedActions.includes(action as never) ?? false;
@@ -291,9 +341,17 @@ export default class JobDetailPage {
     this.busy.set(true);
     this.codeError.set(null);
     this.api.start(this.id(), this.code).subscribe({
-      next: (b) => {
+      next: async (b) => {
         this.code = '';
         this.done(b, 'Job started. Good luck!');
+        const files = this.beforeFiles();
+        if (files.length) {
+          this.uploading.set('BEFORE');
+          await this.uploadPhotos('BEFORE', files);
+          this.beforeFiles.set([]);
+          this.uploading.set(false);
+          this.detail.reload();
+        }
       },
       error: (err) => {
         this.busy.set(false);
@@ -309,9 +367,17 @@ export default class JobDetailPage {
     });
   }
 
-  protected complete(b: BookingDetail): void {
+  protected async complete(b: BookingDetail): Promise<void> {
     const extra = Number(this.extraAmount) || 0;
     this.busy.set(true);
+    const files = this.afterFiles();
+    if (files.length) {
+      // uploaded while the job is still in progress, so they are part of the job when it completes
+      this.uploading.set('AFTER');
+      await this.uploadPhotos('AFTER', files);
+      this.afterFiles.set([]);
+      this.uploading.set(false);
+    }
     this.api
       .complete(this.id(), {
         extraAmount: extra > 0 ? extra : null,
@@ -325,6 +391,45 @@ export default class JobDetailPage {
         },
         error: (e) => this.failed(e),
       });
+  }
+
+  /** Shrinks and uploads photos one by one; reports the ones that failed (the job action itself has succeeded). */
+  private async uploadPhotos(stage: PhotoStage, files: File[]): Promise<void> {
+    let failed = 0;
+    let lastError: unknown = null;
+    for (const file of files) {
+      try {
+        await firstValueFrom(this.api.addPhoto(this.id(), stage, await shrinkImage(file)));
+      } catch (err) {
+        failed++;
+        lastError = err;
+      }
+    }
+    if (failed) this.toast.error(`${failed} photo${failed > 1 ? 's' : ''} could not be uploaded. ${errorMessage(lastError)}`);
+  }
+
+  protected async addPhoto(stage: PhotoStage, file: File): Promise<void> {
+    this.uploading.set(stage);
+    try {
+      await firstValueFrom(this.api.addPhoto(this.id(), stage, await shrinkImage(file)));
+      this.toast.success('Photo added');
+    } catch (err) {
+      this.toast.error(errorMessage(err));
+    }
+    this.uploading.set(false);
+    this.detail.reload();
+  }
+
+  protected async removePhoto(photo: BookingPhoto): Promise<void> {
+    const { confirmed } = await this.confirm.ask({ title: 'Remove this photo?', confirmLabel: 'Remove', tone: 'danger' });
+    if (!confirmed) return;
+    this.api.deletePhoto(this.id(), photo.id).subscribe({
+      next: () => {
+        this.toast.success('Photo removed');
+        this.detail.reload();
+      },
+      error: (err) => this.toast.error(errorMessage(err)),
+    });
   }
 
   protected async cancel(): Promise<void> {
@@ -342,6 +447,7 @@ export default class JobDetailPage {
   }
 
   protected readonly ArrowLeft = ArrowLeft;
+  protected readonly Camera = Camera;
   protected readonly Hourglass = Hourglass;
   protected readonly KeyRound = KeyRound;
   protected readonly LifeBuoy = LifeBuoy;

@@ -1024,6 +1024,30 @@
         ]
       }
     },
+    "/api/v1/admin/genies/badges/recalculate": {
+      "post": {
+        "operationId": "adminGenieRecalculateBadges",
+        "responses": {
+          "200": {
+            "content": {
+              "*/*": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": {
+                    "type": "integer",
+                    "format": "int32"
+                  }
+                }
+              }
+            },
+            "description": "OK"
+          }
+        },
+        "tags": [
+          "admin-genie-controller"
+        ]
+      }
+    },
     "/api/v1/admin/genies/{id}": {
       "get": {
         "operationId": "adminGenieGenie",
@@ -1150,6 +1174,55 @@
               "*/*": {
                 "schema": {
                   "$ref": "#/components/schemas/WalletDto"
+                }
+              }
+            },
+            "description": "OK"
+          }
+        },
+        "tags": [
+          "admin-genie-controller"
+        ]
+      }
+    },
+    "/api/v1/admin/genies/{id}/statements": {
+      "get": {
+        "operationId": "adminGenieStatement",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "in": "query",
+            "name": "month",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "format",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "default": "pdf"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "*/*": {
+                "schema": {
+                  "type": "string",
+                  "format": "byte"
                 }
               }
             },
@@ -3361,6 +3434,100 @@
         ]
       }
     },
+    "/api/v1/genie/bookings/{id}/photos": {
+      "post": {
+        "operationId": "genieJobAddPhoto",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "in": "query",
+            "name": "stage",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "enum": [
+                "BEFORE",
+                "AFTER"
+              ]
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "file": {
+                    "type": "string",
+                    "format": "binary"
+                  }
+                },
+                "required": [
+                  "file"
+                ]
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "*/*": {
+                "schema": {
+                  "$ref": "#/components/schemas/BookingPhotoDto"
+                }
+              }
+            },
+            "description": "Created"
+          }
+        },
+        "tags": [
+          "genie-job-controller"
+        ]
+      }
+    },
+    "/api/v1/genie/bookings/{id}/photos/{photoId}": {
+      "delete": {
+        "operationId": "genieJobDeletePhoto",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "in": "path",
+            "name": "photoId",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "No Content"
+          }
+        },
+        "tags": [
+          "genie-job-controller"
+        ]
+      }
+    },
     "/api/v1/genie/bookings/{id}/start": {
       "post": {
         "operationId": "genieJobStart",
@@ -3802,6 +3969,46 @@
         },
         "tags": [
           "genie-profile-controller"
+        ]
+      }
+    },
+    "/api/v1/genie/statements": {
+      "get": {
+        "operationId": "genieWalletStatement",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "month",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "format",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "default": "pdf"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "*/*": {
+                "schema": {
+                  "type": "string",
+                  "format": "byte"
+                }
+              }
+            },
+            "description": "OK"
+          }
+        },
+        "tags": [
+          "genie-wallet-controller"
         ]
       }
     },
@@ -6720,6 +6927,12 @@
           "paymentStatus": {
             "type": "string"
           },
+          "photos": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/BookingPhotoDto"
+            }
+          },
           "rescheduledCount": {
             "type": "integer",
             "format": "int32"
@@ -6793,6 +7006,7 @@
           "notes",
           "paymentMethod",
           "paymentStatus",
+          "photos",
           "rescheduledCount",
           "reviewed",
           "serviceAmount",
@@ -6805,6 +7019,45 @@
           "tipAmount",
           "totalAmount",
           "travelFee"
+        ]
+      },
+      "BookingPhotoDto": {
+        "type": "object",
+        "properties": {
+          "contentType": {
+            "type": "string"
+          },
+          "createdAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "expiresAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "sizeBytes": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "stage": {
+            "type": "string"
+          },
+          "url": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "contentType",
+          "createdAt",
+          "expiresAt",
+          "id",
+          "sizeBytes",
+          "stage",
+          "url"
         ]
       },
       "BookingSummaryDto": {
@@ -7838,6 +8091,12 @@
           "avgRating": {
             "type": "number"
           },
+          "badges": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
           "baseArea": {
             "type": [
               "string",
@@ -7902,6 +8161,7 @@
         },
         "required": [
           "avgRating",
+          "badges",
           "baseArea",
           "bio",
           "categories",
@@ -8450,6 +8710,12 @@
           "avgRating": {
             "type": "number"
           },
+          "badges": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
           "baseArea": {
             "type": [
               "string",
@@ -8572,6 +8838,7 @@
           "approvedAt",
           "availability",
           "avgRating",
+          "badges",
           "baseArea",
           "baseLat",
           "baseLng",
@@ -10743,6 +11010,12 @@
             "type": "string",
             "format": "uuid"
           },
+          "jobPhotos": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/BookingPhotoDto"
+            }
+          },
           "messages": {
             "type": "array",
             "items": {
@@ -10848,6 +11121,7 @@
           "genieId",
           "genieName",
           "id",
+          "jobPhotos",
           "messages",
           "overdue",
           "priority",

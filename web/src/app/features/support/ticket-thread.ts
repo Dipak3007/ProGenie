@@ -17,6 +17,7 @@ import { AuthStore } from '../../core/auth/auth-store';
 import { ConfirmService, ToastService } from '../../core/ui/feedback';
 import { TICKET_CATEGORY_LABEL, openInNewTab } from '../../shared/format';
 import { Avatar } from '../../shared/ui/avatar';
+import { JobPhotos } from '../../shared/ui/job-photos';
 import { Spinner } from '../../shared/ui/kit';
 import { StatusBadge } from '../../shared/ui/status-badge';
 
@@ -27,7 +28,7 @@ import { StatusBadge } from '../../shared/ui/status-badge';
  */
 @Component({
   selector: 'pg-ticket-thread',
-  imports: [DatePipe, FormsModule, LucideDynamicIcon, Avatar, Spinner, StatusBadge],
+  imports: [DatePipe, FormsModule, LucideDynamicIcon, Avatar, JobPhotos, Spinner, StatusBadge],
   changeDetection: ChangeDetectionStrategy.OnPush,
   template: `
     @let t = ticket();
@@ -98,6 +99,14 @@ import { StatusBadge } from '../../shared/ui/status-badge';
           </li>
         }
       </ol>
+
+      @if (t.jobPhotos.length) {
+        <div class="border-t border-line p-5">
+          <p class="text-sm font-semibold">Job photos</p>
+          <p class="mt-0.5 text-xs text-muted">Taken by the Genie when starting and finishing the job.</p>
+          <pg-job-photos class="mt-3 block" [photos]="t.jobPhotos" (expired)="refresh()" />
+        </div>
+      }
 
       @if (t.attachments.length || t.canAddPhotos) {
         <div class="border-t border-line p-5">
@@ -184,6 +193,11 @@ export class TicketThread {
         }
       });
     });
+  }
+
+  /** Fresh short-lived links for the job photos. */
+  protected refresh(): void {
+    this.api.get(this.ticket().id).subscribe({ next: (t) => this.changed.emit(t) });
   }
 
   /** The thumbnail's link may have expired by now: open the full photo from a fresh one. */

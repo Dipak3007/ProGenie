@@ -225,10 +225,21 @@ public class AccountDeletionService {
         List<String> exportFiles = jdbc.sql(QueryUtil.get(QueryConstants.GET_DELETION_EXPORT_FILE_KEYS))
             .param("u", userId).query(String.class).list();
         exportFiles.forEach(storage::delete);
+        // job photos show the inside of the customer's home: removed with the account
+        List<String> jobPhotos = jdbc.sql(QueryUtil.get(QueryConstants.GET_DELETION_BOOKING_PHOTO_KEYS))
+            .param("u", userId).query(String.class).list();
+        for (String key : jobPhotos) {
+            try {
+                storage.delete(key);
+            } catch (RuntimeException ex) {
+                log.warn("Could not delete job photo {}: {}", key, ex.getMessage());
+            }
+        }
         for (String queryKey : List.of(
             QueryConstants.DELETE_DELETION_EXPORT_JOBS,
             QueryConstants.DELETE_DELETION_RESET_TOKENS,
             QueryConstants.DELETE_DELETION_FAVOURITES,
+            QueryConstants.DELETE_DELETION_BOOKING_PHOTOS,
             QueryConstants.DELETE_DELETION_NOTIFICATIONS,
             QueryConstants.DELETE_DELETION_ADDRESSES,
             QueryConstants.UPDATE_DELETION_REDACT_MESSAGES,

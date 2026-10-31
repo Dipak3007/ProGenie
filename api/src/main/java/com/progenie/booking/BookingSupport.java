@@ -13,6 +13,8 @@ import com.progenie.booking.domain.BookingStatus;
 import com.progenie.shared.config.QueryConstants;
 import com.progenie.shared.error.ApiException;
 import com.progenie.shared.util.QueryUtil;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.jdbc.core.simple.JdbcClient;
 import org.springframework.stereotype.Component;
@@ -20,6 +22,8 @@ import org.springframework.stereotype.Component;
 /** Shared plumbing for the booking services: locked loading, status history, events, start codes. */
 @Component
 class BookingSupport {
+
+    private static final Logger log = LoggerFactory.getLogger(BookingSupport.class);
 
     private static final SecureRandom RANDOM = new SecureRandom();
 
@@ -64,6 +68,7 @@ class BookingSupport {
             // the new time gets its own reminder
             jdbc.sql(QueryUtil.get(QueryConstants.UPDATE_BOOKING_CLEAR_REMINDER)).param("id", b.getId()).update();
         }
+        log.info("Booking {} {}: {} -> {} by {} {}", b.getBookingRef(), type, from, b.getStatus(), actorRole, actorId);
         events.publishEvent(new BookingEvent(type, b.getId(), b.getBookingRef(), b.getCustomerId(), b.getGenieId(),
             b.getSlotStart(), actorRole, reason, cashCollected));
         // Same-transaction listeners (e.g. cash payment) may have changed the booking again.

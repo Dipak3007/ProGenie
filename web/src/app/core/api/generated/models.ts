@@ -20,6 +20,7 @@ export type { AvailabilityDto } from './models/availability-dto';
 export type { AvailabilityRequest } from './models/availability-request';
 export type { Blocker } from './models/blocker';
 export type { BookingDetailDto } from './models/booking-detail-dto';
+export type { BookingPhotoDto } from './models/booking-photo-dto';
 export type { BookingSummaryDto } from './models/booking-summary-dto';
 export type { CancelRequest } from './models/cancel-request';
 export type { CategoryDetailDto } from './models/category-detail-dto';

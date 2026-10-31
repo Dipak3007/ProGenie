@@ -13,6 +13,7 @@ import java.util.UUID;
 
 import com.progenie.booking.BookingDtos.AddressView;
 import com.progenie.booking.BookingDtos.BookingDetailDto;
+import com.progenie.booking.BookingDtos.BookingPhotoDto;
 import com.progenie.booking.BookingDtos.BookingSummaryDto;
 import com.progenie.booking.BookingDtos.HistoryDto;
 import com.progenie.booking.BookingDtos.PartyDto;
@@ -66,11 +67,13 @@ public class BookingQueryService {
     private final JdbcClient jdbc;
     private final AppProperties.Booking rules;
     private final Clock clock;
+    private final BookingPhotos photos;
 
-    public BookingQueryService(JdbcClient jdbc, AppProperties props, Clock clock) {
+    public BookingQueryService(JdbcClient jdbc, AppProperties props, Clock clock, BookingPhotos photos) {
         this.jdbc = jdbc;
         this.rules = props.booking();
         this.clock = clock;
+        this.photos = photos;
     }
 
     // ------------------------------------------------------------------ lists
@@ -156,6 +159,11 @@ public class BookingQueryService {
             ? BookingPolicy.customerCancellationFee(status, r.slotStart().toInstant(), now,
                 rules.freeCancellationWindow(), rules.lateCancellationFee())
             : null;
+        List<BookingPhotoDto> jobPhotos = photos.list(bookingId);
+        List<String> actions = allowedActions(r, viewer, now);
+        if (viewer == Viewer.GENIE) {
+            actions.addAll(photos.genieActions(r.status(), r.completedAt(), jobPhotos));
+        }
 
         return new BookingDetailDto(r.id(), r.bookingRef(), r.status(), r.serviceId(), r.serviceName(), r.categoryName(),
             r.categorySlug(), genie, customer, address, r.slotStart(), r.slotEnd(), r.expiresAt(), r.notes(),
@@ -163,7 +171,7 @@ public class BookingQueryService {
             r.totalAmount(), moneyVisible ? r.commissionAmount() : null, moneyVisible ? r.geniePayout() : null,
             r.paymentMethod(), r.paymentStatus(), r.cancellationFee(), r.cancellationFeeStatus(), feeIfNow,
             r.cancelReason(), r.cancelledByRole(), r.rescheduledCount(), r.reviewed(), r.createdAt(), r.acceptedAt(),
-            r.startedAt(), r.completedAt(), r.cancelledAt(), allowedActions(r, viewer, now), history(bookingId));
+            r.startedAt(), r.completedAt(), r.cancelledAt(), actions, history(bookingId), jobPhotos);
     }
 
     List<String> allowedActions(Row r, Viewer viewer, Instant now) {

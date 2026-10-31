@@ -106,6 +106,7 @@ public class PayoutService {
             .param("ref", reference.trim()).param("id", payoutId).update();
         ledger.postExternal(LedgerPostings.payout(p.genieId(), p.amount(), payoutId, reference));
         PayoutDto paid = get(payoutId);
+        log.info("Payout {} of ₹{} to Genie {} marked paid", payoutId, p.amount(), p.genieId());
         events.publishEvent(new PayoutPaid(payoutId, p.genieId(), p.amount(), reference.trim(), paid.periodStart(),
             paid.periodEnd()));
         return paid;
@@ -118,6 +119,7 @@ public class PayoutService {
         if (rows == 0) {
             throw ApiException.unprocessable("INVALID_STATE", "Only pending payouts can be marked failed");
         }
+        log.warn("Payout {} marked failed", payoutId);
         return get(payoutId);
     }
 

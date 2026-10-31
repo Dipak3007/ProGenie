@@ -68,6 +68,13 @@ public final class QueryConstants {
     public static final String UPDATE_BOOKING_COPY_ADDRESS_FROM_ORIGINAL = "update.booking.copy-address-from-original";
     public static final String UPDATE_BOOKING_REMINDER_SENT = "update.booking.reminder-sent";
     public static final String UPDATE_BOOKING_SNAPSHOT_ADDRESS = "update.booking.snapshot-address";
+    public static final String LOCK_BOOKING_PHOTO_CONTEXT = "lock.booking.photo-context";
+    public static final String GET_BOOKING_PHOTOS = "get.booking.photos";
+    public static final String GET_BOOKING_PHOTO = "get.booking.photo";
+    public static final String COUNT_BOOKING_PHOTOS_STAGE = "count.booking.photos-stage";
+    public static final String INSERT_BOOKING_PHOTO = "insert.booking.photo";
+    public static final String DELETE_BOOKING_PHOTO = "delete.booking.photo";
+    public static final String GET_BOOKING_EXPIRED_PHOTOS = "get.booking.expired-photos";
 
     // ------------------------------------------------------------------ Catalog and city pricing
 
@@ -207,6 +214,8 @@ public final class QueryConstants {
     public static final String COUNT_USER_SEARCH = "count.user.search";
     public static final String LOCK_USER_BY_ID = "lock.user.by-id";
     public static final String UPDATE_USER_PASSWORD_LOCKED_UNTIL = "update.user.password-locked-until";
+    public static final String GET_DELETION_BOOKING_PHOTO_KEYS = "get.deletion.booking-photo-keys";
+    public static final String DELETE_DELETION_BOOKING_PHOTOS = "delete.deletion.booking-photos";
 
     // ------------------------------------------------------------------ Legal documents and consents
 
@@ -314,6 +323,11 @@ public final class QueryConstants {
     public static final String GET_WALLET_PAYOUTS = "get.wallet.payouts";
     public static final String COUNT_WALLET_COMPLETED_JOBS_SINCE = "count.wallet.completed-jobs-since";
     public static final String COUNT_WALLET_ENTRIES = "count.wallet.entries";
+    public static final String GET_STATEMENT_GENIE = "get.statement.genie";
+    public static final String GET_STATEMENT_BALANCE_BEFORE = "get.statement.balance-before";
+    public static final String GET_STATEMENT_JOBS = "get.statement.jobs";
+    public static final String GET_STATEMENT_PAYOUTS = "get.statement.payouts";
+    public static final String GET_STATEMENT_ENTRIES = "get.statement.entries";
 
     // ------------------------------------------------------------------ Pricing
 
@@ -383,6 +397,10 @@ public final class QueryConstants {
     public static final String INSERT_GENIE_VERIFICATION_REGISTERED = "insert.genie-verification.registered";
     public static final String INSERT_GENIE_VERIFICATION_SUBMITTED = "insert.genie-verification.submitted";
     public static final String GET_USER_FULL_NAME = "get.user.full-name";
+    public static final String UPDATE_GENIE_PROFILE_BADGES = "update.genie-profile.badges";
+    public static final String UPDATE_GENIE_PROFILE_CLEAR_BADGES = "update.genie-profile.clear-badges";
+    public static final String EXISTS_GENIE_PROFILE_BADGES_COMPUTED = "exists.genie-profile.badges-computed";
+    public static final String GET_GENIE_PROFILE_BADGES = "get.genie-profile.badges";
 
     // ------------------------------------------------------------------ Reviews
 

@@ -33,6 +33,8 @@ import com.progenie.shared.config.QueryConstants;
 import com.progenie.shared.error.ApiException;
 import com.progenie.shared.util.QueryUtil;
 import com.progenie.shared.util.Times;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.jdbc.core.simple.JdbcClient;
 import org.springframework.stereotype.Service;
@@ -46,6 +48,8 @@ import org.springframework.util.StringUtils;
 @Service
 public class GenieProfileService {
 
+    private static final Logger log = LoggerFactory.getLogger(GenieProfileService.class);
+
     /** Genies may set their own price between half and three times the platform's base price. */
     static final BigDecimal MIN_PRICE_FACTOR = new BigDecimal("0.5");
     static final BigDecimal MAX_PRICE_FACTOR = new BigDecimal("3.0");
@@ -58,9 +62,11 @@ public class GenieProfileService {
     private final Clock clock;
     private final AccountGuards guards;
     private final ServiceabilityService serviceability;
+    private final GenieBadges badges;
 
     public GenieProfileService(JdbcClient jdbc, GenieDocumentService documents, ApplicationEventPublisher events, Clock clock,
-                               AccountGuards guards, ServiceabilityService serviceability) {
+                               AccountGuards guards, ServiceabilityService serviceability, GenieBadges badges) {
+        this.badges = badges;
         this.guards = guards;
         this.serviceability = serviceability;
         this.jdbc = jdbc;
@@ -87,7 +93,7 @@ public class GenieProfileService {
         return new MyProfileDto(p.id(), p.fullName(), p.phone(), p.email(), p.bio(), p.experienceYears(),
             p.verificationStatus(), p.verificationNote(), p.baseArea(), p.baseLat(), p.baseLng(), p.serviceRadiusKm(),
             p.payoutUpiId(), p.online(), p.avgRating(), p.ratingCount(), p.completedJobs(), p.cancellationCount(),
-            p.submittedAt(), p.approvedAt(), services, availability, docs, missing, canSubmit);
+            p.submittedAt(), p.approvedAt(), services, availability, docs, missing, canSubmit, badges.of(genieId));
     }
 
     static List<Step> missingSteps(ProfileRow p, List<MyServiceDto> services, List<AvailabilityDto> availability,
@@ -290,6 +296,7 @@ public class GenieProfileService {
             .param("id", genieId).update();
         jdbc.sql(QueryUtil.get(QueryConstants.INSERT_GENIE_VERIFICATION_SUBMITTED))
             .param("id", genieId).param("from", me.verificationStatus()).update();
+        log.info("Genie {} submitted the profile for review", genieId);
         events.publishEvent(new GenieSubmitted(genieId, me.fullName()));
         return me(genieId);
     }
@@ -305,6 +312,7 @@ public class GenieProfileService {
         }
         jdbc.sql(QueryUtil.get(QueryConstants.UPDATE_GENIE_PROFILE_ONLINE))
             .param("online", online).param("id", genieId).update();
+        log.debug("Genie {} is {}", genieId, online ? "online" : "offline");
         return online;
     }
 

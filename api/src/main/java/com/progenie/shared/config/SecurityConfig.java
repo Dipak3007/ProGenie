@@ -18,6 +18,9 @@ import org.springframework.security.web.SecurityFilterChain;
 import org.springframework.web.cors.CorsConfiguration;
 import org.springframework.web.cors.CorsConfigurationSource;
 import org.springframework.web.cors.UrlBasedCorsConfigurationSource;
+import com.progenie.shared.error.ProblemResponses;
+import com.progenie.shared.web.UserMdcFilter;
+import org.springframework.security.oauth2.server.resource.web.authentication.BearerTokenAuthenticationFilter;
 
 /**
  * Stateless security: every request carries a Bearer JWT; no HTTP session is created.
@@ -54,7 +57,15 @@ public class SecurityConfig {
                 .requestMatchers("/api/v1/bookings/**", "/api/v1/payments/**",
                         "/api/v1/me/addresses/**", "/api/v1/me/favourites/**").hasRole("CUSTOMER")
                 .anyRequest().authenticated())
-            .oauth2ResourceServer(oauth -> oauth.jwt(jwt -> jwt.jwtAuthenticationConverter(jwtAuthenticationConverter())));
+            // 401/403 as ProblemDetail JSON with an errorId, like every other error (3A-0)
+            .exceptionHandling(e -> e.authenticationEntryPoint(ProblemResponses.authenticationEntryPoint())
+                .accessDeniedHandler(ProblemResponses.accessDeniedHandler()))
+            .oauth2ResourceServer(oauth -> oauth
+                .authenticationEntryPoint(ProblemResponses.authenticationEntryPoint())
+                .accessDeniedHandler(ProblemResponses.accessDeniedHandler())
+                .jwt(jwt -> jwt.jwtAuthenticationConverter(jwtAuthenticationConverter())))
+            // the logged-in user's ID in every log line of the request
+            .addFilterAfter(new UserMdcFilter(), BearerTokenAuthenticationFilter.class);
         return http.build();
     }
 

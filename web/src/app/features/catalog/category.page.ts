@@ -87,7 +87,7 @@ import { CityStore } from '../../core/city/city-store';
             <label class="flex items-center gap-2 text-sm">
               <span class="text-muted">Sort by</span>
               <select class="field w-auto py-2" [value]="sort()" (change)="sort.set($any($event.target).value)">
-                <option value="RATING">Top rated</option>
+                <option value="RATING">Recommended</option>
                 <option value="PRICE">Lowest price</option>
                 <option value="EXPERIENCE">Most experienced</option>
               </select>

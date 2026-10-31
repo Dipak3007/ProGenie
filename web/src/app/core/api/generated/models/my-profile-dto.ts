@@ -8,6 +8,7 @@ export interface MyProfileDto {
   approvedAt: (string | null);
   availability: Array<AvailabilityDto>;
   avgRating: number;
+  badges: Array<string>;
   baseArea: (string | null);
   baseLat: (number | null);
   baseLng: (number | null);

@@ -9,6 +9,8 @@ import java.util.UUID;
 import com.progenie.shared.config.QueryConstants;
 import com.progenie.shared.error.ApiException;
 import com.progenie.shared.util.QueryUtil;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.http.HttpStatus;
 import org.springframework.jdbc.core.simple.JdbcClient;
 import org.springframework.stereotype.Service;
@@ -21,6 +23,8 @@ import org.springframework.transaction.annotation.Transactional;
  */
 @Service
 public class ConsentService {
+
+    private static final Logger log = LoggerFactory.getLogger(ConsentService.class);
 
     public record ConsentDto(LegalKind kind, int version, String title, OffsetDateTime acceptedAt) {
     }
@@ -82,6 +86,9 @@ public class ConsentService {
                 .param("ip", ip == null ? null : ip.length() > 45 ? ip.substring(0, 45) : ip)
                 .param("ua", userAgent == null ? null : userAgent.length() > 300 ? userAgent.substring(0, 300) : userAgent)
                 .update();
+        }
+        if (!kinds.isEmpty()) {
+            log.info("User {} accepted {}", userId, kinds);
         }
         return pendingKinds(userId, role);
     }

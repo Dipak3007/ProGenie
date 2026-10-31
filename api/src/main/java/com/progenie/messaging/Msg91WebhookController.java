@@ -10,6 +10,8 @@ import java.util.Map;
 import com.progenie.messaging.delivery.MessageAdmin;
 import com.progenie.messaging.delivery.MessagingProperties;
 import com.progenie.shared.error.ApiException;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.util.StringUtils;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
@@ -29,6 +31,8 @@ import tools.jackson.databind.json.JsonMapper;
 @RequestMapping("/api/v1/webhooks/msg91")
 public class Msg91WebhookController {
 
+    private static final Logger log = LoggerFactory.getLogger(Msg91WebhookController.class);
+
     private final MessageAdmin messages;
     private final MessagingProperties props;
     private final JsonMapper json;
@@ -46,6 +50,7 @@ public class Msg91WebhookController {
         String expected = props.msg91().webhookToken();
         if (!StringUtils.hasText(expected) || token == null
             || !MessageDigest.isEqual(expected.getBytes(StandardCharsets.UTF_8), token.getBytes(StandardCharsets.UTF_8))) {
+            log.warn("Rejected a MSG91 delivery webhook: bad token");
             throw ApiException.forbidden("BAD_WEBHOOK_TOKEN", "Unknown webhook");
         }
         if (!StringUtils.hasText(body)) {
