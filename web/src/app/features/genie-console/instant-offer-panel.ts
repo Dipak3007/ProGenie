@@ -40,7 +40,7 @@ export const OFFER_POLL_MS = 10_000;
           <h2 id="offer-h" class="mt-1 text-xl font-bold">{{ o.serviceName }}</h2>
           <p id="offer-d" class="mt-1 flex items-center gap-1 text-sm text-brand-mist">
             <svg [lucideIcon]="MapPin" [size]="14" aria-hidden="true"></svg>
-            {{ o.area ? o.area + ', ' : '' }}{{ o.city }} · {{ o.distanceKm | number: '1.1-1' }} km away · ~{{ o.durationMinutes }} min job
+            {{ o.area ? o.area + ', ' : '' }}{{ o.city }} · {{ o.distanceKm | number: '1.1-1' }} km{{ o.travelMinutes ? ' (~' + o.travelMinutes + ' min)' : '' }} · ~{{ o.durationMinutes }} min job
           </p>
         </div>
         <div class="p-5">

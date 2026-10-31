@@ -57,6 +57,8 @@ export type { DeclineRequest } from './models/decline-request';
 export type { DeletionRequestBody } from './models/deletion-request-body';
 export type { DeletionRequestRow } from './models/deletion-request-row';
 export type { DeletionStatus } from './models/deletion-status';
+export type { DemandCell } from './models/demand-cell';
+export type { DemandMapDto } from './models/demand-map-dto';
 export type { DocumentReviewRequest } from './models/document-review-request';
 export type { DraftRequest } from './models/draft-request';
 export type { ExportJobDto } from './models/export-job-dto';
@@ -243,6 +245,8 @@ export type { PrivacyRequestDeletion$Params as PrivacyRequestDeletion$Params } f
 export { privacyRequestDeletion as privacyRequestDeletion } from './fn/privacy-controller/privacy-request-deletion';
 export type { PrivacyCancelDeletion$Params as PrivacyCancelDeletion$Params } from './fn/privacy-controller/privacy-cancel-deletion';
 export { privacyCancelDeletion as privacyCancelDeletion } from './fn/privacy-controller/privacy-cancel-deletion';
+export type { AdminDemandMap$Params as AdminDemandMap$Params } from './fn/admin-demand-controller/admin-demand-map';
+export { adminDemandMap as adminDemandMap } from './fn/admin-demand-controller/admin-demand-map';
 export type { AdminGenieDocumentFile$Params as AdminGenieDocumentFile$Params } from './fn/admin-genie-controller/admin-genie-document-file';
 export { adminGenieDocumentFile as adminGenieDocumentFile } from './fn/admin-genie-controller/admin-genie-document-file';
 export type { AdminGenieDocumentLink$Params as AdminGenieDocumentLink$Params } from './fn/admin-genie-controller/admin-genie-document-link';

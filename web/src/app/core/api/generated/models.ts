@@ -51,6 +51,8 @@ export type { DeclineRequest } from './models/decline-request';
 export type { DeletionRequestBody } from './models/deletion-request-body';
 export type { DeletionRequestRow } from './models/deletion-request-row';
 export type { DeletionStatus } from './models/deletion-status';
+export type { DemandCell } from './models/demand-cell';
+export type { DemandMapDto } from './models/demand-map-dto';
 export type { DocumentReviewRequest } from './models/document-review-request';
 export type { DraftRequest } from './models/draft-request';
 export type { ExportJobDto } from './models/export-job-dto';

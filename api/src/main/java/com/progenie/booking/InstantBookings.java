@@ -3,7 +3,6 @@ package com.progenie.booking;
 import java.math.BigDecimal;
 import java.time.Clock;
 import java.time.Instant;
-import java.time.LocalTime;
 import java.time.OffsetDateTime;
 import java.time.ZoneId;
 import java.time.ZonedDateTime;
@@ -16,6 +15,7 @@ import com.progenie.booking.domain.Booking;
 import com.progenie.booking.domain.PaymentMethod;
 import com.progenie.customer.AddressDtos.AddressDto;
 import com.progenie.customer.AddressService;
+import com.progenie.demand.DemandRecorder;
 import com.progenie.identity.AccountGuards;
 import com.progenie.legal.ConsentService;
 import com.progenie.messaging.LiveHub;
@@ -72,7 +72,26 @@ public class InstantBookings {
     public record InstantQuoteDto(boolean available, @Nullable String reasonCode, @Nullable String reason,
                                   long serviceId, String serviceName, int durationMinutes, int genieCount,
                                   @Nullable BigDecimal priceFrom, @Nullable BigDecimal priceTo, BigDecimal instantFee,
-                                  int arrivalMinutes, int offerSeconds, int maxGenies) {
+                                  int arrivalMinutes, int offerSeconds, int maxGenies, @Nullable String noGenieReason) {
+    }
+
+    /**
+     * Why nobody was found (Phase 3D), the first condition no Genie passed. Shown to the customer, kept on the
+     * request and on unmet-demand events so admins can see what to fix (more Genies, longer hours, wider radius).
+     */
+    public enum Reason {
+        NO_GENIE_FOR_SERVICE("No Genie offers this service in your city yet."),
+        TOO_FAR("No Genie who offers this service can reach your address within an hour."),
+        NONE_ONLINE("No Genie near you is online right now."),
+        OUTSIDE_HOURS("The Genies near you have finished for the day, or the job would run past their working hours."),
+        ALL_BUSY("All Genies near you are busy with other jobs."),
+        NOBODY_ACCEPTED("The Genies we asked couldn't take it.");
+
+        public final String text;
+
+        Reason(String text) {
+            this.text = text;
+        }
     }
 
     public record InstantRequestBody(@NotNull Long serviceId, @NotNull UUID addressId, @NotNull PaymentMethod paymentMethod,
@@ -83,12 +102,14 @@ public class InstantBookings {
     /** A search. {@code status}: SEARCHING, BOOKED (see {@code bookingId}), NO_GENIE or CANCELLED. */
     public record InstantRequestDto(UUID id, String status, long serviceId, String serviceName, OffsetDateTime createdAt,
                                     @Nullable OffsetDateTime endedAt, int geniesAsked, int maxGenies,
-                                    @Nullable OffsetDateTime offerExpiresAt, @Nullable UUID bookingId, String message) {
+                                    @Nullable OffsetDateTime offerExpiresAt, @Nullable UUID bookingId, String message,
+                                    @Nullable String noGenieReason) {
     }
 
     /** An offer as the Genie sees it (live event {@code instant_offer} and GET /genie/instant-offers). */
     public record InstantOfferDto(long id, UUID requestId, String serviceName, int durationMinutes, @Nullable String area,
-                                  String city, BigDecimal distanceKm, BigDecimal earning, String paymentMethod,
+                                  String city, BigDecimal distanceKm, @Nullable Integer travelMinutes, BigDecimal earning,
+                                  String paymentMethod,
                                   OffsetDateTime expiresAt, @Nullable String notes) {
     }
 
@@ -101,7 +122,15 @@ public class InstantBookings {
     record ServiceRow(long id, String name, int durationMinutes, boolean active, boolean instantEnabled) {
     }
 
-    record Candidate(UUID genieId, BigDecimal distanceKm, BigDecimal avgRating) {
+    record Candidate(UUID genieId, BigDecimal distanceKm, BigDecimal avgRating, int travelMinutes) {
+    }
+
+    record Funnel(int offering, int inRange, int online, int inHours, int free) {
+
+        Reason reason() {
+            return offering == 0 ? Reason.NO_GENIE_FOR_SERVICE : inRange == 0 ? Reason.TOO_FAR : online == 0 ? Reason.NONE_ONLINE
+                : inHours == 0 ? Reason.OUTSIDE_HOURS : Reason.ALL_BUSY;
+        }
     }
 
     record RequestRow(UUID id, UUID customerId, long serviceId, long cityId, @Nullable UUID addressId, double lat,
@@ -111,10 +140,11 @@ public class InstantBookings {
 
     record RequestView(UUID id, String status, long serviceId, String serviceName, OffsetDateTime createdAt,
                        @Nullable OffsetDateTime endedAt, int geniesAsked, @Nullable OffsetDateTime offerExpiresAt,
-                       @Nullable UUID bookingId, UUID customerId) {
+                       @Nullable UUID bookingId, UUID customerId, @Nullable String noGenieReason) {
     }
 
-    record OfferRow(long id, UUID requestId, UUID genieId, String status, OffsetDateTime expiresAt) {
+    record OfferRow(long id, UUID requestId, UUID genieId, String status, OffsetDateTime expiresAt,
+                    @Nullable Integer travelMinutes) {
     }
 
     record ExpiredOffer(long id, UUID requestId) {
@@ -135,6 +165,7 @@ public class InstantBookings {
     private final AccountGuards guards;
     private final ConsentService consents;
     private final LiveHub live;
+    private final DemandRecorder demand;
     private final TransactionTemplate tx;
     private final Clock clock;
     private final ZoneId zone;
@@ -142,7 +173,8 @@ public class InstantBookings {
     public InstantBookings(JdbcClient jdbc, InstantProperties props, BookingService bookings, BookingQueryService queries,
                            AddressService addresses, PricingService pricing, CouponService coupons, AccountGuards guards,
                            ConsentService consents, LiveHub live, PlatformTransactionManager txManager, Clock clock,
-                           AppProperties app) {
+                           AppProperties app, DemandRecorder demand) {
+        this.demand = demand;
         this.jdbc = jdbc;
         this.props = props;
         this.bookings = bookings;
@@ -172,8 +204,11 @@ public class InstantBookings {
         }
         List<Candidate> nearby = candidates(s, a.cityId(), a.lat(), a.lng(), customerId, NO_REQUEST, 10);
         if (nearby.isEmpty()) {
-            return quote(s, false, "NO_GENIE_NEARBY", "No Genie is free near you right now. Book a time slot instead.",
-                0, null, null, fee);
+            Reason why = funnel(s, a.cityId(), a.lat(), a.lng(), customerId, NO_REQUEST).reason();
+            demand.record(new DemandRecorder.Event(DemandRecorder.Kind.INSTANT_NONE_FREE, a.cityId(), null, s.id(),
+                a.pincode(), a.lat(), a.lng(), why.name()), customerId.toString());
+            InstantQuoteDto none = quote(s, false, "NO_GENIE_NEARBY", why.text + " Book a time slot instead.", 0, null, null, fee);
+            return withReason(none, why);
         }
         BigDecimal from = null;
         BigDecimal to = null;
@@ -267,7 +302,7 @@ public class InstantBookings {
         }
         Booking b = bookings.createInstant(new BookingService.InstantOrder(r.id(), r.customerId(), genieId, r.serviceId(),
             r.cityId(), r.addressId(), r.lat(), r.lng(), PaymentMethod.valueOf(r.paymentMethod()), r.tipAmount(), r.notes(),
-            r.couponCode(), props.arrivalWindow()));
+            r.couponCode(), o.travelMinutes() == null ? props.arrivalWindow() : java.time.Duration.ofMinutes(o.travelMinutes())));
         jdbc.sql(QueryUtil.get(QueryConstants.UPDATE_INSTANT_OFFER_STATUS)).param("id", offerId).param("status", "ACCEPTED").update();
         end(r.id(), "BOOKED", b.getId());
         log.info("Genie Now request {} booked as {} by Genie {}", r.id(), b.getBookingRef(), genieId);
@@ -344,8 +379,11 @@ public class InstantBookings {
             ? List.of()
             : candidates(s, r.cityId(), r.lat(), r.lng(), r.customerId(), r.id(), 1);
         if (next.isEmpty()) {
-            end(r.id(), "NO_GENIE", null);
-            log.info("Genie Now request {}: no Genie accepted ({} asked)", r.id(), asked);
+            Reason why = asked > 0 ? Reason.NOBODY_ACCEPTED
+                : !s.active() || !s.instantEnabled() ? Reason.NO_GENIE_FOR_SERVICE
+                : funnel(s, r.cityId(), r.lat(), r.lng(), r.customerId(), r.id()).reason();
+            end(r.id(), "NO_GENIE", null, why);
+            log.info("Genie Now request {}: no Genie ({} asked, {})", r.id(), asked, why);
             return;
         }
         Candidate c = next.getFirst();
@@ -354,7 +392,7 @@ public class InstantBookings {
         Instant now = clock.instant();
         long offerId = jdbc.sql(QueryUtil.get(QueryConstants.INSERT_INSTANT_OFFER))
             .param("requestId", r.id()).param("genieId", c.genieId()).param("rank", asked + 1)
-            .param("km", c.distanceKm()).param("earning", earning)
+            .param("km", c.distanceKm()).param("earning", earning).param("travel", c.travelMinutes())
             .param("now", Times.odt(now)).param("expires", Times.odt(now.plus(props.offerTimeout())))
             .query(Long.class).single();
         InstantOfferDto offer = jdbc.sql(QueryUtil.get(QueryConstants.GET_INSTANT_OFFER_VIEW)).param("id", offerId)
@@ -369,8 +407,13 @@ public class InstantBookings {
     }
 
     private void end(UUID requestId, String status, @Nullable UUID bookingId) {
+        end(requestId, status, bookingId, null);
+    }
+
+    private void end(UUID requestId, String status, @Nullable UUID bookingId, @Nullable Reason reason) {
         jdbc.sql(QueryUtil.get(QueryConstants.UPDATE_INSTANT_REQUEST_ENDED))
-            .param("id", requestId).param("status", status).param("bookingId", bookingId).update();
+            .param("id", requestId).param("status", status).param("bookingId", bookingId)
+            .param("reason", reason == null ? null : reason.name()).update();
         RequestView row = viewRow(requestId);
         InstantRequestDto view = toDto(row);
         live.afterCommit(() -> live.toUser(row.customerId(), "instant", view));
@@ -382,24 +425,33 @@ public class InstantBookings {
         live.afterCommit(() -> gone.forEach(w -> live.toUser(w.genieId(), "instant_offer", new OfferGone(w.id(), "WITHDRAWN"))));
     }
 
-    /** Free Genies for the job, nearest first. See the class comment for the rules. */
+    /**
+     * Free Genies for the job, nearest first. See the class comment for the rules. "Within working hours" uses each
+     * Genie's own travel estimate (straight line × 1.3 at 22 km/h, plus 10 minutes to get going, at least 15), and a
+     * Genie who can't arrive within the arrival window (an hour) is not asked.
+     */
     private List<Candidate> candidates(ServiceRow s, long cityId, double lat, double lng, UUID customerId, UUID requestId,
                                        int limit) {
+        return pool(QueryConstants.GET_INSTANT_CANDIDATES, s, cityId, lat, lng, customerId, requestId)
+            .param("limit", limit).query(Candidate.class).list();
+    }
+
+    /** How many Genies pass each condition, to say why nobody was found. */
+    private Funnel funnel(ServiceRow s, long cityId, double lat, double lng, UUID customerId, UUID requestId) {
+        return pool(QueryConstants.GET_INSTANT_FUNNEL, s, cityId, lat, lng, customerId, requestId).query(Funnel.class).single();
+    }
+
+    private JdbcClient.StatementSpec pool(String key, ServiceRow s, long cityId, double lat, double lng, UUID customerId,
+                                          UUID requestId) {
         Instant now = clock.instant();
         ZonedDateTime local = now.atZone(zone);
-        LocalTime timeNow = local.toLocalTime();
-        LocalTime timeEnd = timeNow.plus(props.arrivalWindow()).plusMinutes(s.durationMinutes());
-        if (timeEnd.isBefore(timeNow)) {
-            return List.of(); // the job would run past midnight: outside anyone's working hours
-        }
-        return jdbc.sql(QueryUtil.get(QueryConstants.GET_INSTANT_CANDIDATES))
+        return jdbc.sql(QueryUtil.get(key))
             .param("serviceId", s.id()).param("cityId", cityId).param("lat", lat).param("lng", lng)
             .param("customerId", customerId).param("requestId", requestId)
             .param("now", Times.odt(now)).param("fresh", Times.odt(now.minus(props.positionMaxAge())))
             .param("busyUntil", Times.odt(now.plus(props.busyWindow())))
-            .param("dow", local.getDayOfWeek().getValue()).param("timeNow", timeNow).param("timeEnd", timeEnd)
-            .param("limit", limit)
-            .query(Candidate.class).list();
+            .param("arrivalMinutes", (int) props.arrivalWindow().toMinutes())
+            .param("dow", local.getDayOfWeek().getValue()).param("timeNow", local.toLocalTime().withNano(0));
     }
 
     // ------------------------------------------------------------------ helpers
@@ -407,7 +459,13 @@ public class InstantBookings {
     private InstantQuoteDto quote(ServiceRow s, boolean available, @Nullable String code, @Nullable String reason, int count,
                                   @Nullable BigDecimal from, @Nullable BigDecimal to, BigDecimal fee) {
         return new InstantQuoteDto(available, code, reason, s.id(), s.name(), s.durationMinutes(), count, from, to, fee,
-            (int) props.arrivalWindow().toMinutes(), (int) props.offerTimeout().toSeconds(), props.maxGenies());
+            (int) props.arrivalWindow().toMinutes(), (int) props.offerTimeout().toSeconds(), props.maxGenies(), null);
+    }
+
+    private static InstantQuoteDto withReason(InstantQuoteDto q, Reason why) {
+        return new InstantQuoteDto(q.available(), q.reasonCode(), q.reason(), q.serviceId(), q.serviceName(),
+            q.durationMinutes(), q.genieCount(), q.priceFrom(), q.priceTo(), q.instantFee(), q.arrivalMinutes(),
+            q.offerSeconds(), q.maxGenies(), why.name());
     }
 
     private ServiceRow service(long id) {
@@ -438,13 +496,14 @@ public class InstantBookings {
     private InstantRequestDto toDto(RequestView v) {
         String message = switch (v.status()) {
             case "BOOKED" -> "A Genie accepted. They will arrive within about " + props.arrivalWindow().toMinutes() + " minutes.";
-            case "NO_GENIE" -> "No Genie is free right now. Book a time slot instead.";
+            case "NO_GENIE" -> (v.noGenieReason() == null ? "No Genie is free right now."
+                : Reason.valueOf(v.noGenieReason()).text) + " Book a time slot instead.";
             case "CANCELLED" -> "You stopped the search.";
             default -> v.geniesAsked() == 0 ? "Looking for a Genie near you…"
                 : "Asking Genie " + v.geniesAsked() + " of " + props.maxGenies() + "…";
         };
         return new InstantRequestDto(v.id(), v.status(), v.serviceId(), v.serviceName(), v.createdAt(), v.endedAt(),
-            v.geniesAsked(), props.maxGenies(), v.offerExpiresAt(), v.bookingId(), message);
+            v.geniesAsked(), props.maxGenies(), v.offerExpiresAt(), v.bookingId(), message, v.noGenieReason());
     }
 
     private static ApiException notFound() {

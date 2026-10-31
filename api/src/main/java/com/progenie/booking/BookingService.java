@@ -160,12 +160,12 @@ public class BookingService {
     /** What a Genie Now booking is made from (Phase 3C-9): the customer's request and the accepting Genie. */
     record InstantOrder(UUID requestId, UUID customerId, UUID genieId, long serviceId, long cityId, UUID addressId,
                         double lat, double lng, PaymentMethod paymentMethod, BigDecimal tipAmount, String notes,
-                        String couponCode, Duration arrivalWindow) {
+                        String couponCode, Duration travel) {
     }
 
     /**
      * Genie Now (Phase 3C-9): the booking for an accepted instant offer, created already ACCEPTED. The time it blocks
-     * is now → now + arrival window + the job's duration (the candidate search already skipped Genies with anything
+     * is now → now + the Genie's estimated travel time (Phase 3D; at most the arrival window) + the job's duration (the candidate search already skipped Genies with anything
      * booked in the next 2 hours). The price is this Genie's, plus the city's instant fee. A coupon that stopped
      * applying since the search started is left out rather than failing the booking.
      */
@@ -176,7 +176,7 @@ public class BookingService {
         Booking.Price price = new Booking.Price(quote.serviceAmount(), quote.distanceKm(), quote.travelFee(),
             quote.tipAmount(), quote.commissionRate(), quote.commissionAmount());
         Instant now = clock.instant();
-        Instant end = now.plus(o.arrivalWindow()).plus(Duration.ofMinutes(offer.durationMinutes()));
+        Instant end = now.plus(o.travel()).plus(Duration.ofMinutes(offer.durationMinutes()));
         Booking booking = Booking.request(nextBookingRef(now), o.customerId(), o.genieId(), o.serviceId(), o.cityId(),
             o.addressId(), now, end, now.plus(Duration.ofMinutes(5)), price, o.paymentMethod(),
             StringUtils.hasText(o.notes()) ? o.notes().trim() : null, null);

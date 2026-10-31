@@ -9,6 +9,7 @@ export interface InstantRequestDto {
   id: string;
   maxGenies: number;
   message: string;
+  noGenieReason: (string | null);
   offerExpiresAt: (string | null);
   serviceId: number;
   serviceName: string;

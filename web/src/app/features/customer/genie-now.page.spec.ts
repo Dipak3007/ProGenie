@@ -11,12 +11,12 @@ import GenieNowPage from './genie-now.page';
 
 const quote = (extra: Partial<InstantQuote> = {}): InstantQuote => ({
   available: true, reasonCode: null, reason: null, serviceId: 3, serviceName: 'Fan installation', durationMinutes: 45,
-  genieCount: 2, priceFrom: 349, priceTo: 420, instantFee: 25, arrivalMinutes: 60, offerSeconds: 45, maxGenies: 5, ...extra,
+  genieCount: 2, priceFrom: 349, priceTo: 420, instantFee: 25, arrivalMinutes: 60, offerSeconds: 45, maxGenies: 5, noGenieReason: null, ...extra,
 });
 const request = (status: InstantRequest['status'], extra: Partial<InstantRequest> = {}): InstantRequest => ({
   id: 'q1', status, serviceId: 3, serviceName: 'Fan installation', createdAt: new Date().toISOString(), endedAt: null,
   geniesAsked: 1, maxGenies: 5, offerExpiresAt: new Date(Date.now() + 30_000).toISOString(), bookingId: null,
-  message: status === 'NO_GENIE' ? 'No Genie is free right now. Book a time slot instead.' : 'Asking Genie 1 of 5…', ...extra,
+  message: status === 'NO_GENIE' ? 'No Genie is free right now. Book a time slot instead.' : 'Asking Genie 1 of 5…', noGenieReason: null, ...extra,
 });
 const settle = () => new Promise((r) => setTimeout(r, 30));
 

@@ -6,6 +6,8 @@ import com.progenie.catalog.CatalogDtos.AreaDto;
 import com.progenie.catalog.CatalogDtos.CityDto;
 import com.progenie.catalog.CatalogDtos.LocationCheckDto;
 import com.progenie.catalog.CatalogDtos.PincodeCheckDto;
+import com.progenie.demand.DemandRecorder;
+import jakarta.servlet.http.HttpServletRequest;
 import jakarta.validation.constraints.DecimalMax;
 import jakarta.validation.constraints.DecimalMin;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -20,22 +22,33 @@ import org.springframework.web.bind.annotation.RestController;
 public class ServiceabilityController {
 
     private final ServiceabilityService serviceability;
+    private final DemandRecorder demand;
 
-    public ServiceabilityController(ServiceabilityService serviceability) {
+    public ServiceabilityController(ServiceabilityService serviceability, DemandRecorder demand) {
         this.serviceability = serviceability;
+        this.demand = demand;
     }
 
-    /** Example: GET /api/v1/serviceability?pincode=380009 */
+    /** Example: GET /api/v1/serviceability?pincode=380009. An unserved PIN code counts as unmet demand (3D). */
     @GetMapping("/serviceability")
-    public PincodeCheckDto pincode(@RequestParam String pincode) {
-        return serviceability.checkPincode(pincode);
+    public PincodeCheckDto pincode(@RequestParam String pincode, HttpServletRequest request) {
+        PincodeCheckDto answer = serviceability.checkPincode(pincode);
+        if (!answer.serviceable()) {
+            demand.record(DemandRecorder.Event.pincode(answer.pincode()), DemandRecorder.who(request));
+        }
+        return answer;
     }
 
     /** Example: GET /api/v1/serviceability/location?lat=23.03&lng=72.56 */
     @GetMapping("/serviceability/location")
     public LocationCheckDto location(@RequestParam @DecimalMin("-90") @DecimalMax("90") double lat,
-                                     @RequestParam @DecimalMin("-180") @DecimalMax("180") double lng) {
-        return serviceability.checkLocation(lat, lng);
+                                     @RequestParam @DecimalMin("-180") @DecimalMax("180") double lng,
+                                     HttpServletRequest request) {
+        LocationCheckDto answer = serviceability.checkLocation(lat, lng);
+        if (answer.inIndia() && !answer.serviceable()) {   // a place in India outside every live city: unmet demand
+            demand.record(DemandRecorder.Event.location(lat, lng), DemandRecorder.who(request));
+        }
+        return answer;
     }
 
     @GetMapping("/cities/{slug}")

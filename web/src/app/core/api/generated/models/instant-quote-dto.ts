@@ -8,6 +8,7 @@ export interface InstantQuoteDto {
   genieCount: number;
   instantFee: number;
   maxGenies: number;
+  noGenieReason: (string | null);
   offerSeconds: number;
   priceFrom: (number | null);
   priceTo: (number | null);

@@ -18,6 +18,8 @@ import {
   CouponRedemption,
   CouponRequest,
   Decision,
+  DemandLayer,
+  DemandMap,
   FileLink,
   LegalDocument,
   LegalDraftRequest,
@@ -205,5 +207,15 @@ export class AdminApi {
 
   publishLegal(id: string): Observable<LegalDocument> {
     return this.http.post<LegalDocument>(`${this.base}/legal/${id}/publish`, {});
+  }
+
+  /** Demand heatmap (Phase 3D): bookings or unmet demand by PIN code. */
+  demand(f: { layer: DemandLayer; days: number; cityId: number | null; categoryId: number | null; weekday: number | null; hour: number | null }): Observable<DemandMap> {
+    const params: Record<string, string | number> = { layer: f.layer, days: f.days };
+    if (f.cityId) params['cityId'] = f.cityId;
+    if (f.categoryId) params['categoryId'] = f.categoryId;
+    if (f.weekday) params['weekday'] = f.weekday;
+    if (f.hour !== null) params['hour'] = f.hour;
+    return this.http.get<DemandMap>(`${this.base}/demand`, { params });
   }
 }

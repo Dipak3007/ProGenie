@@ -13,4 +13,5 @@ export interface InstantOfferDto {
   paymentMethod: string;
   requestId: string;
   serviceName: string;
+  travelMinutes: (number | null);
 }

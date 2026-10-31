@@ -35,6 +35,17 @@ public final class QueryConstants {
     public static final String GET_ANALYTICS_RESPONSE_STATS = "get.analytics.response-stats";
     public static final String GET_ANALYTICS_TOP_CATEGORIES = "get.analytics.top-categories";
     public static final String GET_ANALYTICS_TOP_GENIES = "get.analytics.top-genies";
+    public static final String INSERT_DEMAND_EVENT = "insert.demand.event";
+    public static final String INSERT_DEMAND_NO_GENIE_LISTED = "insert.demand.no-genie-listed";
+    public static final String FRAGMENT_DEMAND_BOOKING_BASE = "fragment.demand.booking-base";
+    public static final String FRAGMENT_DEMAND_UNMET_BASE = "fragment.demand.unmet-base";
+    public static final String FRAGMENT_DEMAND_WHEN_FILTER = "fragment.demand.when-filter";
+    public static final String GET_DEMAND_BOOKING_CELLS = "get.demand.booking-cells";
+    public static final String GET_DEMAND_UNMET_CELLS = "get.demand.unmet-cells";
+    public static final String GET_DEMAND_BOOKING_SUMMARY = "get.demand.booking-summary";
+    public static final String GET_DEMAND_UNMET_SUMMARY = "get.demand.unmet-summary";
+    public static final String GET_DEMAND_BOOKING_TIMES = "get.demand.booking-times";
+    public static final String GET_DEMAND_UNMET_TIMES = "get.demand.unmet-times";
 
     // ------------------------------------------------------------------ Bookings
 
@@ -96,6 +107,8 @@ public final class QueryConstants {
     public static final String FRAGMENT_INSTANT_OFFER_VIEW_SELECT = "fragment.instant.offer-view-select";
     public static final String GET_INSTANT_OFFER_VIEW = "get.instant.offer-view";
     public static final String GET_INSTANT_GENIE_OPEN_OFFERS = "get.instant.genie-open-offers";
+    public static final String FRAGMENT_INSTANT_POOL = "fragment.instant.pool";
+    public static final String GET_INSTANT_FUNNEL = "get.instant.funnel";
 
     // ------------------------------------------------------------------ Catalog and city pricing
 

@@ -88,6 +88,8 @@ import type {
   TicketSummary,
   TimeOffDto,
   InstantOfferDto,
+  DemandCell,
+  DemandMapDto,
   InstantQuoteDto,
   InstantRequestDto,
   TrackingDto,
@@ -205,6 +207,11 @@ export type BookingDetail = BookingDetailDto;
 export type InstantQuote = InstantQuoteDto;
 export type InstantRequest = InstantRequestDto;
 export type InstantOffer = InstantOfferDto;
+/** Admin demand heatmap (Phase 3D). */
+export type DemandMap = DemandMapDto;
+export type { DemandCell };
+export type DemandLayer = 'BOOKINGS' | 'UNMET';
+
 export type InstantStatus = 'SEARCHING' | 'BOOKED' | 'NO_GENIE' | 'CANCELLED';
 
 /** Live "on the way" map: the Genie's latest position, distance and arrival estimate (Phase 3C-10). */

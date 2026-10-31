@@ -16,6 +16,7 @@ import {
   LucideUser as User,
   LucideUserX as UserX,
   LucideUsers as Users,
+  LucideMap as MapIcon,
 } from '@lucide/angular';
 
 import { API } from '../../core/api/api';
@@ -69,6 +70,7 @@ export default class AdminConsolePage {
     { path: '/admin', label: 'Overview', icon: LayoutDashboard, exact: true },
     { path: '/admin/genies', label: 'Genies', icon: ShieldCheck, badge: this.counts.pending() },
     { path: '/admin/bookings', label: 'Bookings', icon: CalendarDays },
+    { path: '/admin/demand', label: 'Demand map', icon: MapIcon },
     { path: '/admin/tickets', label: 'Complaints', icon: LifeBuoy, badge: this.counts.tickets() },
     { path: '/admin/users', label: 'Users', icon: Users },
     { path: '/admin/catalog', label: 'Catalog & pricing', icon: Store },

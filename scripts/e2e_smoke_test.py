@@ -598,6 +598,8 @@ def main():
     phase3c(anon, customer, genie, admin, {"genie_id": genie_id, "service_id": service_id, "address_id": address_id})
     phase3c9(anon, customer, genie, admin, {"genie_id": genie_id, "service_id": service_id, "address_id": address_id,
                                              "other_genies": [newbie]})
+    phase3d(anon, customer, genie, admin, {"genie_id": genie_id, "service_id": service_id, "address_id": address_id,
+                                           "other_genies": [newbie]})
 
     customer.delete(f"/api/v1/me/favourites/{genie_id}")
     customer.delete(f"/api/v1/me/addresses/{address_id}")
@@ -1387,6 +1389,120 @@ def phase3c9(anon, customer, genie, admin, ctx):
 
     genie.put("/api/v1/genie/availability", {"windows": saved_windows})
     admin.put(f"/api/v1/admin/cities/{city['cityId']}/pricing", {**pricing, "instantFee": 0})
+
+
+# ====================================================================== Phase 3D + the Phase 3 exit gate
+
+def phase3d(anon, customer, genie, admin, ctx):
+    genie_id, service_id, address_id = ctx["genie_id"], ctx["service_id"], ctx["address_id"]
+    section("Phase 3D: unmet demand and why Genie Now found nobody")
+    _, before = admin.get("/api/v1/admin/demand?layer=UNMET&days=7")
+    customer.get("/api/v1/serviceability?pincode=400001")
+    customer.get("/api/v1/serviceability?pincode=400001")          # the same person again: counted once
+    customer.get("/api/v1/serviceability/location?lat=21.1702&lng=72.8311")   # Surat: no live city yet
+    s, after = admin.get("/api/v1/admin/demand?layer=UNMET&days=7")
+    kinds_before, kinds_after = before.get("byKind", {}), after.get("byKind", {})
+    check(s == 200 and kinds_after.get("PINCODE_UNSERVED", 0) == kinds_before.get("PINCODE_UNSERVED", 0) + 1,
+          "an unserved PIN code counts once per person", (kinds_before, kinds_after))
+    check(kinds_after.get("LOCATION_UNSERVED", 0) == kinds_before.get("LOCATION_UNSERVED", 0) + 1
+          and any(c["lat"] and abs(c["lat"] - 21.17) < 0.01 for c in after["cells"]),
+          "a map pin outside our cities is on the unmet-demand map", None)
+    check(any(c["pincode"] == "400001" and c["lat"] is None for c in after["cells"]),
+          "an unserved PIN code is listed (not drawn: we don't know its centre)", None)
+    s, body = admin.get("/api/v1/admin/demand?days=10")
+    check(s == 400 and code_of(body) == "INVALID_PERIOD", "periods are 7, 30 or 90 days", body)
+    s, _ = customer.get("/api/v1/admin/demand")
+    check(s == 403, "only admins see the demand map", s)
+
+    ist_now = dt.datetime.now(dt.timezone.utc) + dt.timedelta(hours=5, minutes=30)
+    if ist_now.hour * 60 + ist_now.minute > 22 * 60:
+        print("  (exit gate skipped: after 22:00 in India no Genie Now job fits in a working day)")
+        return
+    _, me = genie.get("/api/v1/genie/profile")
+    saved_windows = me["availability"]
+    genie.put("/api/v1/genie/availability", {"windows": [{"dayOfWeek": d, "startTime": "00:00", "endTime": "23:45"}
+                                                         for d in range(1, 8)]})
+    soon = (dt.datetime.now(dt.timezone.utc) + dt.timedelta(hours=4)).isoformat()
+    _, page = genie.get("/api/v1/genie/bookings?scope=ALL&size=100")
+    for b in page["items"]:
+        if b["status"] in ("REQUESTED", "ACCEPTED", "ON_THE_WAY", "IN_PROGRESS") and b["slotStart"] < soon:
+            admin.post(f"/api/v1/admin/bookings/{b['id']}/cancel", {"reason": "smoke: free the Genie", "waiveFee": True})
+    _, mine = customer.get("/api/v1/bookings?scope=ALL&size=100")
+    for b in mine["items"]:
+        if b.get("cancellationFeeStatus") == "DUE":
+            admin.post(f"/api/v1/admin/bookings/{b['id']}/waive-fee")
+    for other in ctx["other_genies"]:
+        other.post("/api/v1/genie/status", {"online": False})
+    q = f"/api/v1/instant/quote?serviceId={service_id}&addressId={address_id}"
+    genie.post("/api/v1/genie/status", {"online": False})
+    s, quote = customer.get(q)
+    check(not quote["available"] and quote["noGenieReason"] == "NONE_ONLINE" and "online" in quote["reason"],
+          "Genie Now says why nobody was found (nobody online)", quote.get("noGenieReason"))
+    genie.post("/api/v1/genie/status", {"online": True})
+
+    section("Phase 3 exit gate: Genie Now + coupon, map, photos, statement, heatmap, error ID")
+    code = f"GATE{RUN}".upper()
+    admin.post("/api/v1/admin/coupons", {"code": code, "title": "Rs 25 off", "discountType": "FLAT", "discountValue": 25,
+                                         "scope": "ALL", "listed": False})
+    _, heat0 = admin.get("/api/v1/admin/demand?layer=BOOKINGS&days=7")
+    s, search = customer.post("/api/v1/instant/requests", {"serviceId": service_id, "addressId": address_id,
+                                                           "paymentMethod": "CASH", "tipAmount": 0, "couponCode": code})
+    s2, offers = genie.get("/api/v1/genie/instant-offers")
+    ok = s == 201 and search["status"] == "SEARCHING" and len(offers) == 1 and offers[0]["travelMinutes"]
+    check(ok, "1. the customer books with Genie Now using a coupon; the nearest Genie gets the offer with a travel estimate",
+          (search, offers))
+    if not ok:
+        genie.put("/api/v1/genie/availability", {"windows": saved_windows})
+        return
+    s, booking = genie.post(f"/api/v1/genie/instant-offers/{offers[0]['id']}/accept")
+    bid = booking["id"]
+    check(s == 200 and booking["instant"] and float(booking["discountAmount"]) == 25.0,
+          "   the Genie accepts: a Genie Now booking with the coupon", booking.get("discountAmount"))
+    jobs = f"/api/v1/genie/bookings/{bid}"
+    genie.post(jobs + "/travel")
+    genie.put(jobs + "/location", {"lat": 23.0300, "lng": 72.5200, "accuracyM": 10})
+    s, track = customer.get(f"/api/v1/bookings/{bid}/tracking")
+    check(track["active"] and track["lat"] == 23.03 and track["etaMinutes"] is not None,
+          "2. the customer watches the Genie arrive on the map", (track.get("lat"), track.get("etaMinutes")))
+    jpeg = b"\xff\xd8\xff\xe0" + b"\x00" * 64
+
+    def upload(stage):
+        data, ctype = multipart({}, "file", "photo.jpg", jpeg, "image/jpeg")
+        return genie.post(f"{jobs}/photos?stage={stage}", raw=data, content_type=ctype)
+
+    _, sc = customer.post(f"/api/v1/bookings/{bid}/start-code")
+    genie.post(jobs + "/start", {"code": sc["code"]})
+    s1, _ = upload("BEFORE")
+    s2, _ = upload("AFTER")
+    s, done = genie.post(jobs + "/complete", {"cashCollected": True})
+    s3, seen = customer.get(f"/api/v1/bookings/{bid}")
+    stages = sorted(p["stage"] for p in seen.get("photos", []))
+    check(s1 == 201 and s2 == 201 and done["status"] == "COMPLETED" and stages == ["AFTER", "BEFORE"],
+          "3. the job is completed with before/after photos the customer can see", (s1, s2, stages))
+    month = ist_now.strftime("%Y-%m")
+    s, csv = genie.get(f"/api/v1/genie/statements?month={month}&format=csv")
+    text = csv.decode("utf-8") if isinstance(csv, bytes) else ""
+    check(s == 200 and booking["bookingRef"] in text, "4. the Genie's monthly statement includes the job", booking["bookingRef"])
+    _, heat1 = admin.get("/api/v1/admin/demand?layer=BOOKINGS&days=7")
+    _, addr = customer.get("/api/v1/me/addresses")
+    pin = next(a["pincode"] for a in addr if a["id"] == address_id)
+    count = lambda h: next((c["count"] for c in h["cells"] if c["pincode"] == pin), 0)
+    check(heat1["total"] == heat0["total"] + 1 and count(heat1) == count(heat0) + 1 and
+          next(c for c in heat1["cells"] if c["pincode"] == pin)["lat"] is not None,
+          f"5. the admin heatmap shows the booking at PIN code {pin}", (count(heat0), count(heat1)))
+    s, h, raw = raw_get("/api/v1/bookings/not-a-booking", {"Authorization": "Bearer " + customer.token})
+    err = json.loads(raw or b"{}").get("errorId") if raw else None
+    log_file = os.environ.get("PROGENIE_API_LOG")
+    found = None
+    if err and log_file and os.path.exists(log_file):
+        time.sleep(0.5)
+        found = err in open(log_file, encoding="utf-8", errors="replace").read()
+    check(s == 400 and err and (found is None or found),
+          "6. an error reply shows an error ID" + (" that is found in the API log" if found else
+                                                   " (set PROGENIE_API_LOG=<api log file> to also check the log)"),
+          (s, err, found))
+
+    genie.put("/api/v1/genie/availability", {"windows": saved_windows})
 
 if __name__ == "__main__":
     print(f"ProGenie API smoke test against {BASE} (run {RUN})")

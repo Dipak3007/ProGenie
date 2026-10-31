@@ -1114,6 +1114,87 @@
         ]
       }
     },
+    "/api/v1/admin/demand": {
+      "get": {
+        "operationId": "adminDemandMap",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "layer",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "default": "BOOKINGS",
+              "enum": [
+                "BOOKINGS",
+                "UNMET"
+              ]
+            }
+          },
+          {
+            "in": "query",
+            "name": "days",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "format": "int32",
+              "default": 30
+            }
+          },
+          {
+            "in": "query",
+            "name": "cityId",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "format": "int64"
+            }
+          },
+          {
+            "in": "query",
+            "name": "categoryId",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "format": "int64"
+            }
+          },
+          {
+            "in": "query",
+            "name": "weekday",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "format": "int32"
+            }
+          },
+          {
+            "in": "query",
+            "name": "hour",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "format": "int32"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "*/*": {
+                "schema": {
+                  "$ref": "#/components/schemas/DemandMapDto"
+                }
+              }
+            },
+            "description": "OK"
+          }
+        },
+        "tags": [
+          "admin-demand-controller"
+        ]
+      }
+    },
     "/api/v1/admin/genie-documents/{docId}/file": {
       "get": {
         "operationId": "adminGenieDocumentFile",
@@ -9039,6 +9120,130 @@
           "status"
         ]
       },
+      "DemandCell": {
+        "type": "object",
+        "properties": {
+          "area": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "count": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "key": {
+            "type": "string"
+          },
+          "kinds": {
+            "type": "object",
+            "additionalProperties": {
+              "type": "integer",
+              "format": "int32"
+            }
+          },
+          "lat": {
+            "type": [
+              "number",
+              "null"
+            ],
+            "format": "double"
+          },
+          "lng": {
+            "type": [
+              "number",
+              "null"
+            ],
+            "format": "double"
+          },
+          "pincode": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        },
+        "required": [
+          "area",
+          "count",
+          "key",
+          "kinds",
+          "lat",
+          "lng",
+          "pincode"
+        ]
+      },
+      "DemandMapDto": {
+        "type": "object",
+        "properties": {
+          "byHour": {
+            "type": "array",
+            "items": {
+              "type": "integer",
+              "format": "int32"
+            }
+          },
+          "byKind": {
+            "type": "object",
+            "additionalProperties": {
+              "type": "integer",
+              "format": "int32"
+            }
+          },
+          "byReason": {
+            "type": "object",
+            "additionalProperties": {
+              "type": "integer",
+              "format": "int32"
+            }
+          },
+          "byWeekday": {
+            "type": "array",
+            "items": {
+              "type": "integer",
+              "format": "int32"
+            }
+          },
+          "cells": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/DemandCell"
+            }
+          },
+          "days": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "from": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "layer": {
+            "type": "string"
+          },
+          "total": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "unplaced": {
+            "type": "integer",
+            "format": "int32"
+          }
+        },
+        "required": [
+          "byHour",
+          "byKind",
+          "byReason",
+          "byWeekday",
+          "cells",
+          "days",
+          "from",
+          "layer",
+          "total",
+          "unplaced"
+        ]
+      },
       "DocumentReviewRequest": {
         "type": "object",
         "properties": {
@@ -9522,6 +9727,13 @@
           },
           "serviceName": {
             "type": "string"
+          },
+          "travelMinutes": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int32"
           }
         },
         "required": [
@@ -9535,7 +9747,8 @@
           "notes",
           "paymentMethod",
           "requestId",
-          "serviceName"
+          "serviceName",
+          "travelMinutes"
         ]
       },
       "InstantQuoteDto": {
@@ -9562,6 +9775,12 @@
           "maxGenies": {
             "type": "integer",
             "format": "int32"
+          },
+          "noGenieReason": {
+            "type": [
+              "string",
+              "null"
+            ]
           },
           "offerSeconds": {
             "type": "integer",
@@ -9606,6 +9825,7 @@
           "genieCount",
           "instantFee",
           "maxGenies",
+          "noGenieReason",
           "offerSeconds",
           "priceFrom",
           "priceTo",
@@ -9700,6 +9920,12 @@
           "message": {
             "type": "string"
           },
+          "noGenieReason": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
           "offerExpiresAt": {
             "type": [
               "string",
@@ -9726,6 +9952,7 @@
           "id",
           "maxGenies",
           "message",
+          "noGenieReason",
           "offerExpiresAt",
           "serviceId",
           "serviceName",

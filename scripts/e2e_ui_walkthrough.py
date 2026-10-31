@@ -602,6 +602,21 @@ with sync_playwright() as p:
         ok(has(ap, coupon_code) and has(ap, "₹25 off"), "the new coupon is listed with its discount")
         shot(ap, "desktop-admin-coupons")
 
+        # ------------------------------------------------------------ Phase 3D: demand heatmap
+        print("ADMIN demand map")
+        ap.goto(BASE + "/admin/demand"); settle(ap)
+        ap.wait_for_selector("[data-testid=demand-top] li", timeout=10000)
+        total = ap.locator("[data-testid=demand-total]").inner_text()
+        ok(re.search(r"[1-9]\d* bookings", total) is not None, f"the demand map counts this period's bookings ({total.strip()})")
+        ok(re.search(r"\d{6}", ap.locator("[data-testid=demand-top]").inner_text()) is not None, "top places are listed by PIN code")
+        ap.wait_for_function("document.querySelectorAll('.leaflet-heatmap-layer, canvas.leaflet-heatmap-layer').length > 0", timeout=10000)
+        ok(ap.locator("canvas.leaflet-heatmap-layer").count() == 1, "bookings are drawn as a heat layer")
+        shot(ap, "desktop-admin-demand-bookings")
+        ap.get_by_role("radio", name="Unmet demand").click(); ap.wait_for_timeout(1500)
+        ok(has(ap, "What people couldn") and has(ap, "PIN code we don"), "the unmet layer shows the unserved PIN code typed in the address form")
+        overflow(ap, "admin demand map")
+        shot(ap, "desktop-admin-demand-unmet")
+
         print("ADMIN complaint → split partial refund")
         ap.goto(BASE + "/admin/tickets"); settle(ap)
         ok(has(ap, "One fan wobbles"), "the report is in the admin complaints queue")
@@ -735,7 +750,7 @@ with sync_playwright() as p:
         tctx = browser.new_context(viewport={"width": 768, "height": 1024}, **IN)
         tp = tctx.new_page(); watch(tp, "tablet-admin")
         login(tp, "admin@progenie.in")
-        for path in ["/admin", "/admin/genies", "/admin/bookings", "/admin/users", "/admin/catalog", "/admin/finance", "/admin/coupons", "/admin/inbox",
+        for path in ["/admin", "/admin/genies", "/admin/bookings", "/admin/users", "/admin/catalog", "/admin/finance", "/admin/coupons", "/admin/demand", "/admin/inbox",
                      "/admin/tickets", f"/admin/tickets/{ticket_id}", f"/admin/bookings/{booking_id}", "/admin/messages", "/admin/legal",
                      "/admin/legal/privacy", "/admin/deletions", "/admin/settings"]:
             tp.goto(BASE + path); settle(tp); tp.wait_for_timeout(300)

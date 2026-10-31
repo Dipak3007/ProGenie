@@ -12,7 +12,7 @@ import { InstantOfferPanel } from './instant-offer-panel';
 
 const offer = (id: number, secondsLeft = 40): InstantOffer => ({
   id, requestId: 'r' + id, serviceName: 'Fan installation', durationMinutes: 45, area: 'Bodakdev', city: 'Ahmedabad',
-  distanceKm: 3.2, earning: 412.5, paymentMethod: 'CASH', expiresAt: new Date(Date.now() + secondsLeft * 1000).toISOString(), notes: null,
+  distanceKm: 3.2, travelMinutes: 19, earning: 412.5, paymentMethod: 'CASH', expiresAt: new Date(Date.now() + secondsLeft * 1000).toISOString(), notes: null,
 });
 
 describe('InstantOfferPanel', () => {
