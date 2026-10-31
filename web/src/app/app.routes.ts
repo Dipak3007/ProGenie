@@ -86,6 +86,7 @@ export const routes: Routes = [
       { path: 'users', title: 'Users · Admin', loadComponent: () => import('./features/admin-console/users.page') },
       { path: 'catalog', title: 'Catalog · Admin', loadComponent: () => import('./features/admin-console/catalog.page') },
       { path: 'finance', title: 'Finance · Admin', loadComponent: () => import('./features/admin-console/finance.page') },
+      { path: 'coupons', title: 'Coupons · Admin', loadComponent: () => import('./features/admin-console/coupons.page') },
       { path: 'inbox', title: 'Inbox · Admin', loadComponent: () => import('./features/admin-console/inbox.page') },
       { path: 'tickets', title: 'Complaints · Admin', loadComponent: () => import('./features/admin-console/tickets.page') },
       { path: 'tickets/:id', title: 'Complaint · Admin', loadComponent: () => import('./features/admin-console/ticket.page') },

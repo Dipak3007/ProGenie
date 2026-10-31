@@ -2,6 +2,7 @@ import { ChangeDetectionStrategy, Component, Injectable, computed, inject, signa
 import { HttpClient } from '@angular/common/http';
 import { RouterOutlet } from '@angular/router';
 import {
+  LucideBadgePercent as BadgePercent,
   LucideBanknote as Banknote,
   LucideCalendarDays as CalendarDays,
   LucideFileText as FileText,
@@ -72,6 +73,7 @@ export default class AdminConsolePage {
     { path: '/admin/users', label: 'Users', icon: Users },
     { path: '/admin/catalog', label: 'Catalog & pricing', icon: Store },
     { path: '/admin/finance', label: 'Finance', icon: Banknote },
+    { path: '/admin/coupons', label: 'Coupons', icon: BadgePercent },
     { path: '/admin/inbox', label: 'Inbox', icon: InboxIcon, badge: this.counts.messages() },
     { path: '/admin/messages', label: 'Messages', icon: Send, badge: this.counts.failed() },
     { path: '/admin/legal', label: 'Policies', icon: FileText },

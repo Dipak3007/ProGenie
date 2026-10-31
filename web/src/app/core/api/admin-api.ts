@@ -7,6 +7,7 @@ import { LEGAL_SLUG } from './account-api';
 import {
   AdminCategory,
   AdminCity,
+  AdminCoupon,
   AdminGenieDetail,
   AdminPincode,
   AdminService,
@@ -14,11 +15,14 @@ import {
   CategoryRequest,
   CityRequest,
   ContactMessage,
+  CouponRedemption,
+  CouponRequest,
   Decision,
   FileLink,
   LegalDocument,
   LegalDraftRequest,
   LegalKind,
+  Page,
   Payout,
   PincodeRequest,
   PricingRequest,
@@ -51,6 +55,30 @@ export class AdminApi {
 
   documentLink(docId: string): Observable<FileLink> {
     return this.http.get<FileLink>(`${this.base}/genie-documents/${docId}/link`);
+  }
+
+  // --- coupons (Phase 3B)
+  coupons(status?: string, q?: string): Observable<AdminCoupon[]> {
+    const params: Record<string, string> = {};
+    if (status) params['status'] = status;
+    if (q) params['q'] = q;
+    return this.http.get<AdminCoupon[]>(`${this.base}/coupons`, { params });
+  }
+
+  createCoupon(body: CouponRequest): Observable<AdminCoupon> {
+    return this.http.post<AdminCoupon>(`${this.base}/coupons`, body);
+  }
+
+  updateCoupon(id: number, body: CouponRequest): Observable<AdminCoupon> {
+    return this.http.put<AdminCoupon>(`${this.base}/coupons/${id}`, body);
+  }
+
+  setCouponActive(id: number, active: boolean): Observable<AdminCoupon> {
+    return this.http.put<AdminCoupon>(`${this.base}/coupons/${id}/status`, { active });
+  }
+
+  couponRedemptions(id: number, page = 0): Observable<Page<CouponRedemption>> {
+    return this.http.get<Page<CouponRedemption>>(`${this.base}/coupons/${id}/redemptions`, { params: { page, size: 20 } });
   }
 
   /** A Genie's monthly earnings statement (month "2026-10") as a file to save. */

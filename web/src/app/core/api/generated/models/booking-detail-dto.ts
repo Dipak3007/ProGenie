@@ -20,8 +20,10 @@ export interface BookingDetailDto {
   categorySlug: string;
   commissionAmount: number;
   completedAt: (string | null);
+  couponCode: (string | null);
   createdAt: string;
   customer: PartyDto;
+  discountAmount: number;
   distanceKm: number;
   expiresAt: (string | null);
   extraAmount: number;

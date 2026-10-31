@@ -7,6 +7,7 @@ import {
   Address,
   AddressRequest,
   BookingDetail,
+  CouponOffer,
   CreateBookingRequest,
   Payment,
   PaymentOrder,
@@ -60,6 +61,17 @@ export class CustomerApi {
   }
 
   // --- bookings
+  // --- coupons (Phase 3B)
+  /** Public coupons for this checkout, each with its discount or why it can't be used. */
+  coupons(genieId: string, serviceId: number, addressId: string): Observable<CouponOffer[]> {
+    return this.http.get<CouponOffer[]>(`${API}/coupons`, { params: { genieId, serviceId, addressId } });
+  }
+
+  /** A typed code: the offer, or 404 COUPON_NOT_FOUND / 422 COUPON_* with the reason. */
+  checkCoupon(code: string, genieId: string, serviceId: number, addressId: string): Observable<CouponOffer> {
+    return this.http.post<CouponOffer>(`${API}/coupons/check`, { code, genieId, serviceId, addressId });
+  }
+
   createBooking(body: CreateBookingRequest, idempotencyKey: string): Observable<BookingDetail> {
     return this.http.post<BookingDetail>(`${API}/bookings`, body, { headers: { 'Idempotency-Key': idempotencyKey } });
   }

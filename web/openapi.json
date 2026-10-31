@@ -802,6 +802,237 @@
         ]
       }
     },
+    "/api/v1/admin/coupons": {
+      "get": {
+        "operationId": "adminCouponList",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "status",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "q",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "*/*": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/AdminCouponDto"
+                  }
+                }
+              }
+            },
+            "description": "OK"
+          }
+        },
+        "tags": [
+          "admin-coupon-controller"
+        ]
+      },
+      "post": {
+        "operationId": "adminCouponCreate",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CouponRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "*/*": {
+                "schema": {
+                  "$ref": "#/components/schemas/AdminCouponDto"
+                }
+              }
+            },
+            "description": "Created"
+          }
+        },
+        "tags": [
+          "admin-coupon-controller"
+        ]
+      }
+    },
+    "/api/v1/admin/coupons/{id}": {
+      "get": {
+        "operationId": "adminCouponGet",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "format": "int64"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "*/*": {
+                "schema": {
+                  "$ref": "#/components/schemas/AdminCouponDto"
+                }
+              }
+            },
+            "description": "OK"
+          }
+        },
+        "tags": [
+          "admin-coupon-controller"
+        ]
+      },
+      "put": {
+        "operationId": "adminCouponUpdate",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "format": "int64"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CouponRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "*/*": {
+                "schema": {
+                  "$ref": "#/components/schemas/AdminCouponDto"
+                }
+              }
+            },
+            "description": "OK"
+          }
+        },
+        "tags": [
+          "admin-coupon-controller"
+        ]
+      }
+    },
+    "/api/v1/admin/coupons/{id}/redemptions": {
+      "get": {
+        "operationId": "adminCouponRedemptions",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "format": "int64"
+            }
+          },
+          {
+            "in": "query",
+            "name": "page",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "format": "int32",
+              "default": 0
+            }
+          },
+          {
+            "in": "query",
+            "name": "size",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "format": "int32",
+              "default": 20
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "*/*": {
+                "schema": {
+                  "$ref": "#/components/schemas/PageResponseRedemptionDto"
+                }
+              }
+            },
+            "description": "OK"
+          }
+        },
+        "tags": [
+          "admin-coupon-controller"
+        ]
+      }
+    },
+    "/api/v1/admin/coupons/{id}/status": {
+      "put": {
+        "operationId": "adminCouponStatus",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "format": "int64"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/StatusRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "*/*": {
+                "schema": {
+                  "$ref": "#/components/schemas/AdminCouponDto"
+                }
+              }
+            },
+            "description": "OK"
+          }
+        },
+        "tags": [
+          "admin-coupon-controller"
+        ]
+      }
+    },
     "/api/v1/admin/deletion-requests": {
       "get": {
         "operationId": "privacyAdminList",
@@ -3052,6 +3283,88 @@
         },
         "tags": [
           "contact-controller"
+        ]
+      }
+    },
+    "/api/v1/coupons": {
+      "get": {
+        "operationId": "couponAvailable",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "genieId",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "in": "query",
+            "name": "serviceId",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "format": "int64"
+            }
+          },
+          {
+            "in": "query",
+            "name": "addressId",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "*/*": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/CouponOfferDto"
+                  }
+                }
+              }
+            },
+            "description": "OK"
+          }
+        },
+        "tags": [
+          "coupon-controller"
+        ]
+      }
+    },
+    "/api/v1/coupons/check": {
+      "post": {
+        "operationId": "couponCheck",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CheckRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "*/*": {
+                "schema": {
+                  "$ref": "#/components/schemas/CouponOfferDto"
+                }
+              }
+            },
+            "description": "OK"
+          }
+        },
+        "tags": [
+          "coupon-controller"
         ]
       }
     },
@@ -6482,6 +6795,163 @@
           "travelPerKm"
         ]
       },
+      "AdminCouponDto": {
+        "type": "object",
+        "properties": {
+          "categoryId": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int64"
+          },
+          "categoryName": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "cityId": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int64"
+          },
+          "cityName": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "code": {
+            "type": "string"
+          },
+          "createdAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "description": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "discountType": {
+            "type": "string"
+          },
+          "discountValue": {
+            "type": "number"
+          },
+          "firstBookingOnly": {
+            "type": "boolean"
+          },
+          "id": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "listed": {
+            "type": "boolean"
+          },
+          "maxDiscount": {
+            "type": [
+              "number",
+              "null"
+            ]
+          },
+          "minOrder": {
+            "type": "number"
+          },
+          "perCustomerLimit": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "released": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "scope": {
+            "type": "string"
+          },
+          "serviceId": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int64"
+          },
+          "serviceName": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "status": {
+            "type": "string"
+          },
+          "title": {
+            "type": "string"
+          },
+          "totalDiscount": {
+            "type": "number"
+          },
+          "totalLimit": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int32"
+          },
+          "updatedAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "uses": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "validFrom": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "validUntil": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date-time"
+          }
+        },
+        "required": [
+          "categoryId",
+          "categoryName",
+          "cityId",
+          "cityName",
+          "code",
+          "createdAt",
+          "description",
+          "discountType",
+          "discountValue",
+          "firstBookingOnly",
+          "id",
+          "listed",
+          "maxDiscount",
+          "minOrder",
+          "perCustomerLimit",
+          "released",
+          "scope",
+          "serviceId",
+          "serviceName",
+          "status",
+          "title",
+          "totalDiscount",
+          "totalLimit",
+          "updatedAt",
+          "uses",
+          "validFrom",
+          "validUntil"
+        ]
+      },
       "AdminGenieDetailDto": {
         "type": "object",
         "properties": {
@@ -6873,12 +7343,21 @@
             ],
             "format": "date-time"
           },
+          "couponCode": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
           "createdAt": {
             "type": "string",
             "format": "date-time"
           },
           "customer": {
             "$ref": "#/components/schemas/PartyDto"
+          },
+          "discountAmount": {
+            "type": "number"
           },
           "distanceKm": {
             "type": "number"
@@ -6993,8 +7472,10 @@
           "categorySlug",
           "commissionAmount",
           "completedAt",
+          "couponCode",
           "createdAt",
           "customer",
+          "discountAmount",
           "distanceKm",
           "expiresAt",
           "extraAmount",
@@ -7343,6 +7824,34 @@
           "newPassword"
         ]
       },
+      "CheckRequest": {
+        "type": "object",
+        "properties": {
+          "addressId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "code": {
+            "type": "string",
+            "maxLength": 30,
+            "minLength": 0
+          },
+          "genieId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "serviceId": {
+            "type": "integer",
+            "format": "int64"
+          }
+        },
+        "required": [
+          "addressId",
+          "code",
+          "genieId",
+          "serviceId"
+        ]
+      },
       "CityDto": {
         "type": "object",
         "properties": {
@@ -7669,12 +8178,222 @@
           "subject"
         ]
       },
+      "CouponOfferDto": {
+        "type": "object",
+        "properties": {
+          "applicable": {
+            "type": "boolean"
+          },
+          "code": {
+            "type": "string"
+          },
+          "description": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "discount": {
+            "type": "number"
+          },
+          "discountType": {
+            "type": "string"
+          },
+          "discountValue": {
+            "type": "number"
+          },
+          "firstBookingOnly": {
+            "type": "boolean"
+          },
+          "maxDiscount": {
+            "type": [
+              "number",
+              "null"
+            ]
+          },
+          "minOrder": {
+            "type": "number"
+          },
+          "reason": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "reasonCode": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "title": {
+            "type": "string"
+          },
+          "validUntil": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date-time"
+          }
+        },
+        "required": [
+          "applicable",
+          "code",
+          "description",
+          "discount",
+          "discountType",
+          "discountValue",
+          "firstBookingOnly",
+          "maxDiscount",
+          "minOrder",
+          "reason",
+          "reasonCode",
+          "title",
+          "validUntil"
+        ]
+      },
+      "CouponRequest": {
+        "type": "object",
+        "properties": {
+          "categoryId": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int64"
+          },
+          "cityId": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int64"
+          },
+          "code": {
+            "type": "string",
+            "minLength": 1,
+            "pattern": "^[A-Za-z0-9]{4,20}$"
+          },
+          "description": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "maxLength": 300,
+            "minLength": 0
+          },
+          "discountType": {
+            "type": "string",
+            "enum": [
+              "PERCENT",
+              "FLAT"
+            ]
+          },
+          "discountValue": {
+            "type": "number",
+            "minimum": 0.01
+          },
+          "firstBookingOnly": {
+            "type": [
+              "boolean",
+              "null"
+            ]
+          },
+          "listed": {
+            "type": [
+              "boolean",
+              "null"
+            ]
+          },
+          "maxDiscount": {
+            "type": [
+              "number",
+              "null"
+            ],
+            "minimum": 0.01
+          },
+          "minOrder": {
+            "type": [
+              "number",
+              "null"
+            ],
+            "minimum": 0
+          },
+          "perCustomerLimit": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int32",
+            "minimum": 1
+          },
+          "scope": {
+            "type": "string",
+            "enum": [
+              "ALL",
+              "CATEGORY",
+              "SERVICE",
+              "CITY"
+            ]
+          },
+          "serviceId": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int64"
+          },
+          "title": {
+            "type": "string",
+            "maxLength": 80,
+            "minLength": 0
+          },
+          "totalLimit": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int32",
+            "minimum": 1
+          },
+          "validFrom": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date-time"
+          },
+          "validUntil": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date-time"
+          }
+        },
+        "required": [
+          "code",
+          "discountType",
+          "discountValue",
+          "scope",
+          "title"
+        ]
+      },
       "CreateBookingRequest": {
         "type": "object",
         "properties": {
           "addressId": {
             "type": "string",
             "format": "uuid"
+          },
+          "couponCode": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "maxLength": 30,
+            "minLength": 0
           },
           "genieId": {
             "type": "string",
@@ -9479,6 +10198,35 @@
           "total"
         ]
       },
+      "PageResponseRedemptionDto": {
+        "type": "object",
+        "properties": {
+          "items": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/RedemptionDto"
+            }
+          },
+          "page": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "size": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "total": {
+            "type": "integer",
+            "format": "int64"
+          }
+        },
+        "required": [
+          "items",
+          "page",
+          "size",
+          "total"
+        ]
+      },
       "PageResponseReviewDto": {
         "type": "object",
         "properties": {
@@ -10288,6 +11036,56 @@
           "refundId"
         ]
       },
+      "RedemptionDto": {
+        "type": "object",
+        "properties": {
+          "bookingId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "bookingRef": {
+            "type": "string"
+          },
+          "bookingStatus": {
+            "type": "string"
+          },
+          "createdAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "customerName": {
+            "type": "string"
+          },
+          "discountAmount": {
+            "type": "number"
+          },
+          "id": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "releasedAt": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date-time"
+          },
+          "status": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "bookingId",
+          "bookingRef",
+          "bookingStatus",
+          "createdAt",
+          "customerName",
+          "discountAmount",
+          "id",
+          "releasedAt",
+          "status"
+        ]
+      },
       "RedoRequest": {
         "type": "object",
         "properties": {
@@ -10903,6 +11701,17 @@
         },
         "required": [
           "code"
+        ]
+      },
+      "StatusRequest": {
+        "type": "object",
+        "properties": {
+          "active": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "active"
         ]
       },
       "TicketDetail": {

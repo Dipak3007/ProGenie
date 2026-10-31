@@ -3,6 +3,7 @@
 
 export interface CreateBookingRequest {
   addressId: string;
+  couponCode?: (string | null);
   genieId: string;
   notes?: (string | null);
   paymentMethod: 'CASH' | 'ONLINE';

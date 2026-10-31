@@ -99,6 +99,12 @@ public class Booking {
     @Column(name = "genie_payout", nullable = false)
     private BigDecimal geniePayout;
 
+    @Column(name = "coupon_id", updatable = false)
+    private Long couponId;                 // Phase 3B: the coupon used, if any
+
+    @Column(name = "discount_amount", nullable = false)
+    private BigDecimal discountAmount = BigDecimal.ZERO.setScale(2);
+
     @Enumerated(EnumType.STRING)
     @Column(name = "payment_method", nullable = false)
     private PaymentMethod paymentMethod;
@@ -338,9 +344,24 @@ public class Booking {
         cancellationFeeStatus = FeeStatus.WAIVED;
     }
 
+    /**
+     * A coupon on a new booking: the customer pays {@code discount} less (ProGenie pays it to the Genie). The discount
+     * is on the service amount only, so it never exceeds it; commission and the Genie's payout don't change.
+     */
+    public void applyCoupon(long couponId, BigDecimal discount) {
+        if (this.couponId != null || status != BookingStatus.REQUESTED) {
+            throw invalid("apply a coupon to");
+        }
+        this.couponId = couponId;
+        this.discountAmount = discount.min(serviceAmount).setScale(2, RoundingMode.HALF_UP);
+        recalculate();
+    }
+
+    /** total = what the customer pays; geniePayout = what the Genie earns (the discount is paid by ProGenie). */
     private void recalculate() {
-        totalAmount = serviceAmount.add(extraAmount).add(travelFee).add(tipAmount).setScale(2, RoundingMode.HALF_UP);
-        geniePayout = totalAmount.subtract(commissionAmount);
+        BigDecimal gross = serviceAmount.add(extraAmount).add(travelFee).add(tipAmount).setScale(2, RoundingMode.HALF_UP);
+        totalAmount = gross.subtract(discountAmount);
+        geniePayout = gross.subtract(commissionAmount);
     }
 
     private void require(BookingStatus expected, String action) {
@@ -418,6 +439,14 @@ public class Booking {
 
     public BigDecimal getTotalAmount() {
         return totalAmount;
+    }
+
+    public Long getCouponId() {
+        return couponId;
+    }
+
+    public BigDecimal getDiscountAmount() {
+        return discountAmount;
     }
 
     public BigDecimal getGeniePayout() {

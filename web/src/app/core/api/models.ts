@@ -7,6 +7,7 @@ import type {
   AddressRequest,
   AddressView,
   AdminCategoryDto,
+  AdminCouponDto,
   AdminCityDto,
   AdminGenieDetailDto,
   AdminPincodeDto,
@@ -27,6 +28,8 @@ import type {
   CityDto,
   CityRequest,
   CompanyDto,
+  CouponOfferDto,
+  CouponRequest as CouponRequestDto,
   ConsentDto,
   ContactMessageDto,
   ContactRequest,
@@ -86,6 +89,7 @@ import type {
   TimeOffDto,
   UserDto,
   UserRowDto,
+  RedemptionDto,
   VerificationEventDto,
   VersionDto,
   WalletDto,
@@ -347,3 +351,10 @@ export interface ProblemDetail {
 }
 
 export type GenieSort = 'RATING' | 'PRICE' | 'EXPERIENCE';
+
+// --- coupons (Phase 3B)
+/** A coupon at checkout, with the discount it gives on this order or why it can't be used. */
+export type CouponOffer = CouponOfferDto;
+export type AdminCoupon = AdminCouponDto;
+export type CouponRequest = CouponRequestDto;
+export type CouponRedemption = RedemptionDto;

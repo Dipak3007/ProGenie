@@ -182,11 +182,17 @@ with sync_playwright() as p:
         summary_when = cp.locator("#summary").inner_text()
         ok(f"{chosen[0][:3].title()} {chosen[1]}" in summary_when, f"summary date matches the chosen day chip ({chosen[:2]})")
         cp.get_by_role("radio", name=re.compile("Pay online after the job")).click()
-        cp.get_by_role("button", name="₹50").click()
+        cp.get_by_role("button", name="₹50", exact=True).click()
         cp.fill("#notes", "Two ceiling fans. Ladder available.")
         cp.wait_for_timeout(700)
         body = cp.inner_text("body")
         ok("Total" in body and "Travel" in body, "live quote shows travel fee and total")
+        # Phase 3B: public coupons listed with why they don't apply to this customer/order; a typed code is checked
+        cp.wait_for_selector("pg-coupon-picker ul button", timeout=10000)
+        ok(has(cp, "WELCOME50") and has(cp, "first booking only"), "checkout lists public coupons and says why one can't be used")
+        cp.fill("#coupon-code", "genie100")
+        cp.locator("pg-coupon-picker form button[type=submit]").click()
+        ok(has(cp, "at least ₹399"), "a typed private code that doesn't fit the order is refused with the reason")
         overflow(cp, "phone checkout")
         shot(cp, "phone-checkout-full")
 
@@ -491,6 +497,19 @@ with sync_playwright() as p:
         ap.goto(BASE + "/admin/users"); settle(ap)
         ap.goto(BASE + "/admin/inbox"); settle(ap)
 
+        print("ADMIN creates a coupon")
+        coupon_code = "WALK" + str(int(time.time()))[-6:]
+        ap.goto(BASE + "/admin/coupons"); settle(ap)
+        ap.get_by_role("button", name="New coupon").click()
+        ap.fill("#cp-code", coupon_code.lower())
+        ap.fill("#cp-title", "Rs 25 off for testers")
+        ap.fill("#cp-value", "25")
+        shot(ap, "desktop-admin-coupon-dialog", full=False)
+        ap.locator("dialog[open] form button[type=submit]").click()
+        ok(has(ap, coupon_code + " created"), "admin creates a coupon from the Coupons page")
+        ok(has(ap, coupon_code) and has(ap, "₹25 off"), "the new coupon is listed with its discount")
+        shot(ap, "desktop-admin-coupons")
+
         print("ADMIN complaint → split partial refund")
         ap.goto(BASE + "/admin/tickets"); settle(ap)
         ok(has(ap, "One fan wobbles"), "the report is in the admin complaints queue")
@@ -531,6 +550,29 @@ with sync_playwright() as p:
         cp.goto(booking_url); settle(cp)
         ok(has(cp, "Partly refunded") and has(cp, "Credit note"), "booking shows the partial refund and credit note")
         shot(cp, "phone-booking-refunded")
+
+        print("CUSTOMER books with a coupon")
+        cp.goto(BASE + "/book/1af855e6-31a8-5caa-bffa-6f864b9644ff"); settle(cp)
+        cp.wait_for_selector("pg-slot-picker button[aria-pressed]", timeout=15000)
+        cp.locator("pg-slot-picker button[aria-pressed]").first.click()
+        cp.wait_for_selector(f"pg-coupon-picker ul button:has-text('{coupon_code}')", timeout=10000)
+        before = cp.locator("#summary dl").inner_text()
+        cp.locator(f"pg-coupon-picker ul button:has-text('{coupon_code}')").click()
+        ok(has(cp, coupon_code + " applied"), "tapping a public coupon applies it")
+        cp.wait_for_timeout(400)
+        summary = cp.locator("#summary dl").inner_text()
+        ok(("Coupon " + coupon_code) in summary and "Coupon" not in before, "the summary shows the coupon discount")
+        shot(cp, "phone-checkout-coupon", full=False)
+        cp.locator("div.sticky button.btn-gold").click()
+        cp.wait_for_url(re.compile(r"/account/bookings/[0-9a-f-]{36}"), timeout=15000); settle(cp)
+        ok(has(cp, "Coupon " + coupon_code), "the booking shows the coupon in its price breakdown")
+        coupon_booking_url = cp.url
+        cp.get_by_role("button", name="Cancel booking").first.click(); cp.wait_for_timeout(500)
+        cp.get_by_role("button", name="Cancel booking").last.click(); cp.wait_for_timeout(1500)
+        ok(has(cp, "Cancelled"), "the coupon booking is cancelled (the use is given back)")
+        ap.goto(BASE + "/admin/coupons"); settle(ap)
+        row = ap.locator("tr", has_text=coupon_code)
+        ok("0" in row.locator("td").nth(3).inner_text(), "admin sees the use given back after the cancellation")
 
         print("CUSTOMER settings & privacy")
         cp.goto(BASE + "/account/privacy"); settle(cp)
@@ -601,7 +643,7 @@ with sync_playwright() as p:
         tctx = browser.new_context(viewport={"width": 768, "height": 1024}, **IN)
         tp = tctx.new_page(); watch(tp, "tablet-admin")
         login(tp, "admin@progenie.in")
-        for path in ["/admin", "/admin/genies", "/admin/bookings", "/admin/users", "/admin/catalog", "/admin/finance", "/admin/inbox",
+        for path in ["/admin", "/admin/genies", "/admin/bookings", "/admin/users", "/admin/catalog", "/admin/finance", "/admin/coupons", "/admin/inbox",
                      "/admin/tickets", f"/admin/tickets/{ticket_id}", f"/admin/bookings/{booking_id}", "/admin/messages", "/admin/legal",
                      "/admin/legal/privacy", "/admin/deletions", "/admin/settings"]:
             tp.goto(BASE + path); settle(tp); tp.wait_for_timeout(300)

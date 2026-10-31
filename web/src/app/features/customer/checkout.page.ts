@@ -19,7 +19,7 @@ import { toObservable, toSignal } from '@angular/core/rxjs-interop';
 
 import { API, ApiClient, errorCode, errorMessage } from '../../core/api/api';
 import { CustomerApi } from '../../core/api/customer-api';
-import { Address, GenieDetail, PaymentMethod, PriceBreakdown, Slot } from '../../core/api/models';
+import { Address, CouponOffer, GenieDetail, PaymentMethod, PriceBreakdown, Slot } from '../../core/api/models';
 import { ToastService } from '../../core/ui/feedback';
 import { newIdempotencyKey } from '../../shared/format';
 import { Avatar } from '../../shared/ui/avatar';
@@ -28,6 +28,7 @@ import { EmptyState, Skeleton, Spinner } from '../../shared/ui/kit';
 import { Rating } from '../../shared/ui/rating';
 import { SlotPicker } from '../../shared/ui/slot-picker';
 import { AddressForm } from './address-form';
+import { CouponPicker } from './coupon-picker';
 
 const TIPS = [0, 20, 50, 100];
 
@@ -45,6 +46,7 @@ const TIPS = [0, 20, 50, 100];
     FormsModule,
     LucideDynamicIcon,
     AddressForm,
+    CouponPicker,
     Avatar,
     Dialog,
     EmptyState,
@@ -186,6 +188,13 @@ const TIPS = [0, 20, 50, 100];
                 (ngModelChange)="notes.set($event)"
               ></textarea>
             </section>
+
+            <!-- 5. Coupon -->
+            <section class="card p-5 sm:p-6" aria-labelledby="s5">
+              <h2 id="s5" class="flex items-center gap-3 text-lg font-bold"><span class="step">5</span> Coupon <span class="text-sm font-normal text-muted">(optional)</span></h2>
+              <p class="mt-1 text-sm text-muted">Coupons take money off the service price. Your Genie still earns the full amount.</p>
+              <pg-coupon-picker #coupons class="mt-4 block" [genieId]="genieId()" [serviceId]="selectedService()" [addressId]="addressId()" [(applied)]="coupon" />
+            </section>
           </div>
 
           <!-- Summary -->
@@ -222,8 +231,11 @@ const TIPS = [0, 20, 50, 100];
                       @if (q.tipAmount > 0) {
                         <div class="flex justify-between"><dt class="text-muted">Tip</dt><dd>{{ q.tipAmount | currency: 'INR' }}</dd></div>
                       }
+                      @if (coupon(); as c) {
+                        <div class="flex justify-between text-emerald-700"><dt>Coupon {{ c.code }}</dt><dd>− {{ c.discount | currency: 'INR' }}</dd></div>
+                      }
                       <div class="flex justify-between border-t border-line pt-2 text-base font-bold">
-                        <dt>Total</dt><dd>{{ q.totalAmount | currency: 'INR' }}</dd>
+                        <dt>Total</dt><dd>{{ total() | currency: 'INR' }}</dd>
                       </div>
                     </dl>
                     <p class="mt-2 text-xs text-muted">Parts or materials, if needed, are added by the Genie at the end with a note.</p>
@@ -264,7 +276,7 @@ const TIPS = [0, 20, 50, 100];
           <div class="mx-auto flex max-w-3xl items-center gap-3">
             <div class="min-w-0 flex-1">
               <p class="text-xs text-muted">{{ quote() ? 'Total' : 'From' }}</p>
-              <p class="font-display text-xl font-bold">{{ (quote()?.totalAmount ?? service()?.price ?? 0) | currency: 'INR' : 'symbol' : '1.0-2' }}</p>
+              <p class="font-display text-xl font-bold">{{ (total() ?? service()?.price ?? 0) | currency: 'INR' : 'symbol' : '1.2-2' }}</p>
             </div>
             <button type="button" class="btn-gold min-h-12 px-6" [disabled]="!ready() || submitting()" (click)="submit()">
               @if (submitting()) {
@@ -323,6 +335,8 @@ export default class CheckoutPage {
   protected readonly method = signal<PaymentMethod>('CASH');
   protected readonly tip = signal(0);
   protected readonly notes = signal('');
+  protected readonly coupon = signal<CouponOffer | null>(null);
+  private readonly couponPicker = viewChild<CouponPicker>('coupons');
   protected readonly addressOpen = signal(false);
   protected readonly submitting = signal(false);
   protected readonly error = signal<string | null>(null);
@@ -363,6 +377,12 @@ export default class CheckoutPage {
     ),
     { initialValue: null },
   );
+
+  /** What the customer pays: the quote minus the coupon (on the service price only, already capped by the API). */
+  protected readonly total = computed(() => {
+    const q = this.quote();
+    return q ? Math.max(0, Math.round((q.totalAmount - (this.coupon()?.discount ?? 0)) * 100) / 100) : null;
+  });
 
   protected readonly ready = computed(() => !!this.service() && !!this.slot() && !!this.address() && !this.areaError());
   protected readonly missingText = computed(() =>
@@ -421,6 +441,7 @@ export default class CheckoutPage {
           paymentMethod: this.method(),
           tipAmount: this.tip(),
           notes: this.notes().trim() || null,
+          couponCode: this.coupon()?.code ?? null,
         },
         this.idempotencyKey,
       )
@@ -439,6 +460,10 @@ export default class CheckoutPage {
             document.getElementById('s2')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
           }
           if (code === 'OUTSTANDING_FEE') this.feeDue.set(true);
+          if (code?.startsWith('COUPON_')) {
+            this.couponPicker()?.reject(errorMessage(err));
+            this.error.set('Your coupon could not be used. Remove it or try another one, then confirm again.');
+          }
           // A rejected request created nothing, but use a fresh key so a changed retry is never deduplicated.
           this.idempotencyKey = newIdempotencyKey();
         },

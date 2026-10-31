@@ -593,6 +593,7 @@ def main():
                      {"book": book, "genie_id": genie_id, "service_id": service_id, "b1": b1, "b2": b2})
 
     phase3a(anon, customer, genie, admin, {"book": book, "genie_id": genie_id, "service_id": service_id})
+    phase3b(anon, customer, genie, admin, {"genie_id": genie_id, "service_id": service_id, "address_id": address_id})
 
     customer.delete(f"/api/v1/me/favourites/{genie_id}")
     customer.delete(f"/api/v1/me/addresses/{address_id}")
@@ -1098,6 +1099,73 @@ def phase3a(anon, customer, genie, admin, ctx):
     check(s == 200 and pdf[:5] == b"%PDF-", "admin downloads a Genie's statement", s)
     s, _ = customer.get(f"/api/v1/genie/statements?month={month}")
     check(s == 403, "customers have no statements", s)
+
+
+
+# ====================================================================== Phase 3B
+
+def phase3b(anon, customer, genie, admin, ctx):
+    genie_id, service_id, address_id = ctx["genie_id"], ctx["service_id"], ctx["address_id"]
+    section("Phase 3B: coupons")
+    code = f"SMOKE{RUN}".upper()
+    s, c = admin.post("/api/v1/admin/coupons", {"code": code.lower(), "title": "Rs 30 off", "discountType": "FLAT",
+                                                "discountValue": 30, "perCustomerLimit": 1, "scope": "ALL", "listed": True})
+    check(s == 201 and c["code"] == code and c["status"] == "ACTIVE", "admin creates a coupon (code upper-cased)", c)
+    s, body = admin.post("/api/v1/admin/coupons", {"code": code, "title": "dup", "discountType": "FLAT", "discountValue": 5,
+                                                   "scope": "ALL"})
+    check(s == 409 and code_of(body) == "COUPON_CODE_TAKEN", "coupon codes are unique", body)
+    s, body = admin.post("/api/v1/admin/coupons", {"code": "BAD" + RUN, "title": "x", "discountType": "PERCENT",
+                                                   "discountValue": 120, "scope": "ALL"})
+    check(s == 400 and code_of(body) == "INVALID_COUPON", "a percentage over 100 is refused", body)
+    s, _ = customer.get("/api/v1/admin/coupons")
+    check(s == 403, "customers can't manage coupons", s)
+
+    q = f"?genieId={genie_id}&serviceId={service_id}&addressId={address_id}"
+    s, offers = customer.get("/api/v1/coupons" + q)
+    mine = next((o for o in offers if o["code"] == code), None) if s == 200 else None
+    check(mine is not None and mine["applicable"] and float(mine["discount"]) == 30.0,
+          "checkout lists the public coupon with its discount", mine)
+    check(all(o["code"] != "GENIE100" for o in offers), "private codes are not listed", [o["code"] for o in offers])
+    s, body = customer.post("/api/v1/coupons/check", {"code": "NOPE" + RUN, "genieId": genie_id, "serviceId": service_id,
+                                                      "addressId": address_id})
+    check(s == 404 and code_of(body) == "COUPON_NOT_FOUND", "an unknown code is refused", body)
+
+    def book_with(coupon):
+        slot = free_slots(anon, genie_id, service_id)[0]
+        return customer.post("/api/v1/bookings", {"genieId": genie_id, "serviceId": service_id, "addressId": address_id,
+                                                  "slotStart": slot, "paymentMethod": "CASH", "tipAmount": 0,
+                                                  "couponCode": coupon})
+
+    s, b1 = book_with(code.lower())
+    gross = round(float(b1["serviceAmount"]) + float(b1["travelFee"]), 2) if s == 201 else 0
+    check(s == 201 and float(b1["discountAmount"]) == 30.0 and b1["couponCode"] == code
+          and abs(float(b1["totalAmount"]) - (gross - 30)) < 0.01, "booking with the coupon: the customer pays 30 less", b1)
+    s, body = book_with(code)
+    check(s == 422 and code_of(body) == "COUPON_ALREADY_USED", "the coupon works once per customer", body)
+    customer.post(f"/api/v1/bookings/{b1['id']}/cancel", {"reason": "smoke coupon"})
+    s, b2 = book_with(code)
+    check(s == 201 and float(b2["discountAmount"]) == 30.0, "cancelling before the job gives the use back", s)
+    genie.post(f"/api/v1/genie/bookings/{b2['id']}/accept")
+    s, g = genie.get(f"/api/v1/genie/bookings/{b2['id']}")
+    check(abs(float(g["geniePayout"]) - (gross - float(g["commissionAmount"]))) < 0.01,
+          "the Genie earns the full amount (ProGenie pays the coupon)", (g["geniePayout"], g["commissionAmount"]))
+    _, sc = customer.post(f"/api/v1/bookings/{b2['id']}/start-code")
+    genie.post(f"/api/v1/genie/bookings/{b2['id']}/start", {"code": sc["code"]})
+    _, w0 = genie.get("/api/v1/genie/wallet")
+    s, done = genie.post(f"/api/v1/genie/bookings/{b2['id']}/complete", {"cashCollected": True})
+    _, w1 = genie.get("/api/v1/genie/wallet")
+    delta = round(float(w1["balance"]) - float(w0["balance"]), 2)
+    check(s == 200 and abs(delta - (30 - float(done["commissionAmount"]))) < 0.01,
+          "cash job with a coupon: ProGenie owes the Genie the discount", (delta, done.get("commissionAmount")))
+    s, adm = admin.get(f"/api/v1/admin/coupons/{c['id']}")
+    check(s == 200 and adm["uses"] == 1 and adm["released"] == 1 and float(adm["totalDiscount"]) == 30.0,
+          "admin sees uses, given-back uses and the discount paid", adm)
+    s, reds = admin.get(f"/api/v1/admin/coupons/{c['id']}/redemptions")
+    check(s == 200 and reds["total"] == 2, "admin lists every use", reds.get("total"))
+    s, paused = admin.put(f"/api/v1/admin/coupons/{c['id']}/status", {"active": False})
+    s2, offers = customer.get("/api/v1/coupons" + q)
+    check(paused["status"] == "PAUSED" and all(o["code"] != code for o in offers), "a paused coupon disappears from checkout",
+          paused.get("status"))
 
 
 if __name__ == "__main__":

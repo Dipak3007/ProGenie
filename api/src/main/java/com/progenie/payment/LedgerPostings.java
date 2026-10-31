@@ -14,6 +14,7 @@ import com.progenie.booking.BookingPayments.Payable;
  * <pre>
  * Online payment:  CUSTOMER D total  = PLATFORM_COMMISSION C commission + GENIE_EARNINGS C share + TIPS C tip
  * Cash payment:    GENIE_CASH D total (the Genie holds the cash) with the same credits
+ * Coupon (3B):     + PLATFORM_PROMOTIONS D discount, where total is what the customer paid after the discount
  * </pre>
  * A Genie's wallet = credits − debits over GENIE_EARNINGS, TIPS, GENIE_CASH, PAYOUT and SETTLEMENT:
  * after a cash job it is −commission (the Genie owes it); after an online job it is +share + tip.
@@ -35,6 +36,7 @@ public final class LedgerPostings {
         } else {
             add(entries, b.bookingId(), null, "CUSTOMER", "D", b.totalAmount(), "Customer paid online for " + b.bookingRef());
         }
+        add(entries, b.bookingId(), null, "PLATFORM_PROMOTIONS", "D", b.discountAmount(), "Coupon discount on " + b.bookingRef());
         add(entries, b.bookingId(), null, "PLATFORM_COMMISSION", "C", b.commissionAmount(), "Commission on " + b.bookingRef());
         add(entries, b.bookingId(), b.genieId(), "GENIE_EARNINGS", "C", share, "Service, travel and extras for " + b.bookingRef());
         add(entries, b.bookingId(), b.genieId(), "TIPS", "C", b.tipAmount(), "Tip for " + b.bookingRef());

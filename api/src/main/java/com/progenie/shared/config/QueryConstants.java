@@ -329,6 +329,32 @@ public final class QueryConstants {
     public static final String GET_STATEMENT_PAYOUTS = "get.statement.payouts";
     public static final String GET_STATEMENT_ENTRIES = "get.statement.entries";
 
+    // ------------------------------------------------------------------ Coupons (promotion)
+
+    public static final String FRAGMENT_COUPON_SELECT = "fragment.coupon.select";
+    public static final String FRAGMENT_COUPON_ADMIN_SELECT = "fragment.coupon.admin-select";
+    public static final String GET_COUPON_BY_CODE = "get.coupon.by-code";
+    public static final String GET_COUPON_PUBLIC_ACTIVE = "get.coupon.public-active";
+    public static final String GET_COUPON_CONTEXT = "get.coupon.context";
+    public static final String GET_COUPON_SERVICE_CATEGORY = "get.coupon.service-category";
+    public static final String GET_COUPON_ADMIN_LIST = "get.coupon.admin-list";
+    public static final String GET_COUPON_ADMIN_BY_ID = "get.coupon.admin-by-id";
+    public static final String GET_COUPON_REDEMPTIONS = "get.coupon.redemptions";
+    public static final String COUNT_COUPON_REDEMPTIONS = "count.coupon.redemptions";
+    public static final String COUNT_COUPON_USES = "count.coupon.uses";
+    public static final String COUNT_COUPON_CUSTOMER_USES = "count.coupon.customer-uses";
+    public static final String EXISTS_COUPON_CUSTOMER_BOOKING = "exists.coupon.customer-booking";
+    public static final String EXISTS_COUPON_CODE = "exists.coupon.code";
+    public static final String EXISTS_COUPON_CATEGORY = "exists.coupon.category";
+    public static final String EXISTS_COUPON_SERVICE = "exists.coupon.service";
+    public static final String EXISTS_COUPON_CITY = "exists.coupon.city";
+    public static final String LOCK_COUPON_BY_CODE = "lock.coupon.by-code";
+    public static final String INSERT_COUPON = "insert.coupon";
+    public static final String INSERT_COUPON_REDEMPTION = "insert.coupon.redemption";
+    public static final String UPDATE_COUPON = "update.coupon";
+    public static final String UPDATE_COUPON_STATUS = "update.coupon.status";
+    public static final String UPDATE_COUPON_RELEASE = "update.coupon.release";
+
     // ------------------------------------------------------------------ Pricing
 
     public static final String GET_PRICING_ESTIMATE = "get.pricing.estimate";

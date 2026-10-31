@@ -30,7 +30,8 @@ public final class BookingDtos {
         @NotNull OffsetDateTime slotStart,
         @NotNull PaymentMethod paymentMethod,
         @DecimalMin("0") @DecimalMax("2000") BigDecimal tipAmount,
-        @Size(max = 500) String notes) {
+        @Size(max = 500) String notes,
+        @Size(max = 30) String couponCode) {
     }
 
     public record CancelRequest(@Size(max = 300) String reason) {
@@ -93,7 +94,8 @@ public final class BookingDtos {
                                    @Nullable String cancelledByRole, int rescheduledCount, boolean reviewed,
                                    OffsetDateTime createdAt, @Nullable OffsetDateTime acceptedAt, @Nullable OffsetDateTime startedAt,
                                    @Nullable OffsetDateTime completedAt, @Nullable OffsetDateTime cancelledAt,
-                                   List<String> allowedActions, List<HistoryDto> history, List<BookingPhotoDto> photos) {
+                                   List<String> allowedActions, List<HistoryDto> history, List<BookingPhotoDto> photos,
+                                   BigDecimal discountAmount, @Nullable String couponCode) {
     }
 
     /**

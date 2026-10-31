@@ -22,6 +22,8 @@ import com.progenie.identity.AccountGuards;
 import com.progenie.legal.ConsentService;
 import com.progenie.pricing.PriceCalculator.PriceBreakdown;
 import com.progenie.pricing.PricingService;
+import com.progenie.promotion.CouponService;
+import com.progenie.promotion.CouponService.AppliedCoupon;
 import com.progenie.provider.GenieDirectory.Offer;
 import com.progenie.provider.GenieDirectory;
 import com.progenie.shared.config.AppProperties;
@@ -60,11 +62,13 @@ public class BookingService {
 
     private final AccountGuards guards;
     private final ConsentService consents;
+    private final CouponService coupons;
 
     public BookingService(BookingRepository bookings, BookingSupport support, BookingQueryService queries,
                           SlotService slots, GenieDirectory directory, AddressService addresses, PricingService pricing,
                           JdbcClient jdbc, AppProperties props, Clock clock, AccountGuards guards,
-                          ConsentService consents) {
+                          ConsentService consents, CouponService coupons) {
+        this.coupons = coupons;
         this.guards = guards;
         this.consents = consents;
         this.bookings = bookings;
@@ -124,6 +128,11 @@ public class BookingService {
         Booking booking = Booking.request(nextBookingRef(now), customerId, offer.genieId(), offer.serviceId(),
             address.cityId(), address.id(), start, end, BookingPolicy.requestExpiry(now, start, rules.requestTtl()),
             price, req.paymentMethod(), StringUtils.hasText(req.notes()) ? req.notes().trim() : null, key);
+        AppliedCoupon coupon = null;
+        if (StringUtils.hasText(req.couponCode())) {
+            coupon = coupons.apply(customerId, req.couponCode(), offer.serviceId(), address.cityId(), quote.serviceAmount());
+            booking.applyCoupon(coupon.couponId(), coupon.discount());
+        }
         try {
             booking = bookings.saveAndFlush(booking);
         } catch (DataIntegrityViolationException e) {
@@ -138,6 +147,9 @@ public class BookingService {
             .param("bookingId", booking.getId())
             .param("addressId", address.id())
             .update();
+        if (coupon != null) {
+            coupons.recordUse(coupon, booking.getId(), booking.getBookingRef(), customerId);
+        }
         support.transitioned(booking, null, customerId, "CUSTOMER", BookingEvent.Type.REQUESTED, null, false);
         log.info("Booking {} requested by {} for Genie {}", booking.getBookingRef(), customerId, offer.genieId());
         return queries.detail(booking.getId(), Viewer.CUSTOMER, customerId);

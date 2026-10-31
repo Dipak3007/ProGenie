@@ -46,6 +46,10 @@ const STATUS: Record<string, { label: string; tone: Tone }> = {
   ACTIVE: { label: 'Active', tone: 'success' },
   DELETED: { label: 'Deleted', tone: 'neutral' },
   NEW: { label: 'New', tone: 'brand' },
+  // coupons
+  PAUSED: { label: 'Paused', tone: 'neutral' },
+  APPLIED: { label: 'Used', tone: 'success' },
+  RELEASED: { label: 'Given back', tone: 'neutral' },
   RESOLVED: { label: 'Resolved', tone: 'success' },
   // refunds and receipts
   PARTIALLY_REFUNDED: { label: 'Partly refunded', tone: 'info' },
