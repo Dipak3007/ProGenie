@@ -43,7 +43,8 @@ public final class BookingDtos {
         @NotNull PaymentMethod paymentMethod,
         @DecimalMin("0") @DecimalMax("2000") BigDecimal tipAmount,
         @Size(max = 500) String notes,
-        @Size(max = 30) String couponCode) {
+        @Size(max = 30) String couponCode,
+        @Nullable @DecimalMin("0") BigDecimal expectedTotal) {
     }
 
     public record CancelRequest(@Size(max = 300) String reason) {

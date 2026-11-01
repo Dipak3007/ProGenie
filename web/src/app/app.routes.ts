@@ -32,6 +32,8 @@ export const routes: Routes = [
     canActivate: [requireRole('CUSTOMER')],
     loadComponent: () => import('./features/customer/checkout.page'),
   },
+  // Phase 3.5E: guests see what they picked, customers their saved checkout
+  { path: 'cart', title: 'Your cart · ProGenie', loadComponent: () => import('./features/customer/cart.page') },
   {
     path: 'now/:serviceId',
     title: 'Genie Now · ProGenie',

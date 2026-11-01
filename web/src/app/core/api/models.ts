@@ -5,6 +5,10 @@
 import type {
   AddressDto,
   AcceptQuoteRequest as AcceptQuoteRequestDto,
+  CartDto,
+  CartItemDto,
+  CartRequest as CartRequestDto,
+  CartResponse as CartResponseDto,
   QuoteDto,
   QuoteLineDto,
   QuoteLineRequest as QuoteLineRequestDto,
@@ -262,6 +266,11 @@ export type QuoteLine = QuoteLineDto;
 export type QuoteRequest = QuoteRequestDto;
 export type QuoteLineRequest = QuoteLineRequestDto;
 export type AcceptQuoteRequest = AcceptQuoteRequestDto;
+/** Phase 3.5E: the customer's saved checkout. */
+export type Cart = CartDto;
+export type CartItem = CartItemDto;
+export type CartRequest = CartRequestDto;
+export type CartResponse = CartResponseDto;
 /** Genie Now (Phase 3C-9): price range before searching, the search itself, and an offer as a Genie sees it. */
 export type InstantQuote = InstantQuoteDto;
 export type InstantRequest = InstantRequestDto;

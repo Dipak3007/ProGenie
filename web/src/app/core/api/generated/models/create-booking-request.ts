@@ -5,6 +5,7 @@ import { ServiceLine } from '../models/service-line';
 export interface CreateBookingRequest {
   addressId: string;
   couponCode?: (string | null);
+  expectedTotal?: (number | null);
   genieId: string;
   items?: (Array<ServiceLine> | null);
   notes?: (string | null);

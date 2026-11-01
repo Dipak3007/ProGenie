@@ -605,6 +605,7 @@ def main():
     phase35b(anon, customer, admin)
     phase35c(anon, customer, genie, admin, {"genie_id": genie_id, "address_id": address_id})
     phase35d(anon, customer, genie, admin, {"genie_id": genie_id, "address_id": address_id})
+    phase35e(anon, customer, admin, {"genie_id": genie_id, "address_id": address_id})
     phase35_exit_gate(anon, customer, genie, admin, {"genie_id": genie_id, "address_id": address_id})
 
     customer.delete(f"/api/v1/me/favourites/{genie_id}")
@@ -1795,6 +1796,58 @@ def finish_job(customer, genie, bid):
     _, sc = customer.post(f"/api/v1/bookings/{bid}/start-code")
     genie.post(f"/api/v1/genie/bookings/{bid}/start", {"code": sc["code"]})
     return genie.post(f"/api/v1/genie/bookings/{bid}/complete", {"cashCollected": True})
+
+
+def phase35e(anon, customer, admin, ctx):
+    """Phase 3.5E: the cart (a saved, re-checked checkout) and the price check when booking."""
+    genie_id, address_id = ctx["genie_id"], ctx["address_id"]
+    section("Phase 3.5E: cart")
+    customer.delete("/api/v1/cart")
+    s, empty = customer.get("/api/v1/cart")
+    check(s == 200 and empty["cart"] is None, "a new customer has an empty cart", empty)
+    _, profile = anon.get(f"/api/v1/genies/{genie_id}")
+    simple = [x for x in profile["services"] if not x["inspectionFirst"]][:2]
+    items = ",".join(f"{x['serviceId']}:{2 if i == 0 else 1}" for i, x in enumerate(simple))
+    slot, _ = first_free_slot(anon, genie_id, f"items={items}")
+    body = {"genieId": genie_id, "items": [{"serviceId": x["serviceId"], "quantity": 2 if i == 0 else 1} for i, x in enumerate(simple)],
+            "addressId": address_id, "slotStart": slot, "paymentMethod": "ONLINE", "tipAmount": 20, "notes": "Ring the bell",
+            "couponCode": None, "seenTotal": None, "replace": False}
+    s, saved = customer.put("/api/v1/cart", body)
+    cart = (saved or {}).get("cart") or {}
+    check(s == 200 and cart.get("itemsParam") == items and cart.get("slotStart") and cart.get("total") is not None
+          and cart.get("paymentMethod") == "ONLINE" and cart.get("notes") == "Ring the bell",
+          "checkout is saved to the cart: services, address, time, payment, tip and note", cart)
+    total = float(cart.get("total") or 0)
+    s, again = customer.get("/api/v1/cart")
+    check(s == 200 and again["cart"]["itemsParam"] == items and again["notices"] == [],
+          "the cart is still there on the next visit (re-checked, nothing changed)", again.get("notices"))
+    s, moved = customer.put("/api/v1/cart", {**body, "seenTotal": round(total - 5, 2)})
+    check(s == 200 and any("The price changed from" in n for n in moved["notices"]),
+          "a price that moved since the customer saw it is reported", moved.get("notices"))
+    s, gl = anon.get("/api/v1/genies?city=ahmedabad&limit=50")
+    other = next((g for g in gl if g["id"] != genie_id), None) if s == 200 else None
+    if other:
+        _, op = anon.get(f"/api/v1/genies/{other['id']}")
+        o_body = {"genieId": other["id"], "items": [{"serviceId": op["services"][0]["serviceId"], "quantity": 1}], "replace": False}
+        s, body409 = customer.put("/api/v1/cart", o_body)
+        check(s == 409 and code_of(body409) == "CART_OTHER_GENIE" and body409.get("genieName"),
+              "a cart holds one Genie: another Genie's service needs a yes", body409)
+        s, replaced = customer.put("/api/v1/cart", {**o_body, "replace": True})
+        check(s == 200 and replaced["cart"]["genieId"] == other["id"], "with a yes the old cart is cleared and a new one started", replaced.get("cart"))
+        customer.put("/api/v1/cart", {**body, "replace": True})
+    s, current = customer.get("/api/v1/cart")
+    total = float(current["cart"]["total"])
+    booking = {"genieId": genie_id, "items": body["items"], "addressId": address_id, "slotStart": slot, "paymentMethod": "ONLINE",
+               "tipAmount": 20, "notes": "Ring the bell"}
+    s, stale = customer.post("/api/v1/bookings", {**booking, "expectedTotal": round(total - 10, 2)})
+    check(s == 409 and code_of(stale) == "PRICE_CHANGED" and abs(float(stale.get("newTotal", 0)) - total) < 0.01,
+          "booking checks the price the customer saw (PRICE_CHANGED with the new total)", stale)
+    s, made = customer.post("/api/v1/bookings", {**booking, "expectedTotal": total})
+    check(s == 201 and abs(float(made["totalAmount"]) - total) < 0.01, "confirming the shown price books it", made.get("totalAmount") if s == 201 else made)
+    s, after = customer.get("/api/v1/cart")
+    check(s == 200 and after["cart"] is None, "the booking empties the cart", after)
+    if s == 200 and isinstance(made, dict) and made.get("id"):
+        admin.post(f"/api/v1/admin/bookings/{made['id']}/cancel", {"reason": "smoke 3.5E", "waiveFee": True})
 
 
 def phase35d(anon, customer, genie, admin, ctx):

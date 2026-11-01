@@ -15,13 +15,14 @@ import {
   LucidePlus as Plus,
   LucideShieldCheck as ShieldCheck,
 } from '@lucide/angular';
-import { debounceTime, of, switchMap, catchError } from 'rxjs';
-import { toObservable, toSignal } from '@angular/core/rxjs-interop';
+import { catchError, debounceTime, distinctUntilChanged, filter, of, switchMap } from 'rxjs';
+import { takeUntilDestroyed, toObservable, toSignal } from '@angular/core/rxjs-interop';
 
 import { API, ApiClient, errorCode, errorMessage } from '../../core/api/api';
 import { CustomerApi } from '../../core/api/customer-api';
-import { Address, CouponOffer, GenieDetail, PaymentMethod, PriceBreakdown, Slot } from '../../core/api/models';
-import { ToastService } from '../../core/ui/feedback';
+import { Address, CartRequest, CouponOffer, GenieDetail, PaymentMethod, PriceBreakdown, Slot } from '../../core/api/models';
+import { CartStore } from '../../core/cart/cart-store';
+import { ConfirmService, ToastService } from '../../core/ui/feedback';
 import { newIdempotencyKey } from '../../shared/format';
 import { Avatar } from '../../shared/ui/avatar';
 import { Dialog } from '../../shared/ui/dialog';
@@ -75,6 +76,14 @@ const TIPS = [0, 20, 50, 100];
       @if (genie.value(); as g) {
         <h1 class="mt-3 text-3xl font-bold sm:text-4xl">Book {{ g.genie.fullName.split(' ')[0] }}</h1>
         <p class="mt-1 text-muted">Pay after the job. Free cancellation until 2 hours before your slot.</p>
+        @if (fromCart()) {
+          <div class="mt-4 rounded-2xl border border-brand-soft bg-brand-mist/40 px-4 py-3 text-sm" role="status" data-testid="checkout-from-cart">
+            <p class="font-semibold">We kept your booking from last time.</p>
+            @for (n of cartNotices(); track n) {
+              <p class="mt-1 text-ink/80">{{ n }}</p>
+            }
+          </div>
+        }
 
         <div class="mt-8 grid grid-cols-[minmax(0,1fr)] gap-6 lg:grid-cols-[minmax(0,1fr)_24rem] lg:gap-8">
           <div class="min-w-0 space-y-6">
@@ -241,7 +250,7 @@ const TIPS = [0, 20, 50, 100];
             <section class="card p-5 sm:p-6" aria-labelledby="s5" [hidden]="inspection()">
               <h2 id="s5" class="flex items-center gap-3 text-lg font-bold"><span class="step">5</span> Coupon <span class="text-sm font-normal text-muted">(optional)</span></h2>
               <p class="mt-1 text-sm text-muted">Coupons take money off the service price. Your Genie still earns the full amount.</p>
-              <pg-coupon-picker #coupons class="mt-4 block" [genieId]="genieId()" [items]="items() || null" [addressId]="addressId()" [(applied)]="coupon" />
+              <pg-coupon-picker #coupons class="mt-4 block" [genieId]="genieId()" [items]="items() || null" [addressId]="addressId()" [restoreCode]="restoreCoupon()" (restoreDone)="restoreCoupon.set(null)" [(applied)]="coupon" />
             </section>
           </div>
 
@@ -312,6 +321,11 @@ const TIPS = [0, 20, 50, 100];
                   }
                 </div>
 
+                @if (priceChanged()) {
+                  <p class="rounded-xl bg-amber-50 px-3 py-2 text-amber-900" role="alert" data-testid="price-changed">
+                    {{ priceChanged() }}
+                  </p>
+                }
                 @if (error()) {
                   <p class="rounded-xl bg-rose-50 px-3 py-2 text-rose-800" role="alert">
                     {{ error() }}
@@ -405,6 +419,8 @@ export default class CheckoutPage {
   private readonly customer = inject(CustomerApi);
   private readonly router = inject(Router);
   private readonly toast = inject(ToastService);
+  private readonly carts = inject(CartStore);
+  private readonly confirm = inject(ConfirmService);
 
   protected readonly genie = httpResource<GenieDetail>(() => `${API}/genies/${encodeURIComponent(this.genieId())}`);
   protected readonly addresses = httpResource<Address[]>(() => `${API}/me/addresses`);
@@ -427,6 +443,14 @@ export default class CheckoutPage {
   protected readonly areaError = signal<string | null>(null);
   protected readonly feeDue = signal(false);
   private idempotencyKey = newIdempotencyKey();
+  /** Phase 3.5E: checkout is saved to the cart as the customer goes, once it has been started (or restored). */
+  private readonly started = signal(false);
+  private replaceCart = false;
+  protected readonly fromCart = signal(false);
+  protected readonly cartNotices = signal<string[]>([]);
+  protected readonly restoreCoupon = signal<string | null>(null);
+  protected readonly priceChanged = signal<string | null>(null);
+  private readonly requote = signal(0);
   private readonly picker = viewChild<SlotPicker>('picker');
 
   protected readonly tips = TIPS;
@@ -460,8 +484,8 @@ export default class CheckoutPage {
   private readonly quoteInput = computed(() => {
     const items = this.items();
     const a = this.address();
-    return items && a && !this.tooLong() ? { items, lat: a.lat, lng: a.lng, tip: this.tip() } : null;
-  }, { equal: (x, y) => x?.items === y?.items && x?.lat === y?.lat && x?.lng === y?.lng && x?.tip === y?.tip });
+    return items && a && !this.tooLong() ? { items, lat: a.lat, lng: a.lng, tip: this.tip(), n: this.requote() } : null;
+  }, { equal: (x, y) => x?.items === y?.items && x?.lat === y?.lat && x?.lng === y?.lng && x?.tip === y?.tip && x?.n === y?.n });
   protected readonly quote = toSignal(
     toObservable(this.quoteInput).pipe(
       debounceTime(150),
@@ -486,25 +510,41 @@ export default class CheckoutPage {
   });
 
   protected readonly ready = computed(
-    () => this.chosen().length > 0 && !this.tooLong() && !!this.slot() && !!this.address() && !this.areaError(),
+    () => this.chosen().length > 0 && !this.tooLong() && !!this.slot() && !!this.address() && !this.areaError() && this.quote() !== null,
   );
   protected readonly missingText = computed(() =>
-    !this.chosen().length ? 'Choose a service' : this.tooLong() ? 'Shorten the job' : !this.slot() ? 'Pick a time' : !this.address() ? 'Add an address' : 'Check the address',
+    !this.chosen().length ? 'Choose a service' : this.tooLong() ? 'Shorten the job' : !this.slot() ? 'Pick a time' : !this.address() ? 'Add an address'
+      : this.areaError() ? 'Check the address' : 'Getting the price…',
   );
 
   constructor() {
-    // Preselect the services from the URL (those this Genie still offers), else the Genie's first service.
+    // Start from the cart (Phase 3.5E) or from the services in the URL (those this Genie still offers), else the
+    // Genie's first service. A cart for another Genie is replaced only if the customer agrees.
     effect(() => {
       const g = this.genie.value();
-      if (!g) return;
+      const loaded = this.carts.loaded();
+      if (!g || !loaded) return;
       untracked(() => {
         if (this.linesSet) return;
         this.linesSet = true;
-        const offered = (l: ServiceLineSel) => g.services.some((s) => s.serviceId === l.serviceId);
-        const fromUrl = parseItems(this.itemsFromUrl() ?? this.serviceId()).filter(offered);
-        const first = g.services[0];
-        this.lines.set(fromUrl.length ? fromUrl : first ? [{ serviceId: first.serviceId, quantity: 1 }] : []);
+        void this.start(g);
       });
+    });
+    // Save the checkout to the cart as the customer goes (debounced).
+    toObservable(this.draft)
+      .pipe(
+        debounceTime(700),
+        distinctUntilChanged((a, b) => JSON.stringify(a) === JSON.stringify(b)),
+        filter((d): d is CartRequest => d !== null),
+        switchMap((d) => this.carts.save(d).pipe(catchError(() => of(null)))),
+        takeUntilDestroyed(),
+      )
+      .subscribe((res) => {
+        if (res) this.replaceCart = false;
+      });
+    // A restored coupon is in place: stop carrying its code separately.
+    effect(() => {
+      if (this.coupon()) untracked(() => this.restoreCoupon.set(null));
     });
     // A different job length means different free times: pick the time again.
     let lastMinutes = 0;
@@ -525,6 +565,65 @@ export default class CheckoutPage {
         this.addressId.set((fromUrl ?? list.find((a) => a.isDefault) ?? list[0]).id);
       });
     });
+  }
+
+  /** What the cart keeps (null until checkout has started, or while it can't be saved). */
+  private readonly draft = computed<CartRequest | null>(() => {
+    if (!this.started() || !this.lines().length || this.tooLong()) return null;
+    return {
+      genieId: this.genieId(),
+      items: this.lines(),
+      addressId: this.addressId(),
+      slotStart: this.slot()?.start ?? null,
+      paymentMethod: this.method(),
+      tipAmount: this.tip(),
+      notes: this.notes().trim() || null,
+      couponCode: this.coupon()?.code ?? this.restoreCoupon(),
+      seenTotal: this.total(),
+      replace: this.replaceCart,
+    };
+  });
+
+  private async start(g: GenieDetail): Promise<void> {
+    const offered = (l: ServiceLineSel) => g.services.some((s) => s.serviceId === l.serviceId);
+    const fromUrl = parseItems(this.itemsFromUrl() ?? this.serviceId()).filter(offered);
+    const first = g.services[0];
+    const fallback = fromUrl.length ? fromUrl : first ? [{ serviceId: first.serviceId, quantity: 1 }] : [];
+    const cart = this.carts.cart();
+    if (cart && cart.genieId !== this.genieId()) {
+      const label = cart.items.map((i) => i.name + (i.quantity > 1 ? ` ×${i.quantity}` : '')).join(' + ');
+      const { confirmed } = await this.confirm.ask({
+        title: 'Replace your cart?',
+        message: `Your cart has a booking with ${cart.genieName} (${label}). Starting a booking with ${g.genie.fullName} will clear it.`,
+        confirmLabel: 'Clear cart and continue',
+        cancelLabel: 'Keep my cart',
+        tone: 'danger',
+      });
+      if (!confirmed) {
+        void this.router.navigate(['/cart']);
+        return;
+      }
+      this.replaceCart = true;
+      this.lines.set(fallback);
+    } else if (cart) {
+      const cartLines = parseItems(cart.itemsParam).filter(offered);
+      const same = !fromUrl.length || itemsParam(fromUrl) === itemsParam(cartLines);
+      this.lines.set(same && cartLines.length ? cartLines : fallback);
+      if (cart.addressId && !this.addressFromUrl()) this.addressId.set(cart.addressId);
+      if (same && cart.slotStart) {
+        this.slot.set({ start: cart.slotStart, end: new Date(new Date(cart.slotStart).getTime() + cart.durationMinutes * 60_000).toISOString() });
+      }
+      if (cart.paymentMethod === 'CASH' || cart.paymentMethod === 'ONLINE') this.method.set(cart.paymentMethod);
+      this.tip.set(cart.tipAmount);
+      this.notes.set(cart.notes ?? '');
+      if (cart.couponCode) this.restoreCoupon.set(cart.couponCode);
+      this.cartNotices.set(this.carts.notices());
+      this.carts.notices.set([]);
+      this.fromCart.set(true);
+    } else {
+      this.lines.set(fallback);
+    }
+    this.started.set(true);
   }
 
   protected quantityOf(id: number): number {
@@ -561,6 +660,7 @@ export default class CheckoutPage {
     if (!lines.length || !slot || !a || this.submitting()) return;
     this.submitting.set(true);
     this.error.set(null);
+    this.priceChanged.set(null);
     this.feeDue.set(false);
     this.customer
       .createBooking(
@@ -573,11 +673,13 @@ export default class CheckoutPage {
           tipAmount: this.tip(),
           notes: this.notes().trim() || null,
           couponCode: this.coupon()?.code ?? null,
+          expectedTotal: this.total(),
         },
         this.idempotencyKey,
       )
       .subscribe({
         next: (b) => {
+          this.carts.booked();
           this.toast.success('Booking requested! We will let you know when the Genie accepts.');
           this.router.navigate(['/account/bookings', b.id]);
         },
@@ -591,6 +693,14 @@ export default class CheckoutPage {
             document.getElementById('s2')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
           }
           if (code === 'OUTSTANDING_FEE') this.feeDue.set(true);
+          if (code === 'PRICE_CHANGED') {
+            // Phase 3.5E: show the new price first; the customer confirms again
+            this.error.set(null);
+            this.priceChanged.set(errorMessage(err));
+            this.requote.update((n) => n + 1);
+            this.couponPicker()?.recheck();
+            document.getElementById('summary')?.scrollIntoView?.({ behavior: 'smooth', block: 'start' });
+          }
           if (code?.startsWith('COUPON_')) {
             this.couponPicker()?.reject(errorMessage(err));
             this.error.set('Your coupon could not be used. Remove it or try another one, then confirm again.');

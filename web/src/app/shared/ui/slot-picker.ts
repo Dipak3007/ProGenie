@@ -162,7 +162,10 @@ export class SlotPicker {
       next: (days) => {
         this.loadingDays.set(false);
         this.days.set(days);
-        const keep = keepDay && days.find((d) => d.date === keepDay && d.available > 0);
+        // keep the day in view, else open on the selected slot's day (a time restored from the cart, Phase 3.5E)
+        const sel = this.selected();
+        const want = keepDay ?? (sel ? new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Kolkata' }).format(new Date(sel)) : null);
+        const keep = want && days.find((d) => d.date === want && d.available > 0);
         const first = keep ?? days.find((d) => d.available > 0);
         if (first) {
           this.pickDay(first.date);

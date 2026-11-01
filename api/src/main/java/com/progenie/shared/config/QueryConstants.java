@@ -142,6 +142,15 @@ public final class QueryConstants {
     public static final String UPDATE_QUOTE_DECLINED = "update.quote.declined";
     public static final String UPDATE_QUOTE_EXPIRED = "update.quote.expired";
     public static final String GET_QUOTE_DURATION = "get.quote.duration";
+    public static final String GET_CART_ROW = "get.cart.row";
+    public static final String UPSERT_CART = "upsert.cart";
+    public static final String UPDATE_CART_RECHECKED = "update.cart.rechecked";
+    public static final String DELETE_CART = "delete.cart";
+    public static final String DELETE_CART_BOOKED = "delete.cart.booked";
+    public static final String GET_CART_SERVICE_NAMES = "get.cart.service-names";
+    public static final String LOCK_CART_DUE_REMINDERS = "lock.cart.due-reminders";
+    public static final String UPDATE_CART_REMINDED = "update.cart.reminded";
+    public static final String DELETE_CART_EXPIRED = "delete.cart.expired";
 
     // ------------------------------------------------------------------ Catalog and city pricing
 
@@ -286,6 +295,7 @@ public final class QueryConstants {
     public static final String GET_DELETION_REVIEW_PHOTO_KEYS = "get.deletion.review-photo-keys";
     public static final String DELETE_DELETION_REVIEW_PHOTOS = "delete.deletion.review-photos";
     public static final String DELETE_DELETION_LAUNCH_ALERTS = "delete.deletion.launch-alerts";
+    public static final String DELETE_DELETION_CARTS = "delete.deletion.carts";
 
     // ------------------------------------------------------------------ Legal documents and consents
 

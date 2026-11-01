@@ -24,12 +24,14 @@ import { GenieCard } from '../../shared/ui/genie-card';
 import { categoryIcon } from '../../shared/ui/icons';
 import { CityStore } from '../../core/city/city-store';
 import { ContactSection } from './contact-section';
+import { CartBanner } from '../../shared/ui/cart-banner';
 
 @Component({
   selector: 'pg-home-page',
-  imports: [RouterLink, CurrencyPipe, LucideDynamicIcon, CategoryVisual, GenieCard, ContactSection],
+  imports: [CartBanner, RouterLink, CurrencyPipe, LucideDynamicIcon, CategoryVisual, GenieCard, ContactSection],
   changeDetection: ChangeDetectionStrategy.OnPush,
   template: `
+    <pg-cart-banner />
     <!-- ============================ HERO ============================ -->
     <section class="lamp-glow relative overflow-hidden text-white lg:flex lg:min-h-fold lg:items-center">
       <div class="container-page grid items-center gap-12 py-14 sm:py-20 lg:grid-cols-[1.05fr_1fr] lg:gap-10 lg:py-12 lg:short:py-8 lg:tiny:py-6">

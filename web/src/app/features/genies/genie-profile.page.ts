@@ -15,12 +15,13 @@ import { CustomerApi } from '../../core/api/customer-api';
 import { Area, GenieCard as GenieCardModel, GenieDetail, GenieService, PriceBreakdown } from '../../core/api/models';
 import { CityStore } from '../../core/city/city-store';
 import { AuthStore } from '../../core/auth/auth-store';
-import { ToastService } from '../../core/ui/feedback';
+import { ConfirmService, ToastService } from '../../core/ui/feedback';
+import { CartStore } from '../../core/cart/cart-store';
 import { Avatar } from '../../shared/ui/avatar';
 import { CategoryVisual } from '../../shared/ui/category-visual';
 import { GenieBadges } from '../../shared/ui/genie-badges';
 import { ReviewPhotos } from '../../shared/ui/review-photos';
-import { itemsParam, MAX_SERVICES } from '../../shared/service-lines';
+import { itemsParam, MAX_SERVICES, parseItems } from '../../shared/service-lines';
 
 @Component({
   selector: 'pg-genie-profile-page',
@@ -203,6 +204,8 @@ export default class GenieProfilePage {
   private readonly customer = inject(CustomerApi);
   private readonly toast = inject(ToastService);
   private readonly router = inject(Router);
+  private readonly carts = inject(CartStore);
+  private readonly confirm = inject(ConfirmService);
 
   /** Only customers have favourites; for everyone else the request is skipped. */
   private readonly favourites = httpResource<GenieCardModel[]>(() => (this.auth.role() === 'CUSTOMER' ? `${API}/me/favourites` : undefined));
@@ -290,11 +293,33 @@ export default class GenieProfilePage {
     });
   }
 
-  /** Guests can browse and price freely; logging in is required only to book. */
-  protected book(): void {
+  /**
+   * Guests can browse and price freely; logging in is required only to book. A guest's picks are kept as their cart
+   * (Phase 3.5E) and move into their account when they log in; a cart for another Genie is replaced only on a yes.
+   */
+  protected async book(): Promise<void> {
     const items = this.items();
     const target = this.router.createUrlTree(['/book', this.id()], { queryParams: items ? { items } : {} });
     if (!this.auth.isLoggedIn()) {
+      const g = this.detail.value();
+      const current = this.carts.guest();
+      if (g && current && current.genieId !== g.genie.id) {
+        const { confirmed } = await this.confirm.ask({
+          title: 'Replace your cart?',
+          message: `Your cart has a booking with ${current.genieName}. Starting one with ${g.genie.fullName} will clear it.`,
+          confirmLabel: 'Clear cart and continue',
+          cancelLabel: 'Keep my cart',
+          tone: 'danger',
+        });
+        if (!confirmed) {
+          void this.router.navigate(['/cart']);
+          return;
+        }
+      }
+      if (g) {
+        const lines = parseItems(items).map((l) => ({ ...l, name: g.services.find((s) => s.serviceId === l.serviceId)?.name ?? 'Service' }));
+        if (lines.length) this.carts.saveGuest({ genieId: g.genie.id, genieName: g.genie.fullName, items: lines, savedAt: new Date().toISOString() });
+      }
       this.router.navigate(['/login'], { queryParams: { returnUrl: this.router.serializeUrl(target) } });
       return;
     }

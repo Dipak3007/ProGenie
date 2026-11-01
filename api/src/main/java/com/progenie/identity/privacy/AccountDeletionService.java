@@ -245,6 +245,7 @@ public class AccountDeletionService {
             QueryConstants.DELETE_DELETION_BOOKING_PHOTOS,
             QueryConstants.DELETE_DELETION_REVIEW_PHOTOS,
             QueryConstants.DELETE_DELETION_NOTIFICATIONS,
+            QueryConstants.DELETE_DELETION_CARTS,
             QueryConstants.DELETE_DELETION_ADDRESSES,
             QueryConstants.UPDATE_DELETION_REDACT_MESSAGES,
             QueryConstants.UPDATE_DELETION_TRIM_BOOKING_ADDRESSES,

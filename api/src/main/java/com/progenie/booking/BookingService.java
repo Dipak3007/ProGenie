@@ -73,12 +73,14 @@ public class BookingService {
     private final ConsentService consents;
     private final CouponService coupons;
     private final BookingItems items;
+    private final Carts carts;
 
     public BookingService(BookingRepository bookings, BookingSupport support, BookingQueryService queries,
                           SlotService slots, GenieDirectory directory, AddressService addresses, PricingService pricing,
                           JdbcClient jdbc, AppProperties props, Clock clock, AccountGuards guards,
-                          ConsentService consents, CouponService coupons, BookingItems items) {
+                          ConsentService consents, CouponService coupons, BookingItems items, Carts carts) {
         this.items = items;
+        this.carts = carts;
         this.coupons = coupons;
         this.guards = guards;
         this.consents = consents;
@@ -153,6 +155,12 @@ public class BookingService {
             coupon = coupons.apply(customerId, req.couponCode(), couponLines(quote.lines()), address.cityId());
             booking.applyCoupon(coupon.couponId(), coupon.discount());
         }
+        if (req.expectedTotal() != null && req.expectedTotal().compareTo(booking.getTotalAmount()) != 0) {
+            // Phase 3.5E: the customer confirms the price they saw; if it moved meanwhile they see the new one first
+            throw ApiException.conflict("PRICE_CHANGED", "The price changed from " + Carts.rupees(req.expectedTotal())
+                    + " to " + Carts.rupees(booking.getTotalAmount()) + ". Please check it and confirm again.")
+                .with("oldTotal", req.expectedTotal()).with("newTotal", booking.getTotalAmount());
+        }
         try {
             booking = bookings.saveAndFlush(booking);
         } catch (DataIntegrityViolationException e) {
@@ -176,6 +184,7 @@ public class BookingService {
             coupons.recordUse(coupon, booking.getId(), booking.getBookingRef(), customerId);
         }
         support.transitioned(booking, null, customerId, "CUSTOMER", BookingEvent.Type.REQUESTED, null, false);
+        carts.booked(customerId, offer.genieId());
         log.info("Booking {} requested by {} for Genie {} ({} service(s), {} min)", booking.getBookingRef(), customerId,
             offer.genieId(), lines.size(), quote.durationMinutes());
         return queries.detail(booking.getId(), Viewer.CUSTOMER, customerId);

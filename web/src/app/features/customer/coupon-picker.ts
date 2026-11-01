@@ -1,4 +1,4 @@
-import { ChangeDetectionStrategy, Component, computed, effect, inject, input, model, signal, untracked } from '@angular/core';
+import { ChangeDetectionStrategy, Component, computed, effect, inject, input, model, output, signal, untracked } from '@angular/core';
 import { CurrencyPipe } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { toObservable, toSignal } from '@angular/core/rxjs-interop';
@@ -96,6 +96,11 @@ export class CouponPicker {
   readonly addressId = input<string | null>(null);
   /** The coupon applied to the booking (two-way). */
   readonly applied = model<CouponOffer | null>(null);
+  /** Phase 3.5E: a code saved in the cart, applied again once the services and address are known. */
+  readonly restoreCode = input<string | null>(null);
+  /** The saved code was applied, or turned out not to apply (the reason is shown). */
+  readonly restoreDone = output<void>();
+  private restoring = false;
 
   private readonly api = inject(CustomerApi);
   protected readonly busy = signal(false);
@@ -119,6 +124,27 @@ export class CouponPicker {
   );
 
   constructor() {
+    effect(() => {
+      const code = this.restoreCode();
+      const c = this.context();
+      if (!code || !c) return;
+      untracked(() => {
+        if (this.restoring || this.applied()) return;
+        this.restoring = true;
+        this.api.checkCoupon(code, c.genieId, c.items, c.addressId).subscribe({
+          next: (offer) => {
+            this.restoring = false;
+            this.applied.set(offer);
+            this.restoreDone.emit();
+          },
+          error: (err) => {
+            this.restoring = false;
+            this.message.set(`Your saved coupon ${code} can't be used: ${errorMessage(err)}`);
+            this.restoreDone.emit();
+          },
+        });
+      });
+    });
     // Different services or address can change the discount or make the coupon invalid: check it again.
     effect(() => {
       const c = this.context();
@@ -151,6 +177,20 @@ export class CouponPicker {
   protected remove(): void {
     this.applied.set(null);
     this.message.set(null);
+  }
+
+  /** Called by the page when the price changed: the coupon's discount may have changed too. */
+  recheck(): void {
+    const current = this.applied();
+    const c = this.context();
+    if (!current || !c) return;
+    this.api.checkCoupon(current.code, c.genieId, c.items, c.addressId).subscribe({
+      next: (fresh) => this.applied.set(fresh),
+      error: (err) => {
+        this.applied.set(null);
+        this.message.set(errorMessage(err));
+      },
+    });
   }
 
   /** Called by the page when the booking refused the coupon. */

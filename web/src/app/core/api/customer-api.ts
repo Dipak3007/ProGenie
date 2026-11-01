@@ -9,6 +9,8 @@ import {
   AddressRequest,
   BookingDetail,
   CouponOffer,
+  CartRequest,
+  CartResponse,
   CreateBookingRequest,
   Payment,
   PaymentOrder,
@@ -86,6 +88,20 @@ export class CustomerApi {
   /** Phase 3.5D: book the quoted job at a time (returns the new booking). */
   acceptQuote(quoteId: string, body: AcceptQuoteRequest): Observable<BookingDetail> {
     return this.http.post<BookingDetail>(`${API}/quotes/${quoteId}/accept`, body);
+  }
+
+  /** Phase 3.5E: the cart, re-checked (what changed is in `notices`). */
+  cart(): Observable<CartResponse> {
+    return this.http.get<CartResponse>(`${API}/cart`);
+  }
+
+  /** Saves the checkout so far. 409 CART_OTHER_GENIE (with `genieName`) unless `replace`. */
+  saveCart(body: CartRequest): Observable<CartResponse> {
+    return this.http.put<CartResponse>(`${API}/cart`, body);
+  }
+
+  clearCart(): Observable<void> {
+    return this.http.delete<void>(`${API}/cart`);
   }
 
   /** Returns the inspection booking with the declined quote. */

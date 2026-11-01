@@ -255,6 +255,12 @@ export type { TicketReply$Params as TicketReply$Params } from './fn/ticket-contr
 export { ticketReply as ticketReply } from './fn/ticket-controller/ticket-reply';
 export type { TicketReopen$Params as TicketReopen$Params } from './fn/ticket-controller/ticket-reopen';
 export { ticketReopen as ticketReopen } from './fn/ticket-controller/ticket-reopen';
+export type { CartGet$Params as CartGet$Params } from './fn/cart-controller/cart-get';
+export { cartGet as cartGet } from './fn/cart-controller/cart-get';
+export type { CartSave$Params as CartSave$Params } from './fn/cart-controller/cart-save';
+export { cartSave as cartSave } from './fn/cart-controller/cart-save';
+export type { CartClear$Params as CartClear$Params } from './fn/cart-controller/cart-clear';
+export { cartClear as cartClear } from './fn/cart-controller/cart-clear';
 export type { CatalogCategories$Params as CatalogCategories$Params } from './fn/catalog-controller/catalog-categories';
 export { catalogCategories as catalogCategories } from './fn/catalog-controller/catalog-categories';
 export type { CatalogCategory$Params as CatalogCategory$Params } from './fn/catalog-controller/catalog-category';

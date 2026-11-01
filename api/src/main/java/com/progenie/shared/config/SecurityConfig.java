@@ -58,7 +58,7 @@ public class SecurityConfig {
                 .requestMatchers("/api/v1/genie/**").hasRole("GENIE")
                 .requestMatchers("/api/v1/bookings/**", "/api/v1/payments/**",
                         "/api/v1/me/addresses/**", "/api/v1/me/favourites/**", "/api/v1/coupons/**",
-                        "/api/v1/instant/**", "/api/v1/quotes/**").hasRole("CUSTOMER")
+                        "/api/v1/instant/**", "/api/v1/quotes/**", "/api/v1/cart").hasRole("CUSTOMER")
                 .anyRequest().authenticated())
             // 401/403 as ProblemDetail JSON with an errorId, like every other error (3A-0)
             .exceptionHandling(e -> e.authenticationEntryPoint(ProblemResponses.authenticationEntryPoint())

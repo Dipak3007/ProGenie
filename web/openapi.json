@@ -3611,6 +3611,65 @@
         ]
       }
     },
+    "/api/v1/cart": {
+      "delete": {
+        "operationId": "cartClear",
+        "responses": {
+          "204": {
+            "description": "No Content"
+          }
+        },
+        "tags": [
+          "cart-controller"
+        ]
+      },
+      "get": {
+        "operationId": "cartGet",
+        "responses": {
+          "200": {
+            "content": {
+              "*/*": {
+                "schema": {
+                  "$ref": "#/components/schemas/CartResponse"
+                }
+              }
+            },
+            "description": "OK"
+          }
+        },
+        "tags": [
+          "cart-controller"
+        ]
+      },
+      "put": {
+        "operationId": "cartSave",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CartRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "*/*": {
+                "schema": {
+                  "$ref": "#/components/schemas/CartResponse"
+                }
+              }
+            },
+            "description": "OK"
+          }
+        },
+        "tags": [
+          "cart-controller"
+        ]
+      }
+    },
     "/api/v1/categories": {
       "get": {
         "operationId": "catalogCategories",
@@ -9219,6 +9278,268 @@
           }
         }
       },
+      "CartDto": {
+        "type": "object",
+        "properties": {
+          "addressId": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "uuid"
+          },
+          "addressLabel": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "couponCode": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "couponDiscount": {
+            "type": [
+              "number",
+              "null"
+            ]
+          },
+          "durationMinutes": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "estimate": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/PriceBreakdown"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "expiresAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "genieId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "genieName": {
+            "type": "string"
+          },
+          "inspection": {
+            "type": "boolean"
+          },
+          "items": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/CartItemDto"
+            }
+          },
+          "itemsParam": {
+            "type": "string"
+          },
+          "notes": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "paymentMethod": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "slotStart": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date-time"
+          },
+          "tipAmount": {
+            "type": "number"
+          },
+          "total": {
+            "type": [
+              "number",
+              "null"
+            ]
+          },
+          "updatedAt": {
+            "type": "string",
+            "format": "date-time"
+          }
+        },
+        "required": [
+          "addressId",
+          "addressLabel",
+          "couponCode",
+          "couponDiscount",
+          "durationMinutes",
+          "estimate",
+          "expiresAt",
+          "genieId",
+          "genieName",
+          "inspection",
+          "items",
+          "itemsParam",
+          "notes",
+          "paymentMethod",
+          "slotStart",
+          "tipAmount",
+          "total",
+          "updatedAt"
+        ]
+      },
+      "CartItemDto": {
+        "type": "object",
+        "properties": {
+          "amount": {
+            "type": "number"
+          },
+          "durationMinutes": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "inspectionFirst": {
+            "type": "boolean"
+          },
+          "name": {
+            "type": "string"
+          },
+          "quantity": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "serviceId": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "unitPrice": {
+            "type": "number"
+          }
+        },
+        "required": [
+          "amount",
+          "durationMinutes",
+          "inspectionFirst",
+          "name",
+          "quantity",
+          "serviceId",
+          "unitPrice"
+        ]
+      },
+      "CartRequest": {
+        "type": "object",
+        "properties": {
+          "addressId": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "uuid"
+          },
+          "couponCode": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "maxLength": 30,
+            "minLength": 0
+          },
+          "genieId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "items": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ServiceLine"
+            },
+            "maxItems": 5,
+            "minItems": 0
+          },
+          "notes": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "maxLength": 500,
+            "minLength": 0
+          },
+          "paymentMethod": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "enum": [
+              "CASH",
+              "ONLINE"
+            ]
+          },
+          "replace": {
+            "type": "boolean"
+          },
+          "seenTotal": {
+            "type": [
+              "number",
+              "null"
+            ],
+            "minimum": 0
+          },
+          "slotStart": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date-time"
+          },
+          "tipAmount": {
+            "type": [
+              "number",
+              "null"
+            ],
+            "maximum": 2000,
+            "minimum": 0
+          }
+        },
+        "required": [
+          "genieId",
+          "items",
+          "replace"
+        ]
+      },
+      "CartResponse": {
+        "type": "object",
+        "properties": {
+          "cart": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/CartDto"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "notices": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          }
+        },
+        "required": [
+          "cart",
+          "notices"
+        ]
+      },
       "CategoryDetailDto": {
         "type": "object",
         "properties": {
@@ -10087,6 +10408,13 @@
             ],
             "maxLength": 30,
             "minLength": 0
+          },
+          "expectedTotal": {
+            "type": [
+              "number",
+              "null"
+            ],
+            "minimum": 0
           },
           "genieId": {
             "type": "string",

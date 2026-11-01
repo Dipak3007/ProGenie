@@ -6,6 +6,7 @@ import java.time.format.DateTimeFormatter;
 import java.util.Locale;
 
 import com.progenie.booking.BookingEvent;
+import com.progenie.booking.CartReminderDue;
 import com.progenie.booking.QuoteEvent;
 import com.progenie.messaging.NotificationService;
 import com.progenie.payment.PaymentDtos.PaymentReceived;
@@ -142,6 +143,13 @@ class NotificationListeners {
                     "The customer declined your quote for " + e.bookingRef() + ".", "/genie/bookings/" + e.inspectionBookingId());
             }
         });
+    }
+
+    @TransactionalEventListener
+    @Transactional(propagation = Propagation.REQUIRES_NEW)
+    public void onCartReminder(CartReminderDue e) {
+        safely(() -> notifications.notify(e.customerId(), "CART_REMINDER", "You left a booking unfinished",
+            "Your booking with " + e.genieName().split(" ")[0] + " (" + e.services() + ") is waiting in your cart.", "/cart"));
     }
 
     @TransactionalEventListener
