@@ -10,6 +10,7 @@ import { distanceKm } from '../../shared/geo/india';
 import { ToastService } from '../../core/ui/feedback';
 import { Spinner } from '../../shared/ui/kit';
 import { LatLng, MapPicker } from '../../shared/ui/map-picker';
+import { NotifyMe } from '../../shared/ui/notify-me';
 
 const LABELS = ['Home', 'Work', 'Other'];
 
@@ -23,10 +24,13 @@ const PIN_SETTLE_MS = 350;
  *
  * The two stay in step: typing a PIN code moves the pin to that PIN code's centre (then the user drags it to the
  * door), and moving the pin fills in the PIN code it lands in (GET /geo/pincodes/{pin}, GET /geo/pincode-at).
+ *
+ * The area name is not typed: the field is disabled and always follows the PIN code (typed or found from the map
+ * pin), when adding and when editing.
  */
 @Component({
   selector: 'pg-address-form',
-  imports: [DecimalPipe, FormsModule, MapPicker, Spinner],
+  imports: [DecimalPipe, FormsModule, MapPicker, NotifyMe, Spinner],
   changeDetection: ChangeDetectionStrategy.OnPush,
   template: `
     <form class="space-y-4" (ngSubmit)="save()" #f="ngForm">
@@ -79,6 +83,11 @@ const PIN_SETTLE_MS = 350;
             <span class="text-muted">Your PIN code tells us your city.</span>
           }
         </p>
+        @if (pinCheck(); as c) {
+          @if (!c.serviceable) {
+            <pg-notify-me [pincode]="c.pincode" />
+          }
+        }
       </div>
 
       <div>
@@ -92,6 +101,10 @@ const PIN_SETTLE_MS = 350;
             <span [class]="n.tone === 'ok' ? 'text-emerald-700' : 'text-amber-700'">{{ n.text }}</span>
           }
         </p>
+        @if (unservedPoint(); as p) {
+          <p class="mt-1 text-sm text-rose-700">We don't serve this place yet.</p>
+          <pg-notify-me [lat]="p.lat" [lng]="p.lng" />
+        }
         @if (tooFar(); as far) {
           <p class="mt-1 text-sm font-medium text-rose-700" role="alert">
             The pin is {{ far.km | number: '1.0-0' }} km from {{ far.city }}; we serve up to {{ far.radius }} km. Move the pin or check the PIN code.
@@ -110,13 +123,64 @@ const PIN_SETTLE_MS = 350;
         </div>
         <div>
           <label class="label" for="a-area">Area</label>
-          <input id="a-area" name="area" class="field" maxlength="80" [(ngModel)]="model.area" placeholder="Satellite" />
+          <input
+            id="a-area"
+            name="area"
+            class="field disabled:cursor-not-allowed disabled:bg-surface disabled:text-ink/70 disabled:opacity-100"
+            disabled
+            aria-describedby="a-area-hint"
+            [value]="model.area"
+            placeholder="From your PIN code"
+          />
+          <p id="a-area-hint" class="mt-1 text-xs text-muted">Filled in from the PIN code or the map pin.</p>
         </div>
         <div>
           <label class="label" for="a-landmark">Landmark (optional)</label>
           <input id="a-landmark" name="landmark" class="field" maxlength="120" [(ngModel)]="model.landmark" placeholder="Opp. Iscon Mall" />
         </div>
       </div>
+
+      <fieldset class="rounded-2xl border border-line p-4" data-testid="address-contact">
+        <legend class="px-1 text-sm font-semibold">Booking for someone else? <span class="font-normal text-muted">(optional)</span></legend>
+        <p class="text-xs text-muted">
+          Add the person who will be there, e.g. your parents. The Genie calls them, and they get an SMS with a tracking link and their own start code when
+          the Genie sets off.
+        </p>
+        <div class="mt-3 grid gap-4 sm:grid-cols-2">
+          <div>
+            <label class="label" for="a-contact-name">Their name</label>
+            <input
+              id="a-contact-name"
+              name="contactName"
+              class="field"
+              maxlength="80"
+              autocomplete="off"
+              [(ngModel)]="model.contactName"
+              [required]="!!model.contactPhone.trim()"
+              placeholder="Asha Shah"
+            />
+          </div>
+          <div>
+            <label class="label" for="a-contact-phone">Their mobile number</label>
+            <input
+              id="a-contact-phone"
+              name="contactPhone"
+              class="field"
+              type="tel"
+              inputmode="tel"
+              maxlength="16"
+              autocomplete="off"
+              pattern="(\\+91[\\s-]?)?[6-9][0-9]{4}[\\s-]?[0-9]{5}"
+              [(ngModel)]="model.contactPhone"
+              [required]="!!model.contactName.trim()"
+              placeholder="98250 12345"
+            />
+          </div>
+        </div>
+        @if (contactHalf()) {
+          <p class="mt-2 text-xs text-amber-700">Add both their name and mobile number, or leave both empty.</p>
+        }
+      </fieldset>
 
       <label class="flex items-center gap-3 text-sm">
         <input type="checkbox" name="isDefault" class="size-5 rounded accent-brand" [(ngModel)]="model.isDefault" />
@@ -164,6 +228,8 @@ export class AddressForm {
   /** A PIN code ↔ pin lookup in flight: 'pin' (placing a typed PIN code) or 'code' (PIN code of a moved pin). */
   protected readonly syncing = signal<'pin' | 'code' | null>(null);
   protected readonly syncNote = signal<{ text: string; tone: 'ok' | 'warn' } | null>(null);
+  /** A pin outside every live city whose PIN code is unknown: "Notify me" for that spot. */
+  protected readonly unservedPoint = signal<LatLng | null>(null);
   protected model = this.blank();
 
   /** The PIN code's city (from the live city list), else the city being browsed. */
@@ -192,8 +258,6 @@ export class AddressForm {
   private settleTimer: ReturnType<typeof setTimeout> | undefined;
   /** The PIN code the pin is known to be in (so typing that same PIN code does not move it). */
   private pinPincode: string | null = null;
-  /** The area text we filled in ourselves (replaced when the PIN code changes; the user's own text is kept). */
-  private autoArea: string | null = null;
 
   constructor() {
     inject(DestroyRef).onDestroy(() => clearTimeout(this.settleTimer));
@@ -201,11 +265,20 @@ export class AddressForm {
       const a = this.address();
       untracked(() => {
         this.model = a
-          ? { label: a.label, line1: a.line1, line2: a.line2 ?? '', landmark: a.landmark ?? '', area: a.area ?? '', pincode: a.pincode, isDefault: a.isDefault }
+          ? {
+              label: a.label,
+              line1: a.line1,
+              line2: a.line2 ?? '',
+              landmark: a.landmark ?? '',
+              area: a.area ?? '',
+              pincode: a.pincode,
+              isDefault: a.isDefault,
+              contactName: a.contactName ?? '',
+              contactPhone: a.contactPhone ?? '',
+            }
           : this.blank();
         this.pin.set(a ? { lat: a.lat, lng: a.lng } : null);
         this.pinPincode = a?.pincode ?? null;
-        this.autoArea = null;
         this.error.set(null);
         this.syncNote.set(null);
         this.geoSeq++;
@@ -215,19 +288,21 @@ export class AddressForm {
   }
 
   private blank() {
-    return { label: 'Home', line1: '', line2: '', landmark: '', area: '', pincode: '', isDefault: false };
+    return { label: 'Home', line1: '', line2: '', landmark: '', area: '', pincode: '', isDefault: false, contactName: '', contactPhone: '' };
   }
 
   /**
-   * Checks the PIN code as soon as it has 6 digits; a served one also fills in the area if it is empty.
-   * A PIN code the user typed also moves the pin there; one filled in from the map does not.
+   * Checks the PIN code as soon as it has 6 digits; the area always follows it (empty while the PIN code is not one
+   * we serve). A PIN code the user typed also moves the pin there; one filled in from the map does not.
    */
   protected onPincode(value: string, from: 'typed' | 'map' | 'loaded'): void {
     const pincode = (value ?? '').trim();
     const seq = ++this.pinSeq;
     this.pinCheck.set(null);
     this.pinError.set(null);
+    if (from !== 'loaded') this.setArea(null); // a new PIN code: the old area no longer applies
     if (from === 'typed') {
+      this.unservedPoint.set(null);
       this.geoSeq++; // the user's typing wins over a map lookup still in flight
       clearTimeout(this.settleTimer);
       this.syncing.set(null);
@@ -244,10 +319,8 @@ export class AddressForm {
         if (seq !== this.pinSeq) return;
         this.checkingPin.set(false);
         this.pinCheck.set(c);
-        if (c.serviceable && c.area && (!this.model.area.trim() || this.model.area === this.autoArea)) {
-          this.autoArea = c.area.split(',')[0].trim().slice(0, 80);
-          this.model = { ...this.model, area: this.autoArea };
-        }
+        // also for an address loaded for editing: the area is always the PIN code's
+        this.setArea(c.serviceable ? c.area : null);
       },
       error: (err) => {
         if (seq !== this.pinSeq) return;
@@ -255,6 +328,11 @@ export class AddressForm {
         this.pinError.set(errorMessage(err, 'Could not check this PIN code.'));
       },
     });
+  }
+
+  /** The area shown and saved: the first part of the PIN code's area name ("Lal Darwaja, Old City" → "Lal Darwaja"). */
+  private setArea(area: string | null | undefined): void {
+    this.model = { ...this.model, area: area ? area.split(',')[0].trim().slice(0, 80) : '' };
   }
 
   /** Typed PIN code → pin at its centre. */
@@ -285,6 +363,7 @@ export class AddressForm {
   protected onPinMoved(point: LatLng): void {
     this.pin.set(point);
     this.pinPincode = null;
+    this.unservedPoint.set(null);
     const seq = ++this.geoSeq;
     clearTimeout(this.settleTimer);
     this.syncing.set('code');
@@ -297,10 +376,18 @@ export class AddressForm {
           if (!r.inIndia) return; // the map already said so
           if (!r.pincode) {
             this.syncNote.set({ text: "We couldn't tell the PIN code here. Type it above.", tone: 'warn' });
+            // outside every live city? then offer "Notify me" for this spot (Phase 3.5B)
+            this.cities.checkLocation(point.lat, point.lng).subscribe({
+              next: (l) => {
+                if (seq === this.geoSeq && l.inIndia && !l.serviceable) this.unservedPoint.set(point);
+              },
+              error: () => undefined,
+            });
             return;
           }
           this.pinPincode = r.pincode;
           if (r.pincode === this.model.pincode.trim()) {
+            if (r.area && !this.model.area && this.pinCheck()?.serviceable) this.setArea(r.area);
             this.syncNote.set({ text: `The pin is in ${r.pincode}.`, tone: 'ok' });
             return;
           }
@@ -317,6 +404,11 @@ export class AddressForm {
     }, PIN_SETTLE_MS);
   }
 
+  /** Only one of the contact's name and phone filled in (the API wants both or neither). */
+  protected contactHalf(): boolean {
+    return !!this.model.contactName.trim() !== !!this.model.contactPhone.trim();
+  }
+
   protected save(): void {
     const pin = this.pin();
     if (!pin) return;
@@ -330,6 +422,8 @@ export class AddressForm {
       lat: pin.lat,
       lng: pin.lng,
       isDefault: this.model.isDefault,
+      contactName: this.model.contactName.trim() || null,
+      contactPhone: this.model.contactPhone.trim() || null,
     };
     this.saving.set(true);
     this.error.set(null);

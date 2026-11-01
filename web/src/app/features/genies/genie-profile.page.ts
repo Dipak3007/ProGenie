@@ -15,14 +15,17 @@ import { CustomerApi } from '../../core/api/customer-api';
 import { Area, GenieCard as GenieCardModel, GenieDetail, GenieService, PriceBreakdown } from '../../core/api/models';
 import { CityStore } from '../../core/city/city-store';
 import { AuthStore } from '../../core/auth/auth-store';
-import { ToastService } from '../../core/ui/feedback';
+import { ConfirmService, ToastService } from '../../core/ui/feedback';
+import { CartStore } from '../../core/cart/cart-store';
 import { Avatar } from '../../shared/ui/avatar';
 import { CategoryVisual } from '../../shared/ui/category-visual';
 import { GenieBadges } from '../../shared/ui/genie-badges';
+import { ReviewPhotos } from '../../shared/ui/review-photos';
+import { itemsParam, MAX_SERVICES, parseItems } from '../../shared/service-lines';
 
 @Component({
   selector: 'pg-genie-profile-page',
-  imports: [RouterLink, CurrencyPipe, DatePipe, DecimalPipe, LucideDynamicIcon, Avatar, CategoryVisual, GenieBadges],
+  imports: [RouterLink, CurrencyPipe, DatePipe, DecimalPipe, LucideDynamicIcon, Avatar, CategoryVisual, GenieBadges, ReviewPhotos],
   changeDetection: ChangeDetectionStrategy.OnPush,
   template: `
     @if (detail.value(); as d) {
@@ -80,22 +83,27 @@ import { GenieBadges } from '../../shared/ui/genie-badges';
 
           <section aria-labelledby="svc-h">
             <h2 id="svc-h" class="text-2xl font-bold">Services &amp; prices</h2>
+            <p class="mt-1 text-sm text-muted">Tap one or more: several services are done in one visit, with one travel fee.</p>
             <ul class="mt-4 grid gap-3 sm:grid-cols-2">
               @for (s of d.services; track s.serviceId) {
                 <li>
                   <button
                     type="button"
-                    class="card flex w-full items-start justify-between gap-3 p-4 text-left transition hover:border-brand-soft"
-                    [class.ring-2]="selected()?.serviceId === s.serviceId"
-                    [class.ring-brand]="selected()?.serviceId === s.serviceId"
-                    [attr.aria-pressed]="selected()?.serviceId === s.serviceId"
-                    (click)="select(s)"
+                    class="card flex w-full items-start justify-between gap-3 p-4 text-left transition hover:border-brand-soft disabled:opacity-50"
+                    [class.ring-2]="isPicked(s)"
+                    [class.ring-brand]="isPicked(s)"
+                    [attr.aria-pressed]="isPicked(s)"
+                    [disabled]="!isPicked(s) && picked().length >= maxServices"
+                    (click)="toggle(s)"
                   >
                     <span>
                       <span class="block font-semibold">{{ s.name }}</span>
                       <span class="mt-1 inline-flex items-center gap-1 text-xs text-muted">
                         <svg [lucideIcon]="Clock" [size]="14" aria-hidden="true"></svg> ~{{ s.durationMinutes }} min
                       </span>
+                      @if (s.inspectionFirst) {
+                        <span class="mt-1 block text-xs font-semibold text-brand-600">Inspection visit first, then a quote</span>
+                      }
                     </span>
                     <span class="font-display text-lg font-bold">{{ s.price | currency: 'INR' : 'symbol' : '1.0-0' }}</span>
                   </button>
@@ -117,6 +125,7 @@ import { GenieBadges } from '../../shared/ui/genie-badges';
                   @if (r.comment) {
                     <p class="mt-2 text-sm text-ink/80">{{ r.comment }}</p>
                   }
+                  <pg-review-photos [urls]="r.photoUrls" />
                   @if (r.genieReply) {
                     <div class="mt-3 rounded-xl bg-surface px-4 py-3 text-sm">
                       <p class="text-xs font-semibold text-brand-600">Reply from {{ d.genie.fullName.split(' ')[0] }}</p>
@@ -135,8 +144,12 @@ import { GenieBadges } from '../../shared/ui/genie-badges';
         <aside class="lg:sticky lg:top-24 lg:self-start">
           <div class="card p-6">
             <h2 class="text-xl font-bold">Price estimate</h2>
-            @if (selected(); as s) {
-              <p class="mt-1 text-sm text-muted">{{ s.name }}</p>
+            @if (picked().length) {
+              <ul class="mt-1 text-sm text-muted" data-testid="picked-services">
+                @for (s of picked(); track s.serviceId) {
+                  <li>{{ s.name }}</li>
+                }
+              </ul>
               <label class="label mt-4" for="area">Your area{{ detail.value()?.genie?.cityName ? ' in ' + detail.value()!.genie.cityName : '' }}</label>
               <select id="area" class="field" [value]="areaIndex()" (change)="areaIndex.set(+$any($event.target).value); estimate()">
                 @for (a of areas(); track a.name; let i = $index) {
@@ -146,7 +159,7 @@ import { GenieBadges } from '../../shared/ui/genie-badges';
 
               @if (quote(); as q) {
                 <dl class="mt-5 space-y-2 text-sm">
-                  <div class="flex justify-between"><dt class="text-muted">Service</dt><dd>{{ q.serviceAmount | currency: 'INR' }}</dd></div>
+                  <div class="flex justify-between"><dt class="text-muted">{{ q.inspection ? 'Inspection visit' : 'Service' }}</dt><dd>{{ q.serviceAmount | currency: 'INR' }}</dd></div>
                   <div class="flex justify-between">
                     <dt class="text-muted">Travel ({{ q.distanceMethod === 'ROAD' ? '' : '≈ ' }}{{ q.distanceKm | number: '1.1-1' }} km{{ q.distanceMethod === 'ROAD' ? ' by road' : '' }})</dt>
                     <dd>{{ q.travelFee > 0 ? (q.travelFee | currency: 'INR') : 'Free' }}</dd>
@@ -161,14 +174,14 @@ import { GenieBadges } from '../../shared/ui/genie-badges';
 
               @if (auth.role() === null || auth.role() === 'CUSTOMER') {
                 <button type="button" class="btn-gold mt-6 min-h-12 w-full" (click)="book()">
-                  {{ auth.isLoggedIn() ? 'Choose a time' : 'Log in to book' }}
+                  {{ auth.isLoggedIn() ? (quote()?.inspection ? 'Book an inspection' : 'Choose a time') : 'Log in to book' }}
                 </button>
-                <p class="mt-3 text-xs text-muted">Pick a slot next. Nothing is charged until the job is done.</p>
+                <p class="mt-3 text-xs text-muted">Pick a slot next (and how many of each, e.g. 2 fans). Nothing is charged until the job is done.</p>
               } @else {
                 <p class="mt-6 rounded-xl bg-surface px-4 py-3 text-sm text-muted">Bookings are made from a customer account.</p>
               }
             } @else {
-              <p class="mt-2 text-sm text-muted">Pick a service to see the full price including travel.</p>
+              <p class="mt-2 text-sm text-muted">Pick one or more services to see the full price including travel.</p>
             }
           </div>
         </aside>
@@ -191,6 +204,8 @@ export default class GenieProfilePage {
   private readonly customer = inject(CustomerApi);
   private readonly toast = inject(ToastService);
   private readonly router = inject(Router);
+  private readonly carts = inject(CartStore);
+  private readonly confirm = inject(ConfirmService);
 
   /** Only customers have favourites; for everyone else the request is skipped. */
   private readonly favourites = httpResource<GenieCardModel[]>(() => (this.auth.role() === 'CUSTOMER' ? `${API}/me/favourites` : undefined));
@@ -198,7 +213,9 @@ export default class GenieProfilePage {
   protected readonly isFavourite = computed(() => this.favOverride() ?? (this.favourites.value() ?? []).some((g) => g.id === this.id()));
 
   protected readonly detail = httpResource<GenieDetail>(() => `${API}/genies/${encodeURIComponent(this.id())}`);
-  protected readonly selected = signal<GenieService | null>(null);
+  /** The services ticked for one visit (Phase 3.5C: up to 5). */
+  protected readonly picked = signal<GenieService[]>([]);
+  protected readonly maxServices = MAX_SERVICES;
   protected readonly areaIndex = signal(0);
   protected readonly quote = signal<PriceBreakdown | null>(null);
   protected readonly quoteError = signal<string | null>(null);
@@ -241,18 +258,33 @@ export default class GenieProfilePage {
     return '★'.repeat(n) + '☆'.repeat(5 - n);
   }
 
-  protected select(service: GenieService): void {
-    this.selected.set(service);
+  protected isPicked(service: GenieService): boolean {
+    return this.picked().some((s) => s.serviceId === service.serviceId);
+  }
+
+  protected toggle(service: GenieService): void {
+    const list = this.picked();
+    if (this.isPicked(service)) {
+      this.picked.set(list.filter((s) => s.serviceId !== service.serviceId));
+    } else if (list.length < MAX_SERVICES) {
+      this.picked.set([...list, service]);
+    }
     this.estimate();
   }
 
+  private items(): string {
+    return itemsParam(this.picked().map((s) => ({ serviceId: s.serviceId, quantity: 1 })));
+  }
+
   protected estimate(): void {
-    const service = this.selected();
-    if (!service) return;
+    if (!this.picked().length) {
+      this.quote.set(null);
+      return;
+    }
     const area = this.areas()[this.areaIndex()] ?? this.areas()[0];
     if (!area) return;
     this.quoteError.set(null);
-    this.api.estimate(this.id(), service.serviceId, area.lat, area.lng).subscribe({
+    this.api.estimate(this.id(), this.items(), area.lat, area.lng).subscribe({
       next: (q) => this.quote.set(q),
       error: (err) => {
         this.quote.set(null);
@@ -261,11 +293,33 @@ export default class GenieProfilePage {
     });
   }
 
-  /** Guests can browse and price freely; logging in is required only to book. */
-  protected book(): void {
-    const serviceId = this.selected()?.serviceId;
-    const target = this.router.createUrlTree(['/book', this.id()], { queryParams: serviceId ? { serviceId } : {} });
+  /**
+   * Guests can browse and price freely; logging in is required only to book. A guest's picks are kept as their cart
+   * (Phase 3.5E) and move into their account when they log in; a cart for another Genie is replaced only on a yes.
+   */
+  protected async book(): Promise<void> {
+    const items = this.items();
+    const target = this.router.createUrlTree(['/book', this.id()], { queryParams: items ? { items } : {} });
     if (!this.auth.isLoggedIn()) {
+      const g = this.detail.value();
+      const current = this.carts.guest();
+      if (g && current && current.genieId !== g.genie.id) {
+        const { confirmed } = await this.confirm.ask({
+          title: 'Replace your cart?',
+          message: `Your cart has a booking with ${current.genieName}. Starting one with ${g.genie.fullName} will clear it.`,
+          confirmLabel: 'Clear cart and continue',
+          cancelLabel: 'Keep my cart',
+          tone: 'danger',
+        });
+        if (!confirmed) {
+          void this.router.navigate(['/cart']);
+          return;
+        }
+      }
+      if (g) {
+        const lines = parseItems(items).map((l) => ({ ...l, name: g.services.find((s) => s.serviceId === l.serviceId)?.name ?? 'Service' }));
+        if (lines.length) this.carts.saveGuest({ genieId: g.genie.id, genieName: g.genie.fullName, items: lines, savedAt: new Date().toISOString() });
+      }
       this.router.navigate(['/login'], { queryParams: { returnUrl: this.router.serializeUrl(target) } });
       return;
     }

@@ -43,7 +43,8 @@ public class DemandMap {
      * hour filters, so they show when demand happens.
      */
     public record DemandMapDto(String layer, int days, OffsetDateTime from, int total, int unplaced, List<DemandCell> cells,
-                               Map<String, Integer> byKind, Map<String, Integer> byReason, int[] byHour, int[] byWeekday) {
+                               Map<String, Integer> byKind, Map<String, Integer> byReason, int[] byHour, int[] byWeekday,
+                               LaunchAlerts.LaunchWaitingSummary waiting) {
     }
 
     record CellRow(String cellKey, @Nullable String pincode, @Nullable String area, @Nullable Double lat, @Nullable Double lng,
@@ -60,8 +61,10 @@ public class DemandMap {
     private final JdbcClient jdbc;
     private final Clock clock;
     private final String timezone;
+    private final LaunchAlerts launchAlerts;
 
-    public DemandMap(JdbcClient jdbc, Clock clock, AppProperties app) {
+    public DemandMap(JdbcClient jdbc, Clock clock, AppProperties app, LaunchAlerts launchAlerts) {
+        this.launchAlerts = launchAlerts;
         this.jdbc = jdbc;
         this.clock = clock;
         this.timezone = app.timezone();
@@ -105,7 +108,8 @@ public class DemandMap {
             byHour[t.hr()] += t.count();
             byWeekday[t.dow() - 1] += t.count();
         }
-        return new DemandMapDto(layer.name(), days, from, total, unplaced, cells, byKind, byReason, byHour, byWeekday);
+        return new DemandMapDto(layer.name(), days, from, total, unplaced, cells, byKind, byReason, byHour, byWeekday,
+            launchAlerts.waiting());
     }
 
     private JdbcClient.StatementSpec filtered(String key, OffsetDateTime from, @Nullable Long cityId, @Nullable Long categoryId,

@@ -44,11 +44,13 @@ public class SecurityConfig {
                 .dispatcherTypeMatchers(DispatcherType.ASYNC).permitAll()
                 .requestMatchers("/error", "/actuator/health/**", "/actuator/info",
                         "/v3/api-docs/**", "/swagger-ui/**", "/swagger-ui.html").permitAll()
-                .requestMatchers(HttpMethod.POST, "/api/v1/auth/**", "/api/v1/contact",
+                .requestMatchers(HttpMethod.POST, "/api/v1/auth/**", "/api/v1/contact", "/api/v1/launch-alerts", "/api/v1/help/*/vote",
                         "/api/v1/payments/webhook/**",                      // verified by HMAC signature
                         "/api/v1/webhooks/**").permitAll()                  // verified by a shared token
-                .requestMatchers(HttpMethod.GET, "/api/v1/legal/**").permitAll()
+                .requestMatchers(HttpMethod.GET, "/api/v1/legal/**", "/api/v1/help", "/api/v1/help/**").permitAll()
                 .requestMatchers(HttpMethod.GET, "/api/v1/files/*").permitAll()         // signed, expiring download links
+                .requestMatchers(HttpMethod.GET, "/api/v1/track/*").permitAll()         // contact's tracking link: unguessable token
+                .requestMatchers(HttpMethod.GET, "/api/v1/review-photos/*").permitAll() // public with the review (unless hidden)
                 .requestMatchers(HttpMethod.GET, "/api/v1/cities/**", "/api/v1/categories/**",
                         "/api/v1/genies/**", "/api/v1/pricing/**", "/api/v1/search",
                         "/api/v1/serviceability", "/api/v1/serviceability/**").permitAll()
@@ -56,7 +58,7 @@ public class SecurityConfig {
                 .requestMatchers("/api/v1/genie/**").hasRole("GENIE")
                 .requestMatchers("/api/v1/bookings/**", "/api/v1/payments/**",
                         "/api/v1/me/addresses/**", "/api/v1/me/favourites/**", "/api/v1/coupons/**",
-                        "/api/v1/instant/**").hasRole("CUSTOMER")
+                        "/api/v1/instant/**", "/api/v1/quotes/**", "/api/v1/cart").hasRole("CUSTOMER")
                 .anyRequest().authenticated())
             // 401/403 as ProblemDetail JSON with an errorId, like every other error (3A-0)
             .exceptionHandling(e -> e.authenticationEntryPoint(ProblemResponses.authenticationEntryPoint())

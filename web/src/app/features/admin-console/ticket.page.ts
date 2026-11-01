@@ -17,6 +17,7 @@ import { SlotPicker } from '../../shared/ui/slot-picker';
 import { TicketThread } from '../support/ticket-thread';
 import { AdminCounts } from './admin-console.page';
 import { RefundFields, newRefund, refundValid } from './refund-fields';
+import { bookingItemsParam } from '../../shared/service-lines';
 
 const OPEN = ['OPEN', 'IN_REVIEW', 'AWAITING_REPLY'];
 
@@ -142,6 +143,11 @@ const OPEN = ['OPEN', 'IN_REVIEW', 'AWAITING_REPLY'];
                   </select>
                 }
                 @if (selectedPayment(); as p) {
+                  @if (reportedAmount() !== null && p.purpose !== 'CANCELLATION_FEE') {
+                    <p class="mt-2 text-xs text-muted" data-testid="refund-from-items">
+                      Starts at {{ reportedAmount() | currency: 'INR' }}: what the reported services cost. Change it if needed.
+                    </p>
+                  }
                   <pg-refund-fields class="mt-3 block" [payment]="p" [(value)]="refund" [showReason]="false" />
                 } @else {
                   <p class="mt-2 text-sm text-rose-700">This booking has no payment left to refund.</p>
@@ -153,7 +159,7 @@ const OPEN = ['OPEN', 'IN_REVIEW', 'AWAITING_REPLY'];
               <div class="mt-5 rounded-2xl border border-line p-4">
                 <p class="font-semibold">Free redo with {{ b.genie.name }}</p>
                 <p class="text-xs text-muted">Nothing to pay, no commission. The Genie confirms the time like any request.</p>
-                <pg-slot-picker class="mt-3 block" [genieId]="b.genie.id" [serviceId]="b.serviceId" [selected]="redoSlot()?.start ?? null" (picked)="redoSlot.set($event)" />
+                <pg-slot-picker class="mt-3 block" [genieId]="b.genie.id" [items]="redoItems(b)" [minutes]="redoMinutes(b)" [selected]="redoSlot()?.start ?? null" (picked)="redoSlot.set($event)" />
               </div>
             }
 
@@ -226,6 +232,18 @@ export default class AdminTicketPage {
     liveReload('ticket', (e) => e.ticketId === this.id(), () => this.ticket.reload());
   }
 
+  /** A free redo covers every service on the booking, so its slot is as long as all of them. */
+  protected redoItems(b: BookingDetail): string {
+    return bookingItemsParam(b);
+  }
+
+  /** A quoted job (Phase 3.5D) is redone in the same time; an inspection takes 30 minutes. */
+  protected redoMinutes(b: BookingDetail): number | null {
+    if (b.kind === 'INSPECTION') return 30;
+    if (b.quote) return Math.round((new Date(b.slotEnd).getTime() - new Date(b.slotStart).getTime()) / 60000);
+    return null;
+  }
+
   protected isOpen(t: TicketDetail): boolean {
     return OPEN.includes(t.status);
   }
@@ -259,14 +277,31 @@ export default class AdminTicketPage {
     this.resolveError.set(null);
     const first = this.refundablePayments()[0];
     this.paymentId.set(first?.id ?? null);
-    if (first) this.refund.set(newRefund(first));
+    if (first) this.refund.set(this.suggestedRefund(first));
     this.resolveOpen.set(true);
   }
 
   protected pickPayment(id: string): void {
     this.paymentId.set(id);
     const p = this.selectedPayment();
-    if (p) this.refund.set(newRefund(p));
+    if (p) this.refund.set(this.suggestedRefund(p));
+  }
+
+  /** What the reported services cost after their coupon share (Phase 3.5C); null when the whole booking is reported. */
+  protected readonly reportedAmount = computed(() => {
+    const items = this.ticket.value()?.items ?? [];
+    if (!items.length) return null;
+    return Math.round(items.reduce((sum, i) => sum + i.amount - i.discountAmount, 0) * 100) / 100;
+  });
+
+  /** A booking payment's refund starts from the reported services' price (never more than is left to refund). */
+  private suggestedRefund(p: Payment): RefundRequest {
+    const r = newRefund(p);
+    const reported = this.reportedAmount();
+    if (reported !== null && p.purpose !== 'CANCELLATION_FEE' && r.amount !== null && r.amount !== undefined) {
+      r.amount = Math.min(r.amount, reported);
+    }
+    return r;
   }
 
   protected canResolve(): boolean {

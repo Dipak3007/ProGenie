@@ -4,6 +4,8 @@
 export interface AddressView {
   area: (string | null);
   city: (string | null);
+  contactName: (string | null);
+  contactPhone: (string | null);
   label: (string | null);
   landmark: (string | null);
   line1: (string | null);

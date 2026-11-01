@@ -26,6 +26,7 @@ import com.progenie.shared.config.AppProperties;
 import com.progenie.shared.config.QueryConstants;
 import com.progenie.shared.error.ApiException;
 import com.progenie.shared.util.QueryUtil;
+import com.progenie.shared.util.ServiceLines;
 import com.progenie.shared.util.Times;
 import jakarta.validation.constraints.DecimalMax;
 import jakarta.validation.constraints.DecimalMin;
@@ -239,7 +240,7 @@ public class InstantBookings {
         }
         String coupon = StringUtils.hasText(req.couponCode()) ? req.couponCode().trim() : null;
         if (coupon != null) {
-            coupons.check(customerId, coupon, null, s.id(), req.addressId()); // 404/422 with the reason
+            coupons.check(customerId, coupon, null, List.of(new ServiceLines.ServiceLine(s.id(), 1)), req.addressId()); // 404/422 with the reason
         }
         UUID id = jdbc.sql(QueryUtil.get(QueryConstants.INSERT_INSTANT_REQUEST))
             .param("customerId", customerId).param("serviceId", s.id()).param("addressId", req.addressId())

@@ -6,6 +6,9 @@ import { API } from './api';
 import { LEGAL_SLUG } from './account-api';
 import {
   AdminCategory,
+  AdminHelpArticle,
+  HelpArticleRequest,
+  AdminReviewPhoto,
   AdminCity,
   AdminCoupon,
   AdminGenieDetail,
@@ -217,5 +220,36 @@ export class AdminApi {
     if (f.weekday) params['weekday'] = f.weekday;
     if (f.hour !== null) params['hour'] = f.hour;
     return this.http.get<DemandMap>(`${this.base}/demand`, { params });
+  }
+
+  /** Photos in reviews (Phase 3.5A): reported ones (the queue) or all, newest first. */
+  reviewPhotos(reported: boolean, page = 0): Observable<Page<AdminReviewPhoto>> {
+    return this.http.get<Page<AdminReviewPhoto>>(`${this.base}/review-photos`, { params: { reported, page, size: 24 } });
+  }
+
+  hideReviewPhoto(id: string): Observable<void> {
+    return this.http.post<void>(`${this.base}/review-photos/${id}/hide`, {});
+  }
+
+  /** Shows a hidden photo again, or keeps a reported one (clears the report). */
+  keepReviewPhoto(id: string): Observable<void> {
+    return this.http.post<void>(`${this.base}/review-photos/${id}/keep`, {});
+  }
+
+  /** Help centre editor (Phase 3.5B): every answer, published or not, with helpful counts. */
+  helpArticles(): Observable<AdminHelpArticle[]> {
+    return this.http.get<AdminHelpArticle[]>(`${this.base}/help`);
+  }
+
+  createHelpArticle(body: HelpArticleRequest): Observable<AdminHelpArticle> {
+    return this.http.post<AdminHelpArticle>(`${this.base}/help`, body);
+  }
+
+  updateHelpArticle(id: number, body: HelpArticleRequest): Observable<AdminHelpArticle> {
+    return this.http.put<AdminHelpArticle>(`${this.base}/help/${id}`, body);
+  }
+
+  deleteHelpArticle(id: number): Observable<void> {
+    return this.http.delete<void>(`${this.base}/help/${id}`);
   }
 }

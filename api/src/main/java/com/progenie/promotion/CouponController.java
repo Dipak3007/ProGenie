@@ -5,6 +5,8 @@ import java.util.UUID;
 
 import com.progenie.promotion.CouponService.CouponOfferDto;
 import com.progenie.shared.security.CurrentUser;
+import com.progenie.shared.util.ServiceLines;
+import com.progenie.shared.util.ServiceLines.ServiceLine;
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.NotNull;
@@ -22,8 +24,12 @@ import org.springframework.web.bind.annotation.RestController;
 @RequestMapping("/api/v1/coupons")
 public class CouponController {
 
-    /** {@code genieId} is left out for Genie Now (the Genie is not known yet: the service's base price is used). */
-    public record CheckRequest(@NotBlank @Size(max = 30) String code, @Nullable UUID genieId, @NotNull Long serviceId,
+    /**
+     * {@code genieId} is left out for Genie Now (the Genie is not known yet: the service's base price is used).
+     * Several services (Phase 3.5C): {@code items} instead of {@code serviceId}.
+     */
+    public record CheckRequest(@NotBlank @Size(max = 30) String code, @Nullable UUID genieId, @Nullable Long serviceId,
+                               @Nullable @Size(max = ServiceLines.MAX_SERVICES) List<@Valid ServiceLine> items,
                                @NotNull UUID addressId) {
     }
 
@@ -35,14 +41,16 @@ public class CouponController {
 
     /** Public coupons for this order, with the discount each gives (or why it can't be used). */
     @GetMapping
-    public List<CouponOfferDto> available(@RequestParam(required = false) @Nullable UUID genieId, @RequestParam long serviceId,
+    public List<CouponOfferDto> available(@RequestParam(required = false) @Nullable UUID genieId,
+                                          @RequestParam(required = false) @Nullable Long serviceId,
+                                          @RequestParam(required = false) @Nullable String items,
                                           @RequestParam UUID addressId) {
-        return coupons.available(CurrentUser.id(), genieId, serviceId, addressId);
+        return coupons.available(CurrentUser.id(), genieId, ServiceLines.parse(serviceId, items), addressId);
     }
 
     /** A typed code: 200 with the discount, 404 COUPON_NOT_FOUND, or 422 with why it doesn't apply. */
     @PostMapping("/check")
     public CouponOfferDto check(@Valid @RequestBody CheckRequest req) {
-        return coupons.check(CurrentUser.id(), req.code(), req.genieId(), req.serviceId(), req.addressId());
+        return coupons.check(CurrentUser.id(), req.code(), req.genieId(), ServiceLines.of(req.serviceId(), req.items()), req.addressId());
     }
 }

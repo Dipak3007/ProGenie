@@ -14,19 +14,25 @@ import com.progenie.booking.SlotCalculator.Slot;
 import com.progenie.provider.GenieDirectory.Interval;
 import com.progenie.provider.GenieDirectory.Window;
 import com.progenie.provider.GenieDirectory;
+import com.progenie.pricing.PricingService;
 import com.progenie.shared.config.AppProperties;
 import com.progenie.shared.config.QueryConstants;
 import com.progenie.shared.error.ApiException;
 import com.progenie.shared.util.QueryUtil;
+import com.progenie.shared.util.ServiceLines.ServiceLine;
 import com.progenie.shared.util.Times;
 import org.springframework.jdbc.core.simple.JdbcClient;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
-/** Free time slots for a Genie and service, and the server-side check used when booking. */
+/**
+ * Free time slots for a Genie and one or more services (Phase 3.5C: the slot is as long as all of them together), and
+ * the server-side check used when booking.
+ */
 @Service
 public class SlotService {
 
+    /** {@code serviceId}: the first service; {@code durationMinutes}: how long all of them take. */
     public record DaySlotsDto(LocalDate date, UUID genieId, long serviceId, int durationMinutes, List<Slot> slots) {
     }
 
@@ -35,28 +41,54 @@ public class SlotService {
 
     private final JdbcClient jdbc;
     private final GenieDirectory directory;
+    private final PricingService pricing;
     private final AppProperties.Booking rules;
     private final ZoneId zone;
     private final Clock clock;
 
-    public SlotService(JdbcClient jdbc, GenieDirectory directory, AppProperties props, Clock clock) {
+    public SlotService(JdbcClient jdbc, GenieDirectory directory, PricingService pricing, AppProperties props, Clock clock) {
         this.jdbc = jdbc;
         this.directory = directory;
+        this.pricing = pricing;
         this.rules = props.booking();
         this.zone = ZoneId.of(props.timezone());
         this.clock = clock;
     }
 
     @Transactional(readOnly = true)
-    public DaySlotsDto daySlots(UUID genieId, long serviceId, LocalDate date) {
-        int duration = directory.bookableOffer(genieId, serviceId).durationMinutes();
-        return new DaySlotsDto(date, genieId, serviceId, duration, compute(genieId, duration, date, null));
+    public DaySlotsDto daySlots(UUID genieId, List<ServiceLine> lines, LocalDate date) {
+        int duration = duration(genieId, lines);
+        return new DaySlotsDto(date, genieId, lines.getFirst().serviceId(), duration, compute(genieId, duration, date, null));
+    }
+
+    /** Free slots of a given length (Phase 3.5D: a quoted job takes the Genie's estimate). */
+    @Transactional(readOnly = true)
+    public DaySlotsDto daySlotsFor(UUID genieId, int minutes, LocalDate date) {
+        return new DaySlotsDto(date, genieId, 0, minutes, compute(genieId, minutes, date, null));
+    }
+
+    @Transactional(readOnly = true)
+    public List<DayCountDto> upcomingDaysFor(UUID genieId, int minutes, int days) {
+        LocalDate today = LocalDate.now(clock.withZone(zone));
+        int count = Math.clamp(days, 1, rules.horizonDays());
+        List<DayCountDto> result = new ArrayList<>();
+        for (int i = 0; i < count; i++) {
+            LocalDate date = today.plusDays(i);
+            result.add(new DayCountDto(date, compute(genieId, minutes, date, null).size()));
+        }
+        return result;
+    }
+
+    /** How long the lines take with this Genie (who must be bookable for the first one). */
+    private int duration(UUID genieId, List<ServiceLine> lines) {
+        directory.bookableOffer(genieId, lines.getFirst().serviceId());
+        return pricing.durationMinutes(genieId, lines);
     }
 
     /** Number of free slots per day for the next {@code days} days (for a date picker). */
     @Transactional(readOnly = true)
-    public List<DayCountDto> upcomingDays(UUID genieId, long serviceId, int days) {
-        int duration = directory.bookableOffer(genieId, serviceId).durationMinutes();
+    public List<DayCountDto> upcomingDays(UUID genieId, List<ServiceLine> lines, int days) {
+        int duration = duration(genieId, lines);
         LocalDate today = LocalDate.now(clock.withZone(zone));
         int count = Math.clamp(days, 1, rules.horizonDays());
         List<DayCountDto> result = new ArrayList<>();

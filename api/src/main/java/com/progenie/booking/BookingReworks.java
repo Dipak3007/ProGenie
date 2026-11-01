@@ -8,9 +8,9 @@ import java.time.ZoneId;
 import java.util.UUID;
 
 import com.progenie.booking.domain.Booking;
+import com.progenie.pricing.PriceCalculator;
 import com.progenie.booking.domain.BookingRepository;
 import com.progenie.booking.domain.BookingStatus;
-import com.progenie.provider.GenieDirectory.Offer;
 import com.progenie.provider.GenieDirectory;
 import com.progenie.shared.config.AppProperties;
 import com.progenie.shared.config.QueryConstants;
@@ -37,9 +37,11 @@ public class BookingReworks {
     private final AppProperties.Booking rules;
     private final ZoneId zone;
     private final Clock clock;
+    private final BookingItems items;
 
     public BookingReworks(BookingRepository bookings, BookingSupport support, SlotService slots, GenieDirectory directory,
-                          JdbcClient jdbc, AppProperties props, Clock clock) {
+                          JdbcClient jdbc, AppProperties props, Clock clock, BookingItems items) {
+        this.items = items;
         this.bookings = bookings;
         this.support = support;
         this.slots = slots;
@@ -61,10 +63,16 @@ public class BookingReworks {
             throw ApiException.badRequest("SLOT_REQUIRED", "Pick a time for the redo");
         }
         UUID genie = genieId == null ? original.getGenieId() : genieId;
-        Offer offer = directory.bookableOffer(genie, original.getServiceId());
+        directory.bookableOffer(genie, original.getServiceId());
+        // the redo covers every service on the original booking (Phase 3.5C), at no charge
+        int minutes = Booking.KIND_INSPECTION.equals(original.getKind()) ? PriceCalculator.INSPECTION_MINUTES
+            : original.getQuoteId() != null
+            // a quoted job (Phase 3.5D) takes the Genie's estimate, kept as its slot length
+            ? (int) Duration.between(original.getSlotStart(), original.getSlotEnd()).toMinutes()
+            : items.list(originalId).stream().mapToInt(BookingItems.Item::minutes).sum();
         Instant now = clock.instant();
-        Instant end = slotStart.plus(Duration.ofMinutes(offer.durationMinutes()));
-        slots.assertBookable(genie, slotStart, offer.durationMinutes(), null);
+        Instant end = slotStart.plus(Duration.ofMinutes(minutes));
+        slots.assertBookable(genie, slotStart, minutes, null);
         long n = jdbc.sql(QueryUtil.get(QueryConstants.GET_BOOKING_NEXT_REF)).query(Long.class).single();
         String ref = "PG-%d-%06d".formatted(LocalDate.ofInstant(now, zone).getYear(), n);
         Booking redo = Booking.rework(original, ref, genie, slotStart, end,
@@ -80,6 +88,7 @@ public class BookingReworks {
         }
         jdbc.sql(QueryUtil.get(QueryConstants.UPDATE_BOOKING_COPY_ADDRESS_FROM_ORIGINAL))
             .param("redo", redo.getId()).param("original", original.getId()).update();
+        items.copyFree(original.getId(), redo.getId());
         support.transitioned(redo, null, adminId, "ADMIN", BookingEvent.Type.REQUESTED, null, false);
         return redo.getId();
     }

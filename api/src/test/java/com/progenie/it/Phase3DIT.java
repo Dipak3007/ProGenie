@@ -140,7 +140,9 @@ class Phase3DIT extends IntegrationTest {
         // Same rule as the candidate pool: a fresh, accurate live position wins over the base location (another IT may
         // have just sent one for this Genie), and the distance is rounded to 2 decimals before the travel estimate.
         double km = jdbc.sql("""
-                SELECT round((ST_Distance(coalesce(CASE WHEN gl.updated_at > now() - interval '15 minutes' AND coalesce(gl.accuracy_m, 0) <= 1000 THEN gl.location END, gp.base_location), a.location) / 1000.0)::numeric, 2)
+                SELECT round((ST_Distance(coalesce(CASE WHEN gl.updated_at > now() - interval '15 minutes'
+                                                         AND coalesce(gl.accuracy_m, 0) <= 1000 THEN gl.location END,
+                                                    gp.base_location), a.location) / 1000.0)::numeric, 2)
                 FROM genie_profiles gp
                 JOIN addresses a ON a.id = CAST(:a AS uuid)
                 LEFT JOIN genie_locations gl ON gl.genie_id = gp.user_id

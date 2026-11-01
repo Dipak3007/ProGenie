@@ -1608,6 +1608,120 @@
         ]
       }
     },
+    "/api/v1/admin/help": {
+      "get": {
+        "operationId": "adminHelpAll",
+        "responses": {
+          "200": {
+            "content": {
+              "*/*": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/AdminHelpArticleDto"
+                  }
+                }
+              }
+            },
+            "description": "OK"
+          }
+        },
+        "tags": [
+          "admin-help-controller"
+        ]
+      },
+      "post": {
+        "operationId": "adminHelpCreate",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/HelpArticleRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "*/*": {
+                "schema": {
+                  "$ref": "#/components/schemas/AdminHelpArticleDto"
+                }
+              }
+            },
+            "description": "Created"
+          }
+        },
+        "tags": [
+          "admin-help-controller"
+        ]
+      }
+    },
+    "/api/v1/admin/help/{id}": {
+      "delete": {
+        "operationId": "adminHelpDelete",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "format": "int64"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "No Content"
+          }
+        },
+        "tags": [
+          "admin-help-controller"
+        ]
+      },
+      "put": {
+        "operationId": "adminHelpUpdate",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "format": "int64"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/HelpArticleRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "*/*": {
+                "schema": {
+                  "$ref": "#/components/schemas/AdminHelpArticleDto"
+                }
+              }
+            },
+            "description": "OK"
+          }
+        },
+        "tags": [
+          "admin-help-controller"
+        ]
+      }
+    },
     "/api/v1/admin/legal": {
       "get": {
         "operationId": "adminLegalList",
@@ -2016,6 +2130,105 @@
         },
         "tags": [
           "admin-finance-controller"
+        ]
+      }
+    },
+    "/api/v1/admin/review-photos": {
+      "get": {
+        "operationId": "adminReviewPhotoList",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "reported",
+            "required": false,
+            "schema": {
+              "type": "boolean",
+              "default": true
+            }
+          },
+          {
+            "in": "query",
+            "name": "page",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "format": "int32",
+              "default": 0
+            }
+          },
+          {
+            "in": "query",
+            "name": "size",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "format": "int32",
+              "default": 20
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "*/*": {
+                "schema": {
+                  "$ref": "#/components/schemas/PageResponseAdminReviewPhotoDto"
+                }
+              }
+            },
+            "description": "OK"
+          }
+        },
+        "tags": [
+          "admin-review-photo-controller"
+        ]
+      }
+    },
+    "/api/v1/admin/review-photos/{id}/hide": {
+      "post": {
+        "operationId": "adminReviewPhotoHide",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "No Content"
+          }
+        },
+        "tags": [
+          "admin-review-photo-controller"
+        ]
+      }
+    },
+    "/api/v1/admin/review-photos/{id}/keep": {
+      "post": {
+        "operationId": "adminReviewPhotoKeep",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "No Content"
+          }
+        },
+        "tags": [
+          "admin-review-photo-controller"
         ]
       }
     },
@@ -2434,6 +2647,15 @@
             "required": false,
             "schema": {
               "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "flagged",
+            "required": false,
+            "schema": {
+              "type": "boolean",
+              "default": false
             }
           },
           {
@@ -3011,6 +3233,88 @@
         ]
       }
     },
+    "/api/v1/bookings/{bookingId}/review/photos": {
+      "post": {
+        "operationId": "reviewAddPhoto",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "bookingId",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "file": {
+                    "type": "string",
+                    "format": "binary"
+                  }
+                },
+                "required": [
+                  "file"
+                ]
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "*/*": {
+                "schema": {
+                  "$ref": "#/components/schemas/ReviewPhotoDto"
+                }
+              }
+            },
+            "description": "Created"
+          }
+        },
+        "tags": [
+          "review-controller"
+        ]
+      }
+    },
+    "/api/v1/bookings/{bookingId}/review/photos/{photoId}": {
+      "delete": {
+        "operationId": "reviewDeletePhoto",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "bookingId",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "in": "path",
+            "name": "photoId",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "No Content"
+          }
+        },
+        "tags": [
+          "review-controller"
+        ]
+      }
+    },
     "/api/v1/bookings/{bookingId}/tickets": {
       "post": {
         "operationId": "ticketRaiseAsCustomer",
@@ -3106,6 +3410,46 @@
             }
           }
         },
+        "responses": {
+          "200": {
+            "content": {
+              "*/*": {
+                "schema": {
+                  "$ref": "#/components/schemas/BookingDetailDto"
+                }
+              }
+            },
+            "description": "OK"
+          }
+        },
+        "tags": [
+          "booking-controller"
+        ]
+      }
+    },
+    "/api/v1/bookings/{id}/items/{itemId}": {
+      "delete": {
+        "operationId": "bookingRemoveService",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "in": "path",
+            "name": "itemId",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "format": "int64"
+            }
+          }
+        ],
         "responses": {
           "200": {
             "content": {
@@ -3264,6 +3608,65 @@
         },
         "tags": [
           "booking-controller"
+        ]
+      }
+    },
+    "/api/v1/cart": {
+      "delete": {
+        "operationId": "cartClear",
+        "responses": {
+          "204": {
+            "description": "No Content"
+          }
+        },
+        "tags": [
+          "cart-controller"
+        ]
+      },
+      "get": {
+        "operationId": "cartGet",
+        "responses": {
+          "200": {
+            "content": {
+              "*/*": {
+                "schema": {
+                  "$ref": "#/components/schemas/CartResponse"
+                }
+              }
+            },
+            "description": "OK"
+          }
+        },
+        "tags": [
+          "cart-controller"
+        ]
+      },
+      "put": {
+        "operationId": "cartSave",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CartRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "*/*": {
+                "schema": {
+                  "$ref": "#/components/schemas/CartResponse"
+                }
+              }
+            },
+            "description": "OK"
+          }
+        },
+        "tags": [
+          "cart-controller"
         ]
       }
     },
@@ -3445,10 +3848,18 @@
           {
             "in": "query",
             "name": "serviceId",
-            "required": true,
+            "required": false,
             "schema": {
               "type": "integer",
               "format": "int64"
+            }
+          },
+          {
+            "in": "query",
+            "name": "items",
+            "required": false,
+            "schema": {
+              "type": "string"
             }
           },
           {
@@ -3662,6 +4073,47 @@
         },
         "tags": [
           "genie-job-controller"
+        ]
+      }
+    },
+    "/api/v1/genie/bookings/{bookingId}/customer-rating": {
+      "post": {
+        "operationId": "reviewRateCustomer",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "bookingId",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CustomerRatingRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "*/*": {
+                "schema": {
+                  "$ref": "#/components/schemas/CustomerRatingDto"
+                }
+              }
+            },
+            "description": "Created"
+          }
+        },
+        "tags": [
+          "review-controller"
         ]
       }
     },
@@ -4018,6 +4470,47 @@
         "responses": {
           "204": {
             "description": "No Content"
+          }
+        },
+        "tags": [
+          "genie-job-controller"
+        ]
+      }
+    },
+    "/api/v1/genie/bookings/{id}/quote": {
+      "post": {
+        "operationId": "genieJobSendQuote",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/QuoteRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "*/*": {
+                "schema": {
+                  "$ref": "#/components/schemas/BookingDetailDto"
+                }
+              }
+            },
+            "description": "OK"
           }
         },
         "tags": [
@@ -4504,6 +4997,48 @@
         ]
       }
     },
+    "/api/v1/genie/reviews/{reviewId}/photos/{photoId}/report": {
+      "post": {
+        "operationId": "reviewReportPhoto",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "reviewId",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "in": "path",
+            "name": "photoId",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ReportRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "204": {
+            "description": "No Content"
+          }
+        },
+        "tags": [
+          "review-controller"
+        ]
+      }
+    },
     "/api/v1/genie/reviews/{reviewId}/reply": {
       "post": {
         "operationId": "reviewReply",
@@ -4929,10 +5464,38 @@
           {
             "in": "query",
             "name": "serviceId",
-            "required": true,
+            "required": false,
             "schema": {
               "type": "integer",
               "format": "int64"
+            }
+          },
+          {
+            "in": "query",
+            "name": "items",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "quoteId",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "in": "query",
+            "name": "minutes",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "format": "int32",
+              "maximum": 480,
+              "minimum": 15
             }
           },
           {
@@ -4982,10 +5545,38 @@
           {
             "in": "query",
             "name": "serviceId",
-            "required": true,
+            "required": false,
             "schema": {
               "type": "integer",
               "format": "int64"
+            }
+          },
+          {
+            "in": "query",
+            "name": "items",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "quoteId",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "in": "query",
+            "name": "minutes",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "format": "int32",
+              "maximum": 480,
+              "minimum": 15
             }
           },
           {
@@ -5120,6 +5711,106 @@
         ]
       }
     },
+    "/api/v1/help": {
+      "get": {
+        "operationId": "helpArticles",
+        "responses": {
+          "200": {
+            "content": {
+              "*/*": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/HelpArticleDto"
+                  }
+                }
+              }
+            },
+            "description": "OK"
+          }
+        },
+        "tags": [
+          "help-controller"
+        ]
+      }
+    },
+    "/api/v1/help/suggestions": {
+      "get": {
+        "operationId": "helpSuggestions",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "ticketCategory",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "enum": [
+                "SAFETY",
+                "DAMAGE",
+                "NO_SHOW",
+                "QUALITY",
+                "PAYMENT",
+                "BEHAVIOUR",
+                "PRIVACY",
+                "OTHER"
+              ]
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "*/*": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/HelpArticleDto"
+                  }
+                }
+              }
+            },
+            "description": "OK"
+          }
+        },
+        "tags": [
+          "help-controller"
+        ]
+      }
+    },
+    "/api/v1/help/{id}/vote": {
+      "post": {
+        "operationId": "helpVote",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "format": "int64"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/VoteRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "204": {
+            "description": "No Content"
+          }
+        },
+        "tags": [
+          "help-controller"
+        ]
+      }
+    },
     "/api/v1/instant/quote": {
       "get": {
         "operationId": "instantQuote",
@@ -5249,6 +5940,36 @@
         },
         "tags": [
           "instant-controller"
+        ]
+      }
+    },
+    "/api/v1/launch-alerts": {
+      "post": {
+        "operationId": "launchAlertSignUp",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/LaunchAlertRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "*/*": {
+                "schema": {
+                  "$ref": "#/components/schemas/LaunchAlertDto"
+                }
+              }
+            },
+            "description": "Created"
+          }
+        },
+        "tags": [
+          "launch-alert-controller"
         ]
       }
     },
@@ -6209,10 +6930,18 @@
           {
             "in": "query",
             "name": "serviceId",
-            "required": true,
+            "required": false,
             "schema": {
               "type": "integer",
               "format": "int64"
+            }
+          },
+          {
+            "in": "query",
+            "name": "items",
+            "required": false,
+            "schema": {
+              "type": "string"
             }
           },
           {
@@ -6262,6 +6991,87 @@
         },
         "tags": [
           "pricing-controller"
+        ]
+      }
+    },
+    "/api/v1/quotes/{id}/accept": {
+      "post": {
+        "operationId": "quoteAccept",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AcceptQuoteRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "*/*": {
+                "schema": {
+                  "$ref": "#/components/schemas/BookingDetailDto"
+                }
+              }
+            },
+            "description": "Created"
+          }
+        },
+        "tags": [
+          "quote-controller"
+        ]
+      }
+    },
+    "/api/v1/quotes/{id}/decline": {
+      "post": {
+        "operationId": "quoteDecline",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CancelRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "*/*": {
+                "schema": {
+                  "$ref": "#/components/schemas/BookingDetailDto"
+                }
+              }
+            },
+            "description": "OK"
+          }
+        },
+        "tags": [
+          "quote-controller"
         ]
       }
     },
@@ -6334,6 +7144,30 @@
         },
         "tags": [
           "receipt-controller"
+        ]
+      }
+    },
+    "/api/v1/review-photos/{photoId}": {
+      "get": {
+        "operationId": "reviewPhoto",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "photoId",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        },
+        "tags": [
+          "review-controller"
         ]
       }
     },
@@ -6808,6 +7642,36 @@
         ]
       }
     },
+    "/api/v1/track/{token}": {
+      "get": {
+        "operationId": "contactTrackingTrack",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "token",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "*/*": {
+                "schema": {
+                  "$ref": "#/components/schemas/ContactTrackingDto"
+                }
+              }
+            },
+            "description": "OK"
+          }
+        },
+        "tags": [
+          "contact-tracking-controller"
+        ]
+      }
+    },
     "/api/v1/webhooks/msg91/delivery": {
       "post": {
         "operationId": "msg91WebhookDelivery",
@@ -6862,6 +7726,42 @@
   },
   "components": {
     "schemas": {
+      "AcceptQuoteRequest": {
+        "type": "object",
+        "properties": {
+          "notes": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "maxLength": 500,
+            "minLength": 0
+          },
+          "paymentMethod": {
+            "type": "string",
+            "enum": [
+              "CASH",
+              "ONLINE"
+            ]
+          },
+          "slotStart": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "tipAmount": {
+            "type": [
+              "number",
+              "null"
+            ],
+            "maximum": 2000,
+            "minimum": 0
+          }
+        },
+        "required": [
+          "paymentMethod",
+          "slotStart"
+        ]
+      },
       "AcceptRequest": {
         "type": "object",
         "properties": {
@@ -6891,6 +7791,18 @@
             "format": "int64"
           },
           "cityName": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "contactName": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "contactPhone": {
             "type": [
               "string",
               "null"
@@ -6937,6 +7849,8 @@
           "area",
           "cityId",
           "cityName",
+          "contactName",
+          "contactPhone",
           "id",
           "isDefault",
           "label",
@@ -6957,6 +7871,22 @@
               "null"
             ],
             "maxLength": 80,
+            "minLength": 0
+          },
+          "contactName": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "maxLength": 80,
+            "minLength": 0
+          },
+          "contactPhone": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "maxLength": 20,
             "minLength": 0
           },
           "isDefault": {
@@ -7030,6 +7960,18 @@
               "null"
             ]
           },
+          "contactName": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "contactPhone": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
           "label": {
             "type": [
               "string",
@@ -7064,6 +8006,8 @@
         "required": [
           "area",
           "city",
+          "contactName",
+          "contactPhone",
           "label",
           "landmark",
           "line1",
@@ -7173,6 +8117,12 @@
           "currency": {
             "type": "string"
           },
+          "inspectionFee": {
+            "type": [
+              "number",
+              "null"
+            ]
+          },
           "instantFee": {
             "type": "number"
           },
@@ -7212,6 +8162,7 @@
           "cityId",
           "commissionRate",
           "currency",
+          "inspectionFee",
           "instantFee",
           "name",
           "pincodeCount",
@@ -7418,6 +8369,65 @@
           "userStatus"
         ]
       },
+      "AdminHelpArticleDto": {
+        "type": "object",
+        "properties": {
+          "answer": {
+            "type": "string"
+          },
+          "category": {
+            "type": "string"
+          },
+          "helpfulNo": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "helpfulYes": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "id": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "position": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "published": {
+            "type": "boolean"
+          },
+          "question": {
+            "type": "string"
+          },
+          "slug": {
+            "type": "string"
+          },
+          "ticketCategories": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "updatedAt": {
+            "type": "string",
+            "format": "date-time"
+          }
+        },
+        "required": [
+          "answer",
+          "category",
+          "helpfulNo",
+          "helpfulYes",
+          "id",
+          "position",
+          "published",
+          "question",
+          "slug",
+          "ticketCategories",
+          "updatedAt"
+        ]
+      },
       "AdminPincodeDto": {
         "type": "object",
         "properties": {
@@ -7479,6 +8489,89 @@
           }
         }
       },
+      "AdminReviewPhotoDto": {
+        "type": "object",
+        "properties": {
+          "bookingRef": {
+            "type": "string"
+          },
+          "comment": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "createdAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "customerName": {
+            "type": "string"
+          },
+          "expiresAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "genieId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "genieName": {
+            "type": "string"
+          },
+          "hiddenAt": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date-time"
+          },
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "rating": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "reportReason": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "reportedAt": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date-time"
+          },
+          "reviewId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "url": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "bookingRef",
+          "comment",
+          "createdAt",
+          "customerName",
+          "expiresAt",
+          "genieId",
+          "genieName",
+          "hiddenAt",
+          "id",
+          "rating",
+          "reportReason",
+          "reportedAt",
+          "reviewId",
+          "url"
+        ]
+      },
       "AdminServiceDto": {
         "type": "object",
         "properties": {
@@ -7513,6 +8606,9 @@
             "type": "integer",
             "format": "int64"
           },
+          "inspectionFirst": {
+            "type": "boolean"
+          },
           "instantEnabled": {
             "type": "boolean"
           },
@@ -7532,6 +8628,7 @@
           "durationMinutes",
           "genieCount",
           "id",
+          "inspectionFirst",
           "instantEnabled",
           "name",
           "slug"
@@ -7714,6 +8811,13 @@
               }
             ]
           },
+          "addressId": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "uuid"
+          },
           "allowedActions": {
             "type": "array",
             "items": {
@@ -7789,6 +8893,16 @@
           "customer": {
             "$ref": "#/components/schemas/PartyDto"
           },
+          "customerRating": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/CustomerRatingView"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
           "discountAmount": {
             "type": "number"
           },
@@ -7827,11 +8941,23 @@
             "type": "string",
             "format": "uuid"
           },
+          "inspectionCredit": {
+            "type": "number"
+          },
           "instant": {
             "type": "boolean"
           },
           "instantFee": {
             "type": "number"
+          },
+          "items": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/BookingItemDto"
+            }
+          },
+          "kind": {
+            "type": "string"
           },
           "notes": {
             "type": [
@@ -7850,6 +8976,16 @@
             "items": {
               "$ref": "#/components/schemas/BookingPhotoDto"
             }
+          },
+          "quote": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/QuoteDto"
+              },
+              {
+                "type": "null"
+              }
+            ]
           },
           "rescheduledCount": {
             "type": "integer",
@@ -7906,6 +9042,7 @@
         "required": [
           "acceptedAt",
           "address",
+          "addressId",
           "allowedActions",
           "bookingRef",
           "cancelReason",
@@ -7921,6 +9058,7 @@
           "couponCode",
           "createdAt",
           "customer",
+          "customerRating",
           "discountAmount",
           "distanceKm",
           "expiresAt",
@@ -7930,12 +9068,16 @@
           "geniePayout",
           "history",
           "id",
+          "inspectionCredit",
           "instant",
           "instantFee",
+          "items",
+          "kind",
           "notes",
           "paymentMethod",
           "paymentStatus",
           "photos",
+          "quote",
           "rescheduledCount",
           "reviewed",
           "serviceAmount",
@@ -7949,6 +9091,52 @@
           "totalAmount",
           "travelFee",
           "travelStartedAt"
+        ]
+      },
+      "BookingItemDto": {
+        "type": "object",
+        "properties": {
+          "amount": {
+            "type": "number"
+          },
+          "discountAmount": {
+            "type": "number"
+          },
+          "durationMinutes": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "id": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "quantity": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "serviceId": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int64"
+          },
+          "serviceName": {
+            "type": "string"
+          },
+          "unitPrice": {
+            "type": "number"
+          }
+        },
+        "required": [
+          "amount",
+          "discountAmount",
+          "durationMinutes",
+          "id",
+          "quantity",
+          "serviceId",
+          "serviceName",
+          "unitPrice"
         ]
       },
       "BookingPhotoDto": {
@@ -8014,6 +9202,19 @@
           "counterpartName": {
             "type": "string"
           },
+          "customerRating": {
+            "type": [
+              "number",
+              "null"
+            ]
+          },
+          "customerRatingCount": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int32"
+          },
           "id": {
             "type": "string",
             "format": "uuid"
@@ -8051,6 +9252,8 @@
           "cancellationFeeStatus",
           "categorySlug",
           "counterpartName",
+          "customerRating",
+          "customerRatingCount",
           "id",
           "paymentMethod",
           "paymentStatus",
@@ -8074,6 +9277,268 @@
             "minLength": 0
           }
         }
+      },
+      "CartDto": {
+        "type": "object",
+        "properties": {
+          "addressId": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "uuid"
+          },
+          "addressLabel": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "couponCode": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "couponDiscount": {
+            "type": [
+              "number",
+              "null"
+            ]
+          },
+          "durationMinutes": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "estimate": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/PriceBreakdown"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "expiresAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "genieId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "genieName": {
+            "type": "string"
+          },
+          "inspection": {
+            "type": "boolean"
+          },
+          "items": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/CartItemDto"
+            }
+          },
+          "itemsParam": {
+            "type": "string"
+          },
+          "notes": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "paymentMethod": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "slotStart": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date-time"
+          },
+          "tipAmount": {
+            "type": "number"
+          },
+          "total": {
+            "type": [
+              "number",
+              "null"
+            ]
+          },
+          "updatedAt": {
+            "type": "string",
+            "format": "date-time"
+          }
+        },
+        "required": [
+          "addressId",
+          "addressLabel",
+          "couponCode",
+          "couponDiscount",
+          "durationMinutes",
+          "estimate",
+          "expiresAt",
+          "genieId",
+          "genieName",
+          "inspection",
+          "items",
+          "itemsParam",
+          "notes",
+          "paymentMethod",
+          "slotStart",
+          "tipAmount",
+          "total",
+          "updatedAt"
+        ]
+      },
+      "CartItemDto": {
+        "type": "object",
+        "properties": {
+          "amount": {
+            "type": "number"
+          },
+          "durationMinutes": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "inspectionFirst": {
+            "type": "boolean"
+          },
+          "name": {
+            "type": "string"
+          },
+          "quantity": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "serviceId": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "unitPrice": {
+            "type": "number"
+          }
+        },
+        "required": [
+          "amount",
+          "durationMinutes",
+          "inspectionFirst",
+          "name",
+          "quantity",
+          "serviceId",
+          "unitPrice"
+        ]
+      },
+      "CartRequest": {
+        "type": "object",
+        "properties": {
+          "addressId": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "uuid"
+          },
+          "couponCode": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "maxLength": 30,
+            "minLength": 0
+          },
+          "genieId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "items": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ServiceLine"
+            },
+            "maxItems": 5,
+            "minItems": 0
+          },
+          "notes": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "maxLength": 500,
+            "minLength": 0
+          },
+          "paymentMethod": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "enum": [
+              "CASH",
+              "ONLINE"
+            ]
+          },
+          "replace": {
+            "type": "boolean"
+          },
+          "seenTotal": {
+            "type": [
+              "number",
+              "null"
+            ],
+            "minimum": 0
+          },
+          "slotStart": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date-time"
+          },
+          "tipAmount": {
+            "type": [
+              "number",
+              "null"
+            ],
+            "maximum": 2000,
+            "minimum": 0
+          }
+        },
+        "required": [
+          "genieId",
+          "items",
+          "replace"
+        ]
+      },
+      "CartResponse": {
+        "type": "object",
+        "properties": {
+          "cart": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/CartDto"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "notices": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          }
+        },
+        "required": [
+          "cart",
+          "notices"
+        ]
       },
       "CategoryDetailDto": {
         "type": "object",
@@ -8292,15 +9757,28 @@
             ],
             "format": "uuid"
           },
+          "items": {
+            "type": [
+              "array",
+              "null"
+            ],
+            "items": {
+              "$ref": "#/components/schemas/ServiceLine"
+            },
+            "maxItems": 5,
+            "minItems": 0
+          },
           "serviceId": {
-            "type": "integer",
+            "type": [
+              "integer",
+              "null"
+            ],
             "format": "int64"
           }
         },
         "required": [
           "addressId",
-          "code",
-          "serviceId"
+          "code"
         ]
       },
       "CityDto": {
@@ -8629,6 +10107,91 @@
           "subject"
         ]
       },
+      "ContactTrackingDto": {
+        "type": "object",
+        "properties": {
+          "accuracyM": {
+            "type": [
+              "number",
+              "null"
+            ]
+          },
+          "active": {
+            "type": "boolean"
+          },
+          "distanceKm": {
+            "type": [
+              "number",
+              "null"
+            ]
+          },
+          "etaMinutes": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int32"
+          },
+          "genieName": {
+            "type": "string"
+          },
+          "homeLat": {
+            "type": [
+              "number",
+              "null"
+            ],
+            "format": "double"
+          },
+          "homeLng": {
+            "type": [
+              "number",
+              "null"
+            ],
+            "format": "double"
+          },
+          "lat": {
+            "type": [
+              "number",
+              "null"
+            ],
+            "format": "double"
+          },
+          "lng": {
+            "type": [
+              "number",
+              "null"
+            ],
+            "format": "double"
+          },
+          "serviceName": {
+            "type": "string"
+          },
+          "status": {
+            "type": "string"
+          },
+          "updatedAt": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date-time"
+          }
+        },
+        "required": [
+          "accuracyM",
+          "active",
+          "distanceKm",
+          "etaMinutes",
+          "genieName",
+          "homeLat",
+          "homeLng",
+          "lat",
+          "lng",
+          "serviceName",
+          "status",
+          "updatedAt"
+        ]
+      },
       "CouponOfferDto": {
         "type": "object",
         "properties": {
@@ -8846,9 +10409,27 @@
             "maxLength": 30,
             "minLength": 0
           },
+          "expectedTotal": {
+            "type": [
+              "number",
+              "null"
+            ],
+            "minimum": 0
+          },
           "genieId": {
             "type": "string",
             "format": "uuid"
+          },
+          "items": {
+            "type": [
+              "array",
+              "null"
+            ],
+            "items": {
+              "$ref": "#/components/schemas/ServiceLine"
+            },
+            "maxItems": 5,
+            "minItems": 0
           },
           "notes": {
             "type": [
@@ -8866,7 +10447,10 @@
             ]
           },
           "serviceId": {
-            "type": "integer",
+            "type": [
+              "integer",
+              "null"
+            ],
             "format": "int64"
           },
           "slotStart": {
@@ -8886,8 +10470,91 @@
           "addressId",
           "genieId",
           "paymentMethod",
-          "serviceId",
           "slotStart"
+        ]
+      },
+      "CustomerRatingDto": {
+        "type": "object",
+        "properties": {
+          "bookingId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "createdAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "rating": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "tags": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          }
+        },
+        "required": [
+          "bookingId",
+          "createdAt",
+          "rating",
+          "tags"
+        ]
+      },
+      "CustomerRatingRequest": {
+        "type": "object",
+        "properties": {
+          "rating": {
+            "type": "integer",
+            "format": "int32",
+            "maximum": 5,
+            "minimum": 1
+          },
+          "tags": {
+            "type": [
+              "array",
+              "null"
+            ],
+            "items": {
+              "type": "string",
+              "enum": [
+                "NOT_AT_HOME",
+                "UNSAFE",
+                "RUDE",
+                "GREAT"
+              ]
+            },
+            "maxItems": 4,
+            "minItems": 0
+          }
+        },
+        "required": [
+          "rating"
+        ]
+      },
+      "CustomerRatingView": {
+        "type": "object",
+        "properties": {
+          "createdAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "rating": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "tags": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          }
+        },
+        "required": [
+          "createdAt",
+          "rating",
+          "tags"
         ]
       },
       "DayCountDto": {
@@ -9229,6 +10896,9 @@
           "unplaced": {
             "type": "integer",
             "format": "int32"
+          },
+          "waiting": {
+            "$ref": "#/components/schemas/LaunchWaitingSummary"
           }
         },
         "required": [
@@ -9241,7 +10911,8 @@
           "from",
           "layer",
           "total",
-          "unplaced"
+          "unplaced",
+          "waiting"
         ]
       },
       "DocumentReviewRequest": {
@@ -9519,6 +11190,12 @@
               "null"
             ]
           },
+          "photoUrls": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
           "rating": {
             "type": "integer",
             "format": "int32"
@@ -9529,6 +11206,7 @@
           "createdAt",
           "customerName",
           "genieReply",
+          "photoUrls",
           "rating"
         ]
       },
@@ -9538,6 +11216,9 @@
           "durationMinutes": {
             "type": "integer",
             "format": "int32"
+          },
+          "inspectionFirst": {
+            "type": "boolean"
           },
           "name": {
             "type": "string"
@@ -9552,6 +11233,7 @@
         },
         "required": [
           "durationMinutes",
+          "inspectionFirst",
           "name",
           "price",
           "serviceId"
@@ -9643,6 +11325,103 @@
           "ratingCount",
           "requestsReceived",
           "to"
+        ]
+      },
+      "HelpArticleDto": {
+        "type": "object",
+        "properties": {
+          "answer": {
+            "type": "string"
+          },
+          "category": {
+            "type": "string"
+          },
+          "id": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "question": {
+            "type": "string"
+          },
+          "slug": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "answer",
+          "category",
+          "id",
+          "question",
+          "slug"
+        ]
+      },
+      "HelpArticleRequest": {
+        "type": "object",
+        "properties": {
+          "answer": {
+            "type": "string",
+            "maxLength": 10000,
+            "minLength": 0
+          },
+          "category": {
+            "type": "string",
+            "enum": [
+              "BOOKING",
+              "CANCELLATIONS",
+              "PAYMENTS",
+              "GENIE_NOW",
+              "PROBLEMS",
+              "ACCOUNT",
+              "GENIES"
+            ]
+          },
+          "position": {
+            "type": "integer",
+            "format": "int32",
+            "maximum": 10000,
+            "minimum": 0
+          },
+          "published": {
+            "type": "boolean"
+          },
+          "question": {
+            "type": "string",
+            "maxLength": 200,
+            "minLength": 0
+          },
+          "slug": {
+            "type": "string",
+            "maxLength": 80,
+            "minLength": 0,
+            "pattern": "^[a-z0-9]+(-[a-z0-9]+)*$"
+          },
+          "ticketCategories": {
+            "type": [
+              "array",
+              "null"
+            ],
+            "items": {
+              "type": "string",
+              "enum": [
+                "SAFETY",
+                "DAMAGE",
+                "NO_SHOW",
+                "QUALITY",
+                "PAYMENT",
+                "BEHAVIOUR",
+                "PRIVACY",
+                "OTHER"
+              ]
+            }
+          }
+        },
+        "required": [
+          "answer",
+          "category",
+          "position",
+          "published",
+          "question",
+          "slug"
         ]
       },
       "HistoryDto": {
@@ -10018,6 +11797,116 @@
           "reviewNote",
           "sizeBytes",
           "status"
+        ]
+      },
+      "LaunchAlertDto": {
+        "type": "object",
+        "properties": {
+          "channel": {
+            "type": "string"
+          },
+          "contact": {
+            "type": "string"
+          },
+          "pincode": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        },
+        "required": [
+          "channel",
+          "contact",
+          "pincode"
+        ]
+      },
+      "LaunchAlertRequest": {
+        "type": "object",
+        "properties": {
+          "consent": {
+            "type": "boolean"
+          },
+          "email": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "maxLength": 254,
+            "minLength": 0
+          },
+          "lat": {
+            "type": [
+              "number",
+              "null"
+            ],
+            "format": "double",
+            "maximum": 90,
+            "minimum": -90
+          },
+          "lng": {
+            "type": [
+              "number",
+              "null"
+            ],
+            "format": "double",
+            "maximum": 180,
+            "minimum": -180
+          },
+          "phone": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "maxLength": 20,
+            "minLength": 0
+          },
+          "pincode": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "maxLength": 6,
+            "minLength": 0
+          }
+        },
+        "required": [
+          "consent"
+        ]
+      },
+      "LaunchWaiting": {
+        "type": "object",
+        "properties": {
+          "count": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "pincode": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "count",
+          "pincode"
+        ]
+      },
+      "LaunchWaitingSummary": {
+        "type": "object",
+        "properties": {
+          "top": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/LaunchWaiting"
+            }
+          },
+          "total": {
+            "type": "integer",
+            "format": "int32"
+          }
+        },
+        "required": [
+          "top",
+          "total"
         ]
       },
       "LedgerLineDto": {
@@ -10817,6 +12706,35 @@
           "topGenies"
         ]
       },
+      "PageResponseAdminReviewPhotoDto": {
+        "type": "object",
+        "properties": {
+          "items": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/AdminReviewPhotoDto"
+            }
+          },
+          "page": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "size": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "total": {
+            "type": "integer",
+            "format": "int64"
+          }
+        },
+        "required": [
+          "items",
+          "page",
+          "size",
+          "total"
+        ]
+      },
       "PageResponseBookingSummaryDto": {
         "type": "object",
         "properties": {
@@ -11174,6 +13092,12 @@
               "null"
             ]
           },
+          "flagReason": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
           "id": {
             "type": "string",
             "format": "uuid"
@@ -11186,13 +13110,22 @@
               "string",
               "null"
             ]
+          },
+          "ratingCount": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int32"
           }
         },
         "required": [
           "avgRating",
+          "flagReason",
           "id",
           "name",
-          "phone"
+          "phone",
+          "ratingCount"
         ]
       },
       "PaymentDto": {
@@ -11605,8 +13538,24 @@
               "ESTIMATE"
             ]
           },
+          "durationMinutes": {
+            "type": "integer",
+            "format": "int32"
+          },
           "genieEarning": {
             "type": "number"
+          },
+          "inspection": {
+            "type": "boolean"
+          },
+          "inspectionFee": {
+            "type": "number"
+          },
+          "lines": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/PriceLine"
+            }
           },
           "serviceAmount": {
             "type": "number"
@@ -11626,11 +13575,53 @@
           "commissionRate",
           "distanceKm",
           "distanceMethod",
+          "durationMinutes",
           "genieEarning",
+          "inspection",
+          "inspectionFee",
+          "lines",
           "serviceAmount",
           "tipAmount",
           "totalAmount",
           "travelFee"
+        ]
+      },
+      "PriceLine": {
+        "type": "object",
+        "properties": {
+          "amount": {
+            "type": "number"
+          },
+          "commissionAmount": {
+            "type": "number"
+          },
+          "durationMinutes": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "quantity": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "serviceId": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "serviceName": {
+            "type": "string"
+          },
+          "unitPrice": {
+            "type": "number"
+          }
+        },
+        "required": [
+          "amount",
+          "commissionAmount",
+          "durationMinutes",
+          "quantity",
+          "serviceId",
+          "serviceName",
+          "unitPrice"
         ]
       },
       "PricingRequest": {
@@ -11639,6 +13630,14 @@
           "commissionRate": {
             "type": "number",
             "maximum": 0.5,
+            "minimum": 0
+          },
+          "inspectionFee": {
+            "type": [
+              "number",
+              "null"
+            ],
+            "maximum": 5000,
             "minimum": 0
           },
           "instantFee": {
@@ -11822,6 +13821,215 @@
           "verificationStatus"
         ]
       },
+      "QuoteDto": {
+        "type": "object",
+        "properties": {
+          "createdAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "declineReason": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "durationMinutes": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "inspectionBookingId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "inspectionBookingRef": {
+            "type": "string"
+          },
+          "inspectionCredit": {
+            "type": "number"
+          },
+          "jobAmount": {
+            "type": "number"
+          },
+          "jobBookingId": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "uuid"
+          },
+          "jobBookingRef": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "lines": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/QuoteLineDto"
+            }
+          },
+          "note": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "respondedAt": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date-time"
+          },
+          "status": {
+            "type": "string"
+          },
+          "totalAmount": {
+            "type": "number"
+          },
+          "updatedAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "validUntil": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "version": {
+            "type": "integer",
+            "format": "int32"
+          }
+        },
+        "required": [
+          "createdAt",
+          "declineReason",
+          "durationMinutes",
+          "id",
+          "inspectionBookingId",
+          "inspectionBookingRef",
+          "inspectionCredit",
+          "jobAmount",
+          "jobBookingId",
+          "jobBookingRef",
+          "lines",
+          "note",
+          "respondedAt",
+          "status",
+          "totalAmount",
+          "updatedAt",
+          "validUntil",
+          "version"
+        ]
+      },
+      "QuoteLineDto": {
+        "type": "object",
+        "properties": {
+          "amount": {
+            "type": "number"
+          },
+          "description": {
+            "type": "string"
+          },
+          "id": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "quantity": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "serviceId": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int64"
+          },
+          "unitPrice": {
+            "type": "number"
+          }
+        },
+        "required": [
+          "amount",
+          "description",
+          "id",
+          "quantity",
+          "serviceId",
+          "unitPrice"
+        ]
+      },
+      "QuoteLineRequest": {
+        "type": "object",
+        "properties": {
+          "description": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "maxLength": 150,
+            "minLength": 0
+          },
+          "quantity": {
+            "type": "integer",
+            "format": "int32",
+            "maximum": 10,
+            "minimum": 1
+          },
+          "serviceId": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int64"
+          },
+          "unitPrice": {
+            "type": "number",
+            "maximum": 200000,
+            "minimum": 1
+          }
+        },
+        "required": [
+          "quantity",
+          "unitPrice"
+        ]
+      },
+      "QuoteRequest": {
+        "type": "object",
+        "properties": {
+          "durationMinutes": {
+            "type": "integer",
+            "format": "int32",
+            "maximum": 480,
+            "minimum": 30
+          },
+          "lines": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/QuoteLineRequest"
+            },
+            "maxItems": 10,
+            "minItems": 0
+          },
+          "note": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "maxLength": 500,
+            "minLength": 0
+          }
+        },
+        "required": [
+          "durationMinutes",
+          "lines"
+        ]
+      },
       "RaiseRequest": {
         "type": "object",
         "properties": {
@@ -11836,6 +14044,16 @@
               "string",
               "null"
             ]
+          },
+          "itemIds": {
+            "type": [
+              "array",
+              "null"
+            ],
+            "items": {
+              "type": "integer",
+              "format": "int64"
+            }
           },
           "subject": {
             "type": [
@@ -12174,6 +14392,19 @@
           "reply"
         ]
       },
+      "ReportRequest": {
+        "type": "object",
+        "properties": {
+          "reason": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "maxLength": 200,
+            "minLength": 0
+          }
+        }
+      },
       "RescheduleRequest": {
         "type": "object",
         "properties": {
@@ -12290,6 +14521,12 @@
             "type": "string",
             "format": "uuid"
           },
+          "photos": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ReviewPhotoDto"
+            }
+          },
           "rating": {
             "type": "integer",
             "format": "int32"
@@ -12313,9 +14550,30 @@
           "customerName",
           "genieReply",
           "id",
+          "photos",
           "rating",
           "repliedAt",
           "serviceName"
+        ]
+      },
+      "ReviewPhotoDto": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "reported": {
+            "type": "boolean"
+          },
+          "url": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "reported",
+          "url"
         ]
       },
       "ReviewRequest": {
@@ -12397,6 +14655,9 @@
             "type": "integer",
             "format": "int64"
           },
+          "inspectionFirst": {
+            "type": "boolean"
+          },
           "instantEnabled": {
             "type": "boolean"
           },
@@ -12412,9 +14673,29 @@
           "description",
           "durationMinutes",
           "id",
+          "inspectionFirst",
           "instantEnabled",
           "name",
           "slug"
+        ]
+      },
+      "ServiceLine": {
+        "type": "object",
+        "properties": {
+          "quantity": {
+            "type": "integer",
+            "format": "int32",
+            "maximum": 5,
+            "minimum": 1
+          },
+          "serviceId": {
+            "type": "integer",
+            "format": "int64"
+          }
+        },
+        "required": [
+          "quantity",
+          "serviceId"
         ]
       },
       "ServiceOfferRequest": {
@@ -12464,6 +14745,12 @@
             "format": "int32",
             "maximum": 720,
             "minimum": 15
+          },
+          "inspectionFirst": {
+            "type": [
+              "boolean",
+              "null"
+            ]
           },
           "instantEnabled": {
             "type": [
@@ -12688,6 +14975,12 @@
             "type": "string",
             "format": "uuid"
           },
+          "items": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/TicketItemDto"
+            }
+          },
           "jobPhotos": {
             "type": "array",
             "items": {
@@ -12799,6 +15092,7 @@
           "genieId",
           "genieName",
           "id",
+          "items",
           "jobPhotos",
           "messages",
           "overdue",
@@ -12818,6 +15112,35 @@
           "subject",
           "ticketRef",
           "type"
+        ]
+      },
+      "TicketItemDto": {
+        "type": "object",
+        "properties": {
+          "amount": {
+            "type": "number"
+          },
+          "discountAmount": {
+            "type": "number"
+          },
+          "id": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "quantity": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "serviceName": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "amount",
+          "discountAmount",
+          "id",
+          "quantity",
+          "serviceName"
         ]
       },
       "TicketMessageDto": {
@@ -13218,7 +15541,23 @@
             "type": "string",
             "format": "date-time"
           },
+          "customerRating": {
+            "type": [
+              "number",
+              "null"
+            ]
+          },
+          "customerRatingCount": {
+            "type": "integer",
+            "format": "int32"
+          },
           "email": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "flagReason": {
             "type": [
               "string",
               "null"
@@ -13244,7 +15583,10 @@
         "required": [
           "bookingCount",
           "createdAt",
+          "customerRating",
+          "customerRatingCount",
           "email",
+          "flagReason",
           "fullName",
           "id",
           "phone",
@@ -13343,6 +15685,17 @@
           "requiresReacceptance",
           "title",
           "version"
+        ]
+      },
+      "VoteRequest": {
+        "type": "object",
+        "properties": {
+          "helpful": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "helpful"
         ]
       },
       "WalletDto": {

@@ -46,6 +46,9 @@ import { AddressForm } from './address-form';
                   </p>
                   <p class="mt-1 text-sm text-ink/80">{{ a.line1 }}{{ a.line2 ? ', ' + a.line2 : '' }}</p>
                   <p class="text-sm text-muted">{{ a.landmark ? a.landmark + ' · ' : '' }}{{ a.area ? a.area + ', ' : '' }}{{ a.cityName }} {{ a.pincode }}</p>
+                  @if (a.contactName) {
+                    <p class="mt-1 text-sm text-ink/80" data-testid="address-contact-line">For {{ a.contactName }} · {{ a.contactPhone }}</p>
+                  }
                   <a [href]="mapUrl(a)" target="_blank" rel="noopener" class="mt-1 inline-block text-xs font-semibold text-brand hover:underline">View on map</a>
                 </div>
               </div>

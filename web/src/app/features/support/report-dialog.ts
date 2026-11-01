@@ -1,14 +1,16 @@
-import { ChangeDetectionStrategy, Component, inject, input, output, signal } from '@angular/core';
+import { ChangeDetectionStrategy, Component, effect, inject, input, output, signal, untracked } from '@angular/core';
 import { FormsModule } from '@angular/forms';
-import { Router } from '@angular/router';
+import { Router, RouterLink } from '@angular/router';
 
 import { errorCode, errorMessage } from '../../core/api/api';
-import { Role, TicketCategory } from '../../core/api/models';
+import { HelpApi } from '../../core/api/help-api';
+import { BookingItem, HelpArticle, Role, TicketCategory } from '../../core/api/models';
 import { SupportApi } from '../../core/api/support-api';
 import { ToastService } from '../../core/ui/feedback';
 import { TICKET_CATEGORY_LABEL } from '../../shared/format';
 import { Dialog } from '../../shared/ui/dialog';
 import { Spinner } from '../../shared/ui/kit';
+import { Markdown } from '../../shared/ui/markdown';
 
 const CUSTOMER_CATEGORIES: TicketCategory[] = ['QUALITY', 'NO_SHOW', 'DAMAGE', 'PAYMENT', 'BEHAVIOUR', 'SAFETY', 'OTHER'];
 const GENIE_CATEGORIES: TicketCategory[] = ['PAYMENT', 'BEHAVIOUR', 'SAFETY', 'OTHER'];
@@ -16,7 +18,7 @@ const GENIE_CATEGORIES: TicketCategory[] = ['PAYMENT', 'BEHAVIOUR', 'SAFETY', 'O
 /** "Report a problem" on a booking (customer) or a job (Genie). Photos are added on the report afterwards. */
 @Component({
   selector: 'pg-report-dialog',
-  imports: [FormsModule, Dialog, Spinner],
+  imports: [FormsModule, RouterLink, Dialog, Markdown, Spinner],
   changeDetection: ChangeDetectionStrategy.OnPush,
   template: `
     <pg-dialog [open]="open()" heading="Report a problem" [subheading]="bookingRef()" size="md" (closed)="closed.emit()">
@@ -36,6 +38,38 @@ const GENIE_CATEGORIES: TicketCategory[] = ['PAYMENT', 'BEHAVIOUR', 'SAFETY', 'O
               }
             </div>
           </fieldset>
+          @if (suggestions().length) {
+            <div class="mt-4 rounded-2xl bg-brand-mist/40 p-4" data-testid="help-suggestions">
+              <p class="text-sm font-semibold">This might answer it</p>
+              <ul class="mt-2 space-y-1">
+                @for (a of suggestions(); track a.id) {
+                  <li>
+                    <details class="rounded-xl bg-white px-3 py-2 text-sm">
+                      <summary class="cursor-pointer font-medium">{{ a.question }}</summary>
+                      <pg-markdown class="mt-2 block" [text]="a.answer" />
+                    </details>
+                  </li>
+                }
+              </ul>
+              <div class="mt-3 flex flex-wrap items-center gap-3">
+                <button type="button" class="btn-ghost min-h-10 bg-white px-4 text-sm" (click)="answered()">This answered my question</button>
+                <a routerLink="/help" class="text-sm font-semibold text-brand underline" (click)="closed.emit()">More answers</a>
+              </div>
+            </div>
+          }
+          @if (items().length > 1) {
+            <fieldset class="mt-4" data-testid="report-items">
+              <legend class="label">Which service? <span class="font-normal text-muted">(tick the ones it's about; none = the whole booking)</span></legend>
+              <div class="flex flex-wrap gap-2">
+                @for (i of items(); track i.id) {
+                  <label class="flex cursor-pointer items-center gap-2 rounded-full border px-3 py-2 text-sm" [class]="picked().includes(i.id) ? 'border-brand bg-brand-mist/50' : 'border-line'">
+                    <input type="checkbox" class="size-4 accent-brand" [checked]="picked().includes(i.id)" (change)="toggleItem(i.id)" />
+                    {{ i.serviceName }}{{ i.quantity > 1 ? ' ×' + i.quantity : '' }}
+                  </label>
+                }
+              </div>
+            </fieldset>
+          }
           @if (category() === 'SAFETY') {
             <p class="mt-3 rounded-xl bg-rose-50 px-4 py-3 text-sm text-rose-800">
               Our team is alerted at once and replies within an hour. If you are in danger right now, call 112.
@@ -68,7 +102,10 @@ export class ReportDialog {
   readonly bookingId = input.required<string>();
   readonly bookingRef = input<string | null>(null);
   readonly role = input<Role>('CUSTOMER');
+  /** The booking's services (Phase 3.5C): with several, the reporter can say which ones the problem is about. */
+  readonly items = input<BookingItem[]>([]);
   readonly closed = output<void>();
+  protected readonly picked = signal<number[]>([]);
 
   private readonly api = inject(SupportApi);
   private readonly toast = inject(ToastService);
@@ -81,8 +118,37 @@ export class ReportDialog {
   protected subject = '';
   protected description = '';
 
+  private readonly help = inject(HelpApi);
+  /** Answers for the chosen category (Phase 3.5B), shown before the form; never for safety reports. */
+  protected readonly suggestions = signal<HelpArticle[]>([]);
+
+  constructor() {
+    effect(() => {
+      const c = this.category();
+      untracked(() => {
+        this.suggestions.set([]);
+        if (!c || c === 'SAFETY') return;
+        this.help.suggestions(c).subscribe({
+          next: (list) => {
+            if (this.category() === c) this.suggestions.set(list);
+          },
+          error: () => undefined,
+        });
+      });
+    });
+  }
+
+  protected answered(): void {
+    this.toast.success('Glad that helped.');
+    this.closed.emit();
+  }
+
   protected categories(): TicketCategory[] {
     return this.role() === 'GENIE' ? GENIE_CATEGORIES : CUSTOMER_CATEGORIES;
+  }
+
+  protected toggleItem(id: number): void {
+    this.picked.update((ids) => (ids.includes(id) ? ids.filter((x) => x !== id) : [...ids, id]));
   }
 
   protected submit(): void {
@@ -90,7 +156,7 @@ export class ReportDialog {
     if (!category) return;
     this.busy.set(true);
     this.error.set(null);
-    this.api.raise(this.role(), this.bookingId(), { category, subject: this.subject.trim(), description: this.description.trim() }).subscribe({
+    this.api.raise(this.role(), this.bookingId(), { category, subject: this.subject.trim(), description: this.description.trim(), itemIds: this.picked() }).subscribe({
       next: (t) => {
         this.busy.set(false);
         this.toast.success(`Report ${t.ticketRef} sent. We'll get back to you soon.`);

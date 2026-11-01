@@ -13,6 +13,9 @@ export const routes: Routes = [
   { path: 'services/:slug', loadComponent: () => import('./features/catalog/category.page') },
   { path: 'genies/:id', loadComponent: () => import('./features/genies/genie-profile.page') },
   { path: 'login', title: 'Log in · ProGenie', canActivate: [guestOnly], loadComponent: () => import('./features/auth/login.page') },
+  { path: 'help', title: 'Help centre · ProGenie', loadComponent: () => import('./features/help/help.page') },
+  // Phase 3.5A: the person at the address follows the Genie from an SMS link (no login)
+  { path: 'track/:token', title: 'Your Genie is on the way · ProGenie', loadComponent: () => import('./features/track/track.page') },
   { path: 'register', title: 'Sign up · ProGenie', canActivate: [guestOnly], loadComponent: () => import('./features/auth/register.page') },
   {
     path: 'forgot-password',
@@ -29,6 +32,8 @@ export const routes: Routes = [
     canActivate: [requireRole('CUSTOMER')],
     loadComponent: () => import('./features/customer/checkout.page'),
   },
+  // Phase 3.5E: guests see what they picked, customers their saved checkout
+  { path: 'cart', title: 'Your cart · ProGenie', loadComponent: () => import('./features/customer/cart.page') },
   {
     path: 'now/:serviceId',
     title: 'Genie Now · ProGenie',
@@ -90,6 +95,7 @@ export const routes: Routes = [
       { path: 'bookings', title: 'Bookings · Admin', loadComponent: () => import('./features/admin-console/bookings.page') },
       { path: 'bookings/:id', title: 'Booking · Admin', loadComponent: () => import('./features/admin-console/booking.page') },
       { path: 'users', title: 'Users · Admin', loadComponent: () => import('./features/admin-console/users.page') },
+      { path: 'review-photos', title: 'Review photos · Admin', loadComponent: () => import('./features/admin-console/review-photos.page') },
       { path: 'catalog', title: 'Catalog · Admin', loadComponent: () => import('./features/admin-console/catalog.page') },
       { path: 'finance', title: 'Finance · Admin', loadComponent: () => import('./features/admin-console/finance.page') },
       { path: 'coupons', title: 'Coupons · Admin', loadComponent: () => import('./features/admin-console/coupons.page') },
@@ -98,6 +104,7 @@ export const routes: Routes = [
       { path: 'tickets', title: 'Complaints · Admin', loadComponent: () => import('./features/admin-console/tickets.page') },
       { path: 'tickets/:id', title: 'Complaint · Admin', loadComponent: () => import('./features/admin-console/ticket.page') },
       { path: 'messages', title: 'Messages · Admin', loadComponent: () => import('./features/admin-console/messages.page') },
+      { path: 'help', title: 'Help centre · Admin', loadComponent: () => import('./features/admin-console/help.page') },
       { path: 'legal', title: 'Policies · Admin', loadComponent: () => import('./features/admin-console/legal.page') },
       { path: 'legal/:kind', title: 'Edit policy · Admin', loadComponent: () => import('./features/admin-console/legal-editor.page') },
       { path: 'deletions', title: 'Account deletions · Admin', loadComponent: () => import('./features/admin-console/deletions.page') },

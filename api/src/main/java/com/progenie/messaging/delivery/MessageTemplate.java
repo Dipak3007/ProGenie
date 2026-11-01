@@ -47,6 +47,17 @@ public enum MessageTemplate {
 
             Please accept or decline within {minutes} minutes, or the request expires."""),
 
+    QUOTE_READY(MessageCategory.BOOKING, false, false,
+        "ProGenie: {genie} sent your quote for {ref}: Rs {amount}. Accept it and pick a time in the app: {link}",
+        "Hi {name}, *{genie}* sent your quote after the inspection {ref}: *₹{amount}*. Accept it and pick a time, or decline: {link}",
+        "Your quote from {genie}",
+        """
+            Hi {name},
+
+            {genie} sent your quote after the inspection {ref}: ₹{amount} (the inspection fee you paid is taken off).
+
+            Open it in the app to accept it and pick a time, or to decline it: {link}"""),
+
     BOOKING_ON_THE_WAY(MessageCategory.BOOKING, false, false,
         "ProGenie: {genie} is on the way for {ref}. Track them in the app. Share your start code only when they arrive.",
         "Hi {name}, *{genie}* is on the way for your booking {ref} ({service}). See them on the map: {link}. Share your 4-digit start code only when they arrive.",
@@ -57,6 +68,28 @@ public enum MessageTemplate {
             {genie} is on the way for your booking {ref} ({service}). You can follow them on the map in the app.
 
             Share your 4-digit start code only when your Genie is at your door."""),
+
+    BOOKING_ON_THE_WAY_CONTACT(MessageCategory.BOOKING, true, true,
+        "ProGenie: {genie} is on the way to you for {service}, booked by {customer}. Start code {code} - share it only when they arrive. Track: {link}",
+        "Hi {name}, {customer} booked *{service}* for you on ProGenie. *{genie}* is on the way: {link}. When they arrive, share this start code: *{code}*. Please don't share it before.",
+        "{genie} is on the way to you",
+        """
+            Hi {name},
+
+            {customer} booked {service} for you on ProGenie. {genie} is on the way.
+
+            When they arrive, share this start code: {code}"""),
+
+    LAUNCH_ALERT(MessageCategory.ACCOUNT, true, false,
+        "Good news! ProGenie now serves {place}. Book trusted home services: {link}",
+        "Good news! *ProGenie now serves {place}.* Book electricians, plumbers and more, at a time that suits you: {link}",
+        "ProGenie now serves {place}",
+        """
+            Hi,
+
+            You asked us to tell you when ProGenie arrives. Good news: we now serve {place}.
+
+            Book electricians, plumbers and more, at a time that suits you. We've deleted your request, so this is the only message you'll get from it."""),
 
     BOOKING_ACCEPTED(MessageCategory.BOOKING, false, false,
         "ProGenie: {genie} accepted {ref} for {service} on {when}. Share your start code only when they arrive.",

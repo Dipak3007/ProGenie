@@ -2,11 +2,13 @@ package com.progenie.review;
 
 import java.time.OffsetDateTime;
 import java.util.List;
+import java.util.Map;
 import java.util.UUID;
 
 import com.progenie.booking.BookingQueryService.ReviewableBooking;
 import com.progenie.booking.BookingQueryService;
 import com.progenie.provider.GenieProfileService;
+import com.progenie.review.ReviewPhotos.ReviewPhotoDto;
 import com.progenie.shared.config.QueryConstants;
 import com.progenie.shared.error.ApiException;
 import com.progenie.shared.util.QueryUtil;
@@ -36,8 +38,19 @@ public class ReviewService {
     public record ReviewRequest(@Min(1) @Max(5) int rating, @Size(max = 1000) String comment) {
     }
 
+    /** {@code photos}: the customer's photos of the finished work (Phase 3.5A), without the ones an admin hid. */
     public record ReviewDto(UUID id, UUID bookingId, String bookingRef, String serviceName, int rating, @Nullable String comment,
-                            String customerName, OffsetDateTime createdAt, @Nullable String genieReply, @Nullable OffsetDateTime repliedAt) {
+                            String customerName, OffsetDateTime createdAt, @Nullable String genieReply, @Nullable OffsetDateTime repliedAt,
+                            List<ReviewPhotoDto> photos) {
+    }
+
+    record ReviewRow(UUID id, UUID bookingId, String bookingRef, String serviceName, int rating, String comment,
+                     String customerName, OffsetDateTime createdAt, String genieReply, OffsetDateTime repliedAt) {
+
+        ReviewDto with(List<ReviewPhotoDto> photos) {
+            return new ReviewDto(id, bookingId, bookingRef, serviceName, rating, comment, customerName, createdAt,
+                genieReply, repliedAt, photos);
+        }
     }
 
     /** Published after a new review; the notification module tells the Genie. */
@@ -48,9 +61,11 @@ public class ReviewService {
     private final BookingQueryService bookings;
     private final GenieProfileService genies;
     private final ApplicationEventPublisher events;
+    private final ReviewPhotos photos;
 
     public ReviewService(JdbcClient jdbc, BookingQueryService bookings, GenieProfileService genies,
-                         ApplicationEventPublisher events) {
+                         ApplicationEventPublisher events, ReviewPhotos photos) {
+        this.photos = photos;
         this.jdbc = jdbc;
         this.bookings = bookings;
         this.genies = genies;
@@ -78,12 +93,20 @@ public class ReviewService {
 
     @Transactional(readOnly = true)
     public PageResponse<ReviewDto> forGenie(UUID genieId, int page, int size) {
+        return forGenie(genieId, page, size, false);
+    }
+
+    /** {@code owner}: the Genie's own list, which also says which photos they reported. */
+    @Transactional(readOnly = true)
+    public PageResponse<ReviewDto> forGenie(UUID genieId, int page, int size, boolean owner) {
         long total = jdbc.sql(QueryUtil.get(QueryConstants.COUNT_REVIEW_FOR_GENIE)).param("g", genieId)
             .query(Long.class).single();
-        List<ReviewDto> items = jdbc.sql(QueryUtil.get(QueryConstants.GET_REVIEW_FOR_GENIE))
+        List<ReviewRow> rows = jdbc.sql(QueryUtil.get(QueryConstants.GET_REVIEW_FOR_GENIE))
             .param("g", genieId)
             .param("limit", PageResponse.clampSize(size)).param("offset", PageResponse.offset(page, size))
-            .query(ReviewDto.class).list();
+            .query(ReviewRow.class).list();
+        Map<UUID, List<ReviewPhotoDto>> pics = photos.forReviews(rows.stream().map(ReviewRow::id).toList(), owner);
+        List<ReviewDto> items = rows.stream().map(r -> r.with(pics.getOrDefault(r.id(), List.of()))).toList();
         return new PageResponse<>(items, Math.max(page, 0), PageResponse.clampSize(size), total);
     }
 
@@ -102,6 +125,7 @@ public class ReviewService {
     }
 
     private ReviewDto get(UUID id) {
-        return jdbc.sql(QueryUtil.get(QueryConstants.GET_REVIEW_BY_ID)).param("id", id).query(ReviewDto.class).single();
+        ReviewRow r = jdbc.sql(QueryUtil.get(QueryConstants.GET_REVIEW_BY_ID)).param("id", id).query(ReviewRow.class).single();
+        return r.with(photos.forReviews(List.of(id), false).getOrDefault(id, List.of()));
     }
 }

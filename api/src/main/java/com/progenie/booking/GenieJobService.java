@@ -103,6 +103,7 @@ public class GenieJobService {
         BookingStatus from = b.getStatus();
         b.startTravel(now);
         support.transitioned(b, from, genieId, "GENIE", BookingEvent.Type.ON_THE_WAY, null, false);
+        support.sendContactCode(b);
         return queries.detail(bookingId, Viewer.GENIE, genieId);
     }
 

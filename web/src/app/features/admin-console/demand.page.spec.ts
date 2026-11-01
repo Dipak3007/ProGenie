@@ -11,7 +11,8 @@ const map = (extra: Partial<DemandMap> = {}): DemandMap => ({
     { key: '380015', pincode: '380015', area: 'Satellite', lat: 23.03, lng: 72.52, count: 8, kinds: {} },
     { key: '400001', pincode: '400001', area: null, lat: null, lng: null, count: 3, kinds: { PINCODE_UNSERVED: 3 } },
   ],
-  byKind: { BOOKING: 12 }, byReason: {}, byHour: Array(24).fill(0), byWeekday: Array(7).fill(0), ...extra,
+  byKind: { BOOKING: 12 }, byReason: {}, byHour: Array(24).fill(0), byWeekday: Array(7).fill(0),
+  waiting: { total: 4, top: [{ pincode: '400001', count: 3 }] }, ...extra,
 });
 const settle = () => new Promise((r) => setTimeout(r, 30));
 
@@ -57,6 +58,9 @@ describe('DemandPage', () => {
     req.flush(map({ layer: 'UNMET', total: 5, byKind: { PINCODE_UNSERVED: 3, INSTANT_NONE_FREE: 2 }, byReason: { OUTSIDE_HOURS: 2 } }));
     fixture.detectChanges();
     expect(el().textContent).toContain('PIN code we');
+    const waiting = el().querySelector('[data-testid=demand-waiting]')!.textContent!;
+    expect(waiting).toContain('4 people asked');
+    expect(waiting).toContain('400001');
     expect(el().textContent).toContain('Genie Now: nobody free');
     expect(el().textContent).toContain('Outside working hours');
   });

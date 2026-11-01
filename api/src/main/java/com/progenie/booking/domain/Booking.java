@@ -45,8 +45,24 @@ public class Booking {
     @Column(name = "genie_id", nullable = false, updatable = false)
     private UUID genieId;
 
-    @Column(name = "service_id", nullable = false, updatable = false)
+    /** The first service on the booking (Phase 3.5C: the others are in booking_items). */
+    @Column(name = "service_id", nullable = false)
     private long serviceId;
+
+    /** "Fan installation ×2 + Switchboard repair": what lists, receipts and messages show. */
+    @Column(name = "services_label", nullable = false)
+    private String servicesLabel;
+
+    /** JOB, or INSPECTION (Phase 3.5D: a visit to see a big job and send a quote). */
+    @Column(nullable = false, updatable = false)
+    private String kind = KIND_JOB;
+
+    /** A job made from a quote (Phase 3.5D): the inspection fee already paid, taken off its service amount. */
+    @Column(name = "inspection_credit", nullable = false, updatable = false)
+    private BigDecimal inspectionCredit = BigDecimal.ZERO.setScale(2);
+
+    @Column(name = "quote_id", updatable = false)
+    private UUID quoteId;
 
     @Column(name = "city_id", nullable = false, updatable = false)
     private long cityId;
@@ -69,7 +85,7 @@ public class Booking {
 
     private String notes;
 
-    @Column(name = "service_amount", nullable = false, updatable = false)
+    @Column(name = "service_amount", nullable = false)
     private BigDecimal serviceAmount;
 
     @Column(name = "extra_amount", nullable = false)
@@ -90,7 +106,7 @@ public class Booking {
     @Column(name = "commission_rate", nullable = false, updatable = false)
     private BigDecimal commissionRate;
 
-    @Column(name = "commission_amount", nullable = false, updatable = false)
+    @Column(name = "commission_amount", nullable = false)
     private BigDecimal commissionAmount;
 
     @Column(name = "total_amount", nullable = false)
@@ -99,7 +115,7 @@ public class Booking {
     @Column(name = "genie_payout", nullable = false)
     private BigDecimal geniePayout;
 
-    @Column(name = "coupon_id", updatable = false)
+    @Column(name = "coupon_id")
     private Long couponId;                 // Phase 3B: the coupon used, if any
 
     @Column(name = "discount_amount", nullable = false)
@@ -121,6 +137,14 @@ public class Booking {
 
     @Column(name = "start_otp_attempts", nullable = false)
     private int startOtpAttempts;
+
+    /** Booked for someone else (Phase 3.5A): a second start code, sent to the person at the address. */
+    @Column(name = "contact_start_otp_hash")
+    private String contactStartOtpHash;
+
+    /** Token of that person's tracking link; cleared when the job ends. */
+    @Column(name = "contact_track_token")
+    private String contactTrackToken;
 
     @Column(name = "cancel_reason")
     private String cancelReason;
@@ -176,6 +200,9 @@ public class Booking {
     @Version
     private int version;
 
+    public static final String KIND_JOB = "JOB";
+    public static final String KIND_INSPECTION = "INSPECTION";
+
     protected Booking() {
         // for JPA
     }
@@ -185,11 +212,12 @@ public class Booking {
                         BigDecimal commissionRate, BigDecimal commissionAmount) {
     }
 
-    public static Booking request(String bookingRef, UUID customerId, UUID genieId, long serviceId, long cityId,
-                                  UUID addressId, Instant slotStart, Instant slotEnd, Instant expiresAt, Price price,
-                                  PaymentMethod paymentMethod, String notes, String idempotencyKey) {
+    public static Booking request(String bookingRef, UUID customerId, UUID genieId, long serviceId, String servicesLabel,
+                                  long cityId, UUID addressId, Instant slotStart, Instant slotEnd, Instant expiresAt,
+                                  Price price, PaymentMethod paymentMethod, String notes, String idempotencyKey) {
         Booking b = new Booking();
         b.bookingRef = bookingRef;
+        b.servicesLabel = servicesLabel;
         b.customerId = customerId;
         b.genieId = genieId;
         b.serviceId = serviceId;
@@ -219,8 +247,8 @@ public class Booking {
                                  Instant expiresAt, String notes) {
         Price free = new Price(BigDecimal.ZERO, BigDecimal.ZERO, BigDecimal.ZERO, BigDecimal.ZERO, BigDecimal.ZERO,
             BigDecimal.ZERO);
-        Booking b = request(bookingRef, original.customerId, genieId, original.serviceId, original.cityId,
-            original.addressId, slotStart, slotEnd, expiresAt, free, PaymentMethod.CASH, notes, null);
+        Booking b = request(bookingRef, original.customerId, genieId, original.serviceId, original.servicesLabel,
+            original.cityId, original.addressId, slotStart, slotEnd, expiresAt, free, PaymentMethod.CASH, notes, null);
         b.reworkOfId = original.id;
         b.paymentStatus = PaymentStatus.WAIVED;
         return b;
@@ -262,6 +290,8 @@ public class Booking {
         }
         status = BookingStatus.CANCELLED;
         cancelledAt = now;
+        contactStartOtpHash = null;
+        contactTrackToken = null;
         cancelledBy = actorId;
         cancelReason = reason;
         if (fee != null && fee.signum() > 0) {
@@ -281,6 +311,7 @@ public class Booking {
         status = BookingStatus.REQUESTED;
         acceptedAt = null;
         startOtpHash = null;
+        contactStartOtpHash = null;
         startOtpAttempts = 0;
         rescheduledCount++;
     }
@@ -294,12 +325,22 @@ public class Booking {
         startOtpAttempts = 0;
     }
 
+    /**
+     * The person at the address (booked for someone else) gets their own start code and a tracking link when the
+     * Genie sets off. The customer's own code keeps working; wrong codes share one counter.
+     */
+    public void issueContactStartCode(String codeHash, String trackToken) {
+        require(BookingStatus.ON_THE_WAY, "send a contact code for");
+        contactStartOtpHash = codeHash;
+        contactTrackToken = trackToken;
+    }
+
     /** Starts the job if the start code matches; wrong codes are counted and lock after 5 tries. */
     public void start(Instant now, boolean codeMatches) {
         if (!status.isConfirmed()) {
             throw invalid("start");
         }
-        if (startOtpHash == null) {
+        if (startOtpHash == null && contactStartOtpHash == null) {
             throw ApiException.unprocessable("START_CODE_MISSING", "Ask the customer to open the booking and share the start code");
         }
         if (startOtpAttempts >= MAX_START_CODE_ATTEMPTS) {
@@ -312,6 +353,7 @@ public class Booking {
         status = BookingStatus.IN_PROGRESS;
         startedAt = now;
         startOtpHash = null;
+        contactStartOtpHash = null;
     }
 
     /** Finishes the job. Extra charges (parts/materials) go fully to the Genie; commission stays on the service price. */
@@ -321,6 +363,7 @@ public class Booking {
         extraNote = note;
         status = BookingStatus.COMPLETED;
         completedAt = now;
+        contactTrackToken = null;
         if (paymentMethod == PaymentMethod.CASH && !cashCollected) {
             paymentMethod = PaymentMethod.ONLINE; // the customer will pay in the app instead
         }
@@ -377,6 +420,45 @@ public class Booking {
         recalculate();
     }
 
+    /** An inspection visit (Phase 3.5D): its service amount is the inspection fee, with no commission. */
+    public void markInspection() {
+        if (status != BookingStatus.REQUESTED || couponId != null) {
+            throw invalid("mark as an inspection");
+        }
+        kind = KIND_INSPECTION;
+    }
+
+    /**
+     * A job made from an accepted quote (Phase 3.5D). {@code credit} (the inspection fee already paid) is already taken
+     * off the service amount; it is kept for receipts and the price breakdown.
+     */
+    public void markFromQuote(UUID quote, BigDecimal credit) {
+        if (status != BookingStatus.REQUESTED || quoteId != null) {
+            throw invalid("make from a quote");
+        }
+        quoteId = quote;
+        inspectionCredit = credit.setScale(2, RoundingMode.HALF_UP);
+    }
+
+    /**
+     * The customer removed a service before the Genie set off (Phase 3.5C): the booking takes the remaining lines'
+     * totals, the shorter slot and the coupon's new discount ({@code couponId} null when it no longer applies).
+     */
+    public void changeServices(long firstServiceId, String label, BigDecimal newServiceAmount, BigDecimal newCommission,
+                               Instant newSlotEnd, Long newCouponId, BigDecimal newDiscount) {
+        if (status != BookingStatus.REQUESTED && status != BookingStatus.ACCEPTED) {
+            throw ApiException.unprocessable("SERVICES_LOCKED", "Services can only be changed until the Genie sets off");
+        }
+        serviceId = firstServiceId;
+        servicesLabel = label;
+        serviceAmount = newServiceAmount.setScale(2, RoundingMode.HALF_UP);
+        commissionAmount = newCommission.setScale(2, RoundingMode.HALF_UP);
+        slotEnd = newSlotEnd;
+        couponId = newCouponId;
+        discountAmount = (newCouponId == null ? BigDecimal.ZERO : newDiscount.min(serviceAmount)).setScale(2, RoundingMode.HALF_UP);
+        recalculate();
+    }
+
     /**
      * A Genie Now booking (Phase 3C-9), before it is accepted: the request it came from and the city's instant fee,
      * which the customer pays on top and the Genie earns in full (like the travel fee).
@@ -429,6 +511,26 @@ public class Booking {
 
     public UUID getGenieId() {
         return genieId;
+    }
+
+    public String getKind() {
+        return kind;
+    }
+
+    public BigDecimal getInspectionCredit() {
+        return inspectionCredit;
+    }
+
+    public UUID getQuoteId() {
+        return quoteId;
+    }
+
+    public long getCityId() {
+        return cityId;
+    }
+
+    public String getServicesLabel() {
+        return servicesLabel;
     }
 
     public long getServiceId() {
@@ -513,6 +615,10 @@ public class Booking {
 
     public String getStartOtpHash() {
         return startOtpHash;
+    }
+
+    public String getContactStartOtpHash() {
+        return contactStartOtpHash;
     }
 
     public int getRescheduledCount() {

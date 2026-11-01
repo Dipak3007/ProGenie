@@ -1,8 +1,10 @@
 package com.progenie.provider;
 
+import java.time.OffsetDateTime;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
+import java.util.stream.Collectors;
 
 import com.progenie.provider.GenieDtos.GenieCardDto;
 import com.progenie.provider.GenieDtos.GenieDetailDto;
@@ -31,6 +33,15 @@ public class GenieQueryService {
         Sort(String orderBy) {
             this.orderBy = orderBy;
         }
+    }
+
+    /** Same path as the review module's public photo link (it redirects to a fresh, short-lived file link). */
+    public static final String REVIEW_PHOTO_PATH = "/api/v1/review-photos/";
+
+    record ReviewRow(UUID id, int rating, String comment, String customerName, OffsetDateTime createdAt, String genieReply) {
+    }
+
+    record PhotoRow(UUID id, UUID reviewId) {
     }
 
     private final JdbcClient jdbc;
@@ -98,10 +109,20 @@ public class GenieQueryService {
             .query(GenieServiceDto.class)
             .list();
 
-        List<GenieReviewDto> reviews = jdbc.sql(QueryUtil.get(QueryConstants.GET_GENIE_DETAIL_REVIEWS))
+        List<ReviewRow> rows = jdbc.sql(QueryUtil.get(QueryConstants.GET_GENIE_DETAIL_REVIEWS))
             .param("id", genieId)
-            .query(GenieReviewDto.class)
+            .query(ReviewRow.class)
             .list();
+        Map<UUID, List<String>> photos = rows.isEmpty() ? Map.of()
+            : jdbc.sql(QueryUtil.get(QueryConstants.GET_GENIE_DETAIL_REVIEW_PHOTOS))
+                .param("ids", rows.stream().map(ReviewRow::id).toList())
+                .query(PhotoRow.class).list().stream()
+                .collect(Collectors.groupingBy(PhotoRow::reviewId,
+                    Collectors.mapping(ph -> REVIEW_PHOTO_PATH + ph.id(), Collectors.toList())));
+        List<GenieReviewDto> reviews = rows.stream()
+            .map(r -> new GenieReviewDto(r.rating(), r.comment(), r.customerName(), r.createdAt(), r.genieReply(),
+                photos.getOrDefault(r.id(), List.of())))
+            .toList();
 
         return new GenieDetailDto(card, services, reviews);
     }

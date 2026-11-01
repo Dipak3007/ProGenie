@@ -3,6 +3,7 @@
 
 import { AttachmentDto } from '../models/attachment-dto';
 import { BookingPhotoDto } from '../models/booking-photo-dto';
+import { TicketItemDto } from '../models/ticket-item-dto';
 import { TicketMessageDto } from '../models/ticket-message-dto';
 export interface TicketDetail {
   assignedTo: (string | null);
@@ -25,6 +26,7 @@ export interface TicketDetail {
   genieId: (string | null);
   genieName: (string | null);
   id: string;
+  items: Array<TicketItemDto>;
   jobPhotos: Array<BookingPhotoDto>;
   messages: Array<TicketMessageDto>;
   overdue: boolean;

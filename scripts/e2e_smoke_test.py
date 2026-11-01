@@ -600,6 +600,13 @@ def main():
                                              "other_genies": [newbie]})
     phase3d(anon, customer, genie, admin, {"genie_id": genie_id, "service_id": service_id, "address_id": address_id,
                                            "other_genies": [newbie]})
+    phase35a(anon, customer, genie, admin, {"book": book, "genie_id": genie_id, "service_id": service_id,
+                                            "address_id": address_id})
+    phase35b(anon, customer, admin)
+    phase35c(anon, customer, genie, admin, {"genie_id": genie_id, "address_id": address_id})
+    phase35d(anon, customer, genie, admin, {"genie_id": genie_id, "address_id": address_id})
+    phase35e(anon, customer, admin, {"genie_id": genie_id, "address_id": address_id})
+    phase35_exit_gate(anon, customer, genie, admin, {"genie_id": genie_id, "address_id": address_id})
 
     customer.delete(f"/api/v1/me/favourites/{genie_id}")
     customer.delete(f"/api/v1/me/addresses/{address_id}")
@@ -1503,6 +1510,495 @@ def phase3d(anon, customer, genie, admin, ctx):
           (s, err, found))
 
     genie.put("/api/v1/genie/availability", {"windows": saved_windows})
+
+def phase35a(anon, customer, genie, admin, ctx):
+    """Phase 3.5A: book for someone else, Genies rate customers, photos in reviews, book again."""
+    import re
+    book, genie_id, service_id, address_id = ctx["book"], ctx["genie_id"], ctx["service_id"], ctx["address_id"]
+    jpeg = b"\xff\xd8\xff\xe0" + b"\x00" * 64
+
+    section("Phase 3.5A: booking for someone else")
+    _, addresses = customer.get("/api/v1/me/addresses")
+    home = next(a for a in addresses if a["id"] == address_id)
+    contact_phone = "9" + str(int(time.time() * 1000))[-9:]
+    base = {"label": "Other", "line1": f"Parents' flat {RUN}", "pincode": home["pincode"], "lat": home["lat"],
+            "lng": home["lng"], "isDefault": False}
+    s, body = customer.post("/api/v1/me/addresses", {**base, "contactName": "Asha Shah"})
+    check(s == 400 and code_of(body) == "CONTACT_INCOMPLETE", "a contact needs both a name and a phone", body)
+    s, parents = customer.post("/api/v1/me/addresses", {**base, "contactName": "Asha Shah", "contactPhone": "+91 " + contact_phone})
+    check(s == 201 and parents.get("contactPhone") == contact_phone, "an address can carry the person who will be there", parents)
+    slot = free_slots(anon, genie_id, service_id)[0]
+    s, b = book(slot, "CASH", address=parents["id"])
+    bid = b["id"]
+    genie.post(f"/api/v1/genie/bookings/{bid}/accept")
+    _, mine = customer.get(f"/api/v1/bookings/{bid}")
+    check(mine.get("addressId") == parents["id"] and mine["address"]["contactName"] == "Asha Shah",
+          "the customer sees who it's for (and the address id for Book again)", mine.get("address"))
+    _, job = genie.get(f"/api/v1/genie/bookings/{bid}")
+    check(job["address"]["contactPhone"] == contact_phone and job["customer"]["phone"] is None,
+          "the Genie calls the person at the address instead of the customer", (job["address"], job["customer"]))
+    before = seen(sms_address(contact_phone))
+    s, _ = genie.post(f"/api/v1/genie/bookings/{bid}/travel")
+    sms = wait_for_message(sms_address(contact_phone), before)
+    text = (sms or {}).get("Text", "")
+    code = re.search(r"Start code (\d{4})", text)
+    token = re.search(r"/track/([A-Za-z0-9_-]{40,})", text)
+    check(s == 200 and code and token, "the person at the address gets an SMS with a tracking link and their own start code",
+          text[:200])
+    if code and token:
+        s, track = anon.get(f"/api/v1/track/{token.group(1)}")
+        check(s == 200 and track["status"] == "ON_THE_WAY" and track["genieName"] and " " not in track["genieName"],
+              "the tracking link works without logging in (first name only)", track)
+        s, body = anon.get(f"/api/v1/track/{token.group(1)}x")
+        check(s == 404 and code_of(body) == "LINK_EXPIRED", "a wrong token is refused", body)
+        s, started = genie.post(f"/api/v1/genie/bookings/{bid}/start", {"code": code.group(1)})
+        check(s == 200 and started["status"] == "IN_PROGRESS", "the contact's code starts the job", started.get("status"))
+        s, done = genie.post(f"/api/v1/genie/bookings/{bid}/complete", {"cashCollected": True})
+        s2, _ = anon.get(f"/api/v1/track/{token.group(1)}")
+        check(s == 200 and s2 == 404, "the tracking link ends with the job", (s, s2))
+
+    section("Phase 3.5A: Genies rate customers")
+    _, job = genie.get(f"/api/v1/genie/bookings/{bid}")
+    check("RATE_CUSTOMER" in job["allowedActions"], "right after the job the Genie can rate the customer", job["allowedActions"])
+    s, body = genie.post(f"/api/v1/genie/bookings/{bid}/customer-rating", {"rating": 5, "tags": ["GREAT", "UNSAFE"]})
+    check(s == 400 and code_of(body) == "CONFLICTING_TAGS", "contradictory tags are refused", body)
+    s, rated = genie.post(f"/api/v1/genie/bookings/{bid}/customer-rating", {"rating": 4, "tags": ["GREAT"]})
+    s2, again = genie.post(f"/api/v1/genie/bookings/{bid}/customer-rating", {"rating": 1})
+    check(s == 201 and s2 == 409 and code_of(again) == "ALREADY_RATED", "one rating per job", (s, s2))
+    _, mine = customer.get(f"/api/v1/bookings/{bid}")
+    _, job = genie.get(f"/api/v1/genie/bookings/{bid}")
+    check(mine.get("customerRating") is None and job["customerRating"]["rating"] == 4,
+          "the Genie sees their rating; the customer never does", (mine.get("customerRating"), job.get("customerRating")))
+    s, users = admin.get("/api/v1/admin/users?role=CUSTOMER&flagged=true")
+    check(s == 200 and "items" in users, "admins can list customers who need attention", users if s != 200 else None)
+
+    section("Phase 3.5A: photos in reviews")
+
+    def add_photo(content=jpeg):
+        data, ctype = multipart({}, "file", "work.jpg", content, "image/jpeg")
+        return customer.post(f"/api/v1/bookings/{bid}/review/photos", raw=data, content_type=ctype)
+
+    s, body = add_photo()
+    check(s == 422 and code_of(body) == "REVIEW_FIRST", "photos come after the review", body)
+    s, review = customer.post(f"/api/v1/bookings/{bid}/review", {"rating": 5, "comment": f"Neat work {RUN}"})
+    s1, photo = add_photo()
+    s2, body = add_photo(b"%PDF-1.4 not a photo")
+    check(s == 201 and s1 == 201 and photo["url"].startswith("/api/v1/review-photos/") and s2 == 400,
+          "the customer adds a photo of the finished work (checked by its bytes)", (s, s1, s2))
+    s, _, raw = raw_get(photo["url"])
+    check(s == 200 and raw[:3] == b"\xff\xd8\xff", "anyone can open it (a stable link to a short-lived file link)", s)
+    _, profile = anon.get(f"/api/v1/genies/{genie_id}")
+    on_profile = next((r for r in profile["reviews"] if r["comment"] == f"Neat work {RUN}"), None)
+    check(on_profile and photo["url"] in on_profile["photoUrls"], "it shows with the review on the Genie's public profile",
+          on_profile)
+    s, _ = genie.post(f"/api/v1/genie/reviews/{review['id']}/photos/{photo['id']}/report", {"reason": "Not my work"})
+    _, queue = admin.get("/api/v1/admin/review-photos?reported=true&size=50")
+    check(s == 204 and any(p["id"] == photo["id"] and p["reportReason"] == "Not my work" for p in queue["items"]),
+          "the Genie reports it; it lands in the admin queue", s)
+    s, _ = admin.post(f"/api/v1/admin/review-photos/{photo['id']}/hide")
+    s2, _, _ = raw_get(photo["url"])
+    _, profile = anon.get(f"/api/v1/genies/{genie_id}")
+    on_profile = next((r for r in profile["reviews"] if r["comment"] == f"Neat work {RUN}"), {"photoUrls": []})
+    check(s == 204 and s2 == 404 and photo["url"] not in on_profile["photoUrls"], "an admin hides it everywhere", (s, s2))
+    s, _ = admin.post(f"/api/v1/admin/review-photos/{photo['id']}/keep")
+    s2, _, _ = raw_get(photo["url"])
+    check(s == 204 and s2 == 200, "and can show it again", (s, s2))
+    customer.delete(f"/api/v1/me/addresses/{parents['id']}")
+
+
+def phase35b(anon, customer, admin):
+    """Phase 3.5B: "Notify me when ProGenie arrives" and the help centre."""
+    section("Phase 3.5B: notify me when ProGenie arrives")
+    pin = None
+    for _ in range(20):
+        candidate = "39" + str(int(uuid.uuid4().int % 9000) + 1000)
+        if not anon.get(f"/api/v1/serviceability?pincode={candidate}")[1]["serviceable"]:
+            pin = candidate
+            break
+    phone = "9" + str(int(time.time() * 1000))[-9:]
+    email = f"waiting.{RUN}@example.com"
+    alert = {"pincode": pin, "phone": phone, "consent": True}
+    s, body = anon.post("/api/v1/launch-alerts", {**alert, "consent": False})
+    check(s == 400 and code_of(body) == "CONSENT_NEEDED", "nothing is kept without consent", body)
+    s, body = anon.post("/api/v1/launch-alerts", {**alert, "pincode": "380009"})
+    check(s == 409 and code_of(body) == "ALREADY_SERVED", "a PIN code we serve needs no alert", body)
+    s, body = anon.post("/api/v1/launch-alerts", {"lat": 24.86, "lng": 67.01, "phone": phone, "consent": True})
+    check(s == 422 and code_of(body) == "LOCATION_OUTSIDE_INDIA", "a map pin outside India is refused", body)
+    s, ok = anon.post("/api/v1/launch-alerts", alert)
+    check(s == 201 and ok["channel"] == "PHONE" and phone not in ok["contact"] and ok["contact"].endswith(phone[-4:]),
+          "a guest signs up with a mobile number (shown masked)", ok)
+    s, ok2 = customer.post("/api/v1/launch-alerts", {"pincode": pin, "email": email, "consent": True})
+    check(s == 201 and ok2["channel"] == "EMAIL", "a logged-in customer signs up with an e-mail", ok2)
+    _, demand = admin.get("/api/v1/admin/demand?layer=UNMET&days=7")
+    waiting = demand.get("waiting", {})
+    check(any(p["pincode"] == pin and p["count"] >= 2 for p in waiting.get("top", [])) or waiting.get("total", 0) >= 2,
+          "admin sees how many people wait for that PIN code", waiting)
+
+    slug = f"smoke-launch-{RUN}"
+    req = {"slug": slug, "name": f"Launch City {RUN}", "state": "Gujarat", "centerLat": 22.3072, "centerLng": 73.1812,
+           "radiusKm": 20}
+    s, city = admin.post("/api/v1/admin/cities", req)
+    if s != 201:
+        check(False, "admin creates a city for the launch", city)
+        return
+    cid = city["cityId"]
+    admin.put(f"/api/v1/admin/cities/{cid}/pincodes/{pin}", {"area": "Alkapuri", "lat": 22.31, "lng": 73.17, "active": True})
+    sms_before, mail_before = seen(sms_address(phone)), seen(email)
+    s, city = admin.put(f"/api/v1/admin/cities/{cid}/status", {"active": True})
+    sms = wait_for_message(sms_address(phone), sms_before)
+    mail = wait_for_message(email, mail_before)
+    check(s == 200 and sms and "Alkapuri" in sms.get("Text", ""), "opening the area texts everyone who waited", (sms or {}).get("Text"))
+    check(mail and "ProGenie now serves" in mail.get("Subject", ""), "and e-mails those who gave an e-mail", (mail or {}).get("Subject"))
+    s, again = anon.post("/api/v1/launch-alerts", alert)
+    check(s == 409 and code_of(again) == "ALREADY_SERVED", "once open, the PIN code needs no alert any more", again)
+    admin.put(f"/api/v1/admin/cities/{cid}/status", {"active": False})
+    admin.delete(f"/api/v1/admin/cities/{cid}/pincodes/{pin}")
+
+    section("Phase 3.5B: help centre")
+    s, articles = anon.get("/api/v1/help")
+    check(s == 200 and len(articles) >= 30 and articles[0]["category"] == "BOOKING" and articles[-1]["category"] == "GENIES",
+          "anyone reads the help centre, in order (For Genies last)", len(articles) if s == 200 else articles)
+    s, tips = anon.get("/api/v1/help/suggestions?ticketCategory=NO_SHOW")
+    check(s == 200 and 1 <= len(tips) <= 3, "Report a problem gets up to 3 answers for the complaint", tips)
+    target = articles[0]["id"]
+    s, _ = customer.post(f"/api/v1/help/{target}/vote", {"helpful": True})
+    s2, _ = customer.post(f"/api/v1/help/{target}/vote", {"helpful": True})
+    check(s == 204 and s2 == 204, "votes are accepted (repeats are quietly ignored)", (s, s2))
+    s, _ = customer.get("/api/v1/admin/help")
+    check(s == 403, "only admins edit the help centre", s)
+    body = {"category": "PAYMENTS", "slug": f"smoke-{RUN}", "question": f"Smoke question {RUN}?", "answer": "**Yes.**",
+            "ticketCategories": ["PAYMENT"], "position": 99, "published": True}
+    s, created = admin.post("/api/v1/admin/help", body)
+    s2, dup = admin.post("/api/v1/admin/help", body)
+    check(s == 201 and s2 == 409 and code_of(dup) == "HELP_SLUG_TAKEN", "admin adds an answer (slugs are unique)", (s, s2))
+    if s == 201:
+        _, mine = admin.get("/api/v1/admin/help")
+        row = next((a for a in mine if a["id"] == target), {})
+        check("helpfulYes" in row and row["helpfulYes"] >= 1, "admin sees the helpful counts", row.get("helpfulYes"))
+        s, _ = admin.put(f"/api/v1/admin/help/{created['id']}", {**body, "published": False})
+        _, public = anon.get("/api/v1/help")
+        check(s == 200 and all(a["slug"] != body["slug"] for a in public), "an unpublished answer is hidden", s)
+        s, _ = admin.delete(f"/api/v1/admin/help/{created['id']}")
+        check(s == 204, "and can be deleted", s)
+
+
+def phase35c(anon, customer, genie, admin, ctx):
+    """Phase 3.5C: several services from the same Genie in one booking."""
+    genie_id, address_id = ctx["genie_id"], ctx["address_id"]
+    section("Phase 3.5C: several services in one booking")
+    _, profile = anon.get(f"/api/v1/genies/{genie_id}")
+    svc = sorted(profile["services"], key=lambda x: (x["durationMinutes"], x["serviceId"]))
+    a, b = svc[0], svc[1]
+    items = f"{a['serviceId']}:2,{b['serviceId']}:1"
+    _, addresses = customer.get("/api/v1/me/addresses")
+    home = next(x for x in addresses if x["id"] == address_id)
+    where = f"&lat={home['lat']}&lng={home['lng']}"
+    s, q = anon.get(f"/api/v1/pricing/estimate?genieId={genie_id}&items={items}{where}")
+    _, one = anon.get(f"/api/v1/pricing/estimate?genieId={genie_id}&serviceId={a['serviceId']}{where}")
+    expected = round(2 * float(a["price"]) + float(b["price"]), 2)
+    check(s == 200 and len(q["lines"]) == 2 and abs(float(q["serviceAmount"]) - expected) < 0.01
+          and float(q["travelFee"]) == float(one["travelFee"]), "the quote prices each service and charges one travel fee", q)
+    check(q["durationMinutes"] == 2 * a["durationMinutes"] + b["durationMinutes"], "the job takes all the services' time", q.get("durationMinutes"))
+    s, body = anon.get(f"/api/v1/pricing/estimate?genieId={genie_id}&items=1,2,3,4,5,6{where}")
+    check(s == 400 and code_of(body) == "TOO_MANY_SERVICES", "at most 5 services in one booking", body)
+    s, body = anon.get(f"/api/v1/pricing/estimate?genieId={genie_id}&items={a['serviceId']}:6{where}")
+    check(s == 400 and code_of(body) == "INVALID_QUANTITY", "each service at most 5 times", body)
+
+    code = "TWO" + RUN.upper()
+    s, _ = admin.post("/api/v1/admin/coupons", {"code": code, "title": "Half off the second service", "discountType": "PERCENT",
+                                                "discountValue": 50, "perCustomerLimit": 5, "scope": "SERVICE",
+                                                "serviceId": b["serviceId"], "listed": False})
+    lines = [{"serviceId": a["serviceId"], "quantity": 2}, {"serviceId": b["serviceId"], "quantity": 1}]
+    s2, offer = customer.post("/api/v1/coupons/check", {"code": code, "genieId": genie_id, "items": lines, "addressId": address_id})
+    half = round(float(b["price"]) / 2, 2)
+    check(s == 201 and s2 == 200 and abs(float(offer["discount"]) - half) < 0.01,
+          "a coupon for one service only takes money off that service", offer)
+
+    s, days = anon.get(f"/api/v1/genies/{genie_id}/slot-days?items={items}&days=14")
+    slot = None
+    for day in days if s == 200 else []:
+        if day["available"]:
+            _, d = anon.get(f"/api/v1/genies/{genie_id}/slots?items={items}&date={day['date']}")
+            check(d["durationMinutes"] == q["durationMinutes"], "free times are for the whole job", d.get("durationMinutes"))
+            slot = d["slots"][len(d["slots"]) // 2]["start"]
+            break
+    s, bk = customer.post("/api/v1/bookings", {"genieId": genie_id, "items": lines, "addressId": address_id, "slotStart": slot,
+                                               "paymentMethod": "CASH", "tipAmount": 0, "couponCode": code})
+    check(s == 201 and len(bk["items"]) == 2 and " + " in bk["serviceName"] and "\u00d72" in bk["serviceName"]
+          and abs(float(bk["discountAmount"]) - half) < 0.01, "one booking holds both services, with the coupon on the second", bk)
+    if s != 201:
+        return
+    bid = bk["id"]
+    s, job = genie.get(f"/api/v1/genie/bookings/{bid}")
+    check(len(job["items"]) == 2, "the Genie sees every service on the job", job.get("items"))
+    genie.post(f"/api/v1/genie/bookings/{bid}/accept")
+    check("REMOVE_SERVICE" in customer.get(f"/api/v1/bookings/{bid}")[1]["allowedActions"],
+          "until the Genie sets off, the customer can drop a service", None)
+    s, after = customer.delete(f"/api/v1/bookings/{bid}/items/{bk['items'][1]['id']}")
+    check(s == 200 and len(after["items"]) == 1 and after["couponCode"] is None and float(after["discountAmount"]) == 0
+          and abs(float(after["serviceAmount"]) - 2 * float(a["price"])) < 0.01,
+          "dropping the discounted service: cheaper, and the coupon use is given back", after)
+    _, notes = genie.get("/api/v1/notifications?size=20")
+    check(any(n["type"] == "BOOKING_CHANGED" and bid in (n.get("link") or "") for n in notes["items"]),
+          "the Genie is told what changed", None)
+    s, body = customer.delete(f"/api/v1/bookings/{bid}/items/{after['items'][0]['id']}")
+    check(s == 422 and code_of(body) == "LAST_SERVICE", "the last service can't be removed (cancel instead)", body)
+    admin.post(f"/api/v1/admin/bookings/{bid}/cancel", {"reason": "smoke 3.5C", "waiveFee": True})
+
+    section("Phase 3.5C: complaints and receipts with several services")
+    s, days = anon.get(f"/api/v1/genies/{genie_id}/slot-days?items={items}&days=14")
+    slot = None
+    for day in days if s == 200 else []:
+        if day["available"]:
+            _, d = anon.get(f"/api/v1/genies/{genie_id}/slots?items={items}&date={day['date']}")
+            slot = d["slots"][0]["start"]
+            break
+    s, bk = customer.post("/api/v1/bookings", {"genieId": genie_id, "items": lines, "addressId": address_id, "slotStart": slot,
+                                               "paymentMethod": "CASH", "tipAmount": 0})
+    check(s == 201, "a second two-service booking", bk)
+    if s != 201:
+        return
+    bid = bk["id"]
+    genie.post(f"/api/v1/genie/bookings/{bid}/accept")
+    _, sc = customer.post(f"/api/v1/bookings/{bid}/start-code")
+    genie.post(f"/api/v1/genie/bookings/{bid}/start", {"code": sc["code"]})
+    s, done = genie.post(f"/api/v1/genie/bookings/{bid}/complete", {"cashCollected": True})
+    check(s == 200 and done["status"] == "COMPLETED" and len(done["items"]) == 2, "the job is done with both services", done.get("status"))
+    s, receipts = customer.get(f"/api/v1/bookings/{bid}/receipts")
+    check(s == 200 and len(receipts) >= 1, "the receipt is issued (one line per service)", receipts)
+    s, body = customer.post(f"/api/v1/bookings/{bid}/tickets", {"category": "QUALITY", "subject": f"Switch {RUN}",
+                                                                "description": "The switchboard sparks.", "itemIds": [987654321]})
+    check(s == 400 and code_of(body) == "INVALID_ITEMS", "a complaint can only name the booking's services", body)
+    s, t = customer.post(f"/api/v1/bookings/{bid}/tickets", {"category": "QUALITY", "subject": f"Switch {RUN}",
+                                                             "description": "The switchboard sparks.",
+                                                             "itemIds": [bk["items"][1]["id"]]})
+    check(s == 201 and len(t["items"]) == 1 and t["items"][0]["serviceName"] == b["name"],
+          "the complaint says which service it is about", t.get("items"))
+    if s == 201:
+        _, at = admin.get(f"/api/v1/admin/tickets/{t['id']}")
+        check(abs(float(at["items"][0]["amount"]) - float(b["price"])) < 0.01, "admin sees what the reported service cost", at.get("items"))
+        admin.post(f"/api/v1/admin/tickets/{t['id']}/reject", {"reason": "smoke: closing"})
+
+
+def first_free_slot(anon, genie_id, what):
+    """The middle free slot of the first day with room, for `what` (items=…, quoteId=… or minutes=…)."""
+    s, days = anon.get(f"/api/v1/genies/{genie_id}/slot-days?{what}&days=14")
+    for day in days if s == 200 else []:
+        if day["available"]:
+            _, d = anon.get(f"/api/v1/genies/{genie_id}/slots?{what}&date={day['date']}")
+            if d.get("slots"):
+                return d["slots"][len(d["slots"]) // 2]["start"], d["durationMinutes"]
+    return None, None
+
+
+def finish_job(customer, genie, bid):
+    """The Genie arrives with the customer's start code and completes the job (cash)."""
+    _, sc = customer.post(f"/api/v1/bookings/{bid}/start-code")
+    genie.post(f"/api/v1/genie/bookings/{bid}/start", {"code": sc["code"]})
+    return genie.post(f"/api/v1/genie/bookings/{bid}/complete", {"cashCollected": True})
+
+
+def phase35e(anon, customer, admin, ctx):
+    """Phase 3.5E: the cart (a saved, re-checked checkout) and the price check when booking."""
+    genie_id, address_id = ctx["genie_id"], ctx["address_id"]
+    section("Phase 3.5E: cart")
+    customer.delete("/api/v1/cart")
+    s, empty = customer.get("/api/v1/cart")
+    check(s == 200 and empty["cart"] is None, "a new customer has an empty cart", empty)
+    _, profile = anon.get(f"/api/v1/genies/{genie_id}")
+    simple = [x for x in profile["services"] if not x["inspectionFirst"]][:2]
+    items = ",".join(f"{x['serviceId']}:{2 if i == 0 else 1}" for i, x in enumerate(simple))
+    slot, _ = first_free_slot(anon, genie_id, f"items={items}")
+    body = {"genieId": genie_id, "items": [{"serviceId": x["serviceId"], "quantity": 2 if i == 0 else 1} for i, x in enumerate(simple)],
+            "addressId": address_id, "slotStart": slot, "paymentMethod": "ONLINE", "tipAmount": 20, "notes": "Ring the bell",
+            "couponCode": None, "seenTotal": None, "replace": False}
+    s, saved = customer.put("/api/v1/cart", body)
+    cart = (saved or {}).get("cart") or {}
+    check(s == 200 and cart.get("itemsParam") == items and cart.get("slotStart") and cart.get("total") is not None
+          and cart.get("paymentMethod") == "ONLINE" and cart.get("notes") == "Ring the bell",
+          "checkout is saved to the cart: services, address, time, payment, tip and note", cart)
+    total = float(cart.get("total") or 0)
+    s, again = customer.get("/api/v1/cart")
+    check(s == 200 and again["cart"]["itemsParam"] == items and again["notices"] == [],
+          "the cart is still there on the next visit (re-checked, nothing changed)", again.get("notices"))
+    s, moved = customer.put("/api/v1/cart", {**body, "seenTotal": round(total - 5, 2)})
+    check(s == 200 and any("The price changed from" in n for n in moved["notices"]),
+          "a price that moved since the customer saw it is reported", moved.get("notices"))
+    s, gl = anon.get("/api/v1/genies?city=ahmedabad&limit=50")
+    other = next((g for g in gl if g["id"] != genie_id), None) if s == 200 else None
+    if other:
+        _, op = anon.get(f"/api/v1/genies/{other['id']}")
+        o_body = {"genieId": other["id"], "items": [{"serviceId": op["services"][0]["serviceId"], "quantity": 1}], "replace": False}
+        s, body409 = customer.put("/api/v1/cart", o_body)
+        check(s == 409 and code_of(body409) == "CART_OTHER_GENIE" and body409.get("genieName"),
+              "a cart holds one Genie: another Genie's service needs a yes", body409)
+        s, replaced = customer.put("/api/v1/cart", {**o_body, "replace": True})
+        check(s == 200 and replaced["cart"]["genieId"] == other["id"], "with a yes the old cart is cleared and a new one started", replaced.get("cart"))
+        customer.put("/api/v1/cart", {**body, "replace": True})
+    s, current = customer.get("/api/v1/cart")
+    total = float(current["cart"]["total"])
+    booking = {"genieId": genie_id, "items": body["items"], "addressId": address_id, "slotStart": slot, "paymentMethod": "ONLINE",
+               "tipAmount": 20, "notes": "Ring the bell"}
+    s, stale = customer.post("/api/v1/bookings", {**booking, "expectedTotal": round(total - 10, 2)})
+    check(s == 409 and code_of(stale) == "PRICE_CHANGED" and abs(float(stale.get("newTotal", 0)) - total) < 0.01,
+          "booking checks the price the customer saw (PRICE_CHANGED with the new total)", stale)
+    s, made = customer.post("/api/v1/bookings", {**booking, "expectedTotal": total})
+    check(s == 201 and abs(float(made["totalAmount"]) - total) < 0.01, "confirming the shown price books it", made.get("totalAmount") if s == 201 else made)
+    s, after = customer.get("/api/v1/cart")
+    check(s == 200 and after["cart"] is None, "the booking empties the cart", after)
+    if s == 200 and isinstance(made, dict) and made.get("id"):
+        admin.post(f"/api/v1/admin/bookings/{made['id']}/cancel", {"reason": "smoke 3.5E", "waiveFee": True})
+
+
+def phase35d(anon, customer, genie, admin, ctx):
+    """Phase 3.5D: inspection visit + quote."""
+    genie_id, address_id = ctx["genie_id"], ctx["address_id"]
+    section("Phase 3.5D: inspection visit and quote")
+    _, profile = anon.get(f"/api/v1/genies/{genie_id}")
+    wiring = next(x for x in profile["services"] if x["inspectionFirst"])
+    fan = next(x for x in profile["services"] if not x["inspectionFirst"])
+    _, addresses = customer.get("/api/v1/me/addresses")
+    home = next(x for x in addresses if x["id"] == address_id)
+    s, est = anon.get(f"/api/v1/pricing/estimate?genieId={genie_id}&serviceId={wiring['serviceId']}&lat={home['lat']}&lng={home['lng']}")
+    check(s == 200 and est["inspection"] and float(est["commissionAmount"]) == 0 and est["durationMinutes"] == 30,
+          "an inspection-first service is priced as a 30-minute inspection visit (no commission)", est)
+    slot, _ = first_free_slot(anon, genie_id, f"items={wiring['serviceId']}")
+    body = {"genieId": genie_id, "serviceId": wiring["serviceId"], "addressId": address_id, "slotStart": slot,
+            "paymentMethod": "CASH", "tipAmount": 0}
+    s, insp = customer.post("/api/v1/bookings", body)
+    check(s == 201 and insp["kind"] == "INSPECTION" and insp["serviceName"].startswith("Inspection: ")
+          and float(insp["serviceAmount"]) == float(est["inspectionFee"]), "the customer books an inspection visit", insp)
+    if s != 201:
+        return
+    iid = insp["id"]
+    genie.post(f"/api/v1/genie/bookings/{iid}/accept")
+    quote = {"lines": [{"serviceId": fan["serviceId"], "quantity": 2, "unitPrice": fan["price"]},
+                       {"description": f"Replace old wiring {RUN}", "quantity": 1, "unitPrice": 4500}],
+             "durationMinutes": 180, "note": "Materials included"}
+    s, body = genie.post(f"/api/v1/genie/bookings/{iid}/quote", quote)
+    check(s == 422 and code_of(body) == "INSPECTION_NOT_DONE", "the quote comes after the visit", body)
+    s, done = finish_job(customer, genie, iid)
+    check(s == 200 and "SEND_QUOTE" in done["allowedActions"], "after the visit the Genie can send a quote", done.get("allowedActions"))
+    s, v1 = genie.post(f"/api/v1/genie/bookings/{iid}/quote", {**quote, "durationMinutes": 120})
+    s2, v2 = genie.post(f"/api/v1/genie/bookings/{iid}/quote", quote)
+    total = round(2 * float(fan["price"]) + 4500, 2)
+    check(s == 200 and s2 == 200 and v2["quote"]["version"] == 2 and abs(float(v2["quote"]["totalAmount"]) - total) < 0.01,
+          "the Genie sends a quote and revises it (the customer sees the latest)", v2.get("quote"))
+    _, mine = customer.get(f"/api/v1/bookings/{iid}")
+    q = mine["quote"]
+    check("ACCEPT_QUOTE" in mine["allowedActions"] and abs(float(q["jobAmount"]) - (total - float(est["inspectionFee"]))) < 0.01,
+          "the customer sees the quote with the inspection fee taken off", q)
+    jslot, minutes = first_free_slot(anon, genie_id, f"quoteId={q['id']}")
+    check(minutes == 180, "free times are as long as the Genie's estimate", minutes)
+    s, job = customer.post(f"/api/v1/quotes/{q['id']}/accept", {"slotStart": jslot, "paymentMethod": "CASH", "tipAmount": 0})
+    check(s == 201 and job["status"] == "ACCEPTED" and len(job["items"]) == 2 and float(job["inspectionCredit"]) > 0
+          and job["quote"]["status"] == "ACCEPTED", "accepting books the job, already accepted, with the quote's lines", job)
+    s, body = customer.post(f"/api/v1/quotes/{q['id']}/accept", {"slotStart": jslot, "paymentMethod": "CASH"})
+    check(s == 409 and code_of(body) == "QUOTE_CLOSED", "a quote is accepted once", body)
+    _, notes = genie.get("/api/v1/notifications?size=20")
+    check(any(n["type"] == "QUOTE_ACCEPTED" for n in notes["items"]), "the Genie is told the quote was accepted", None)
+    if s == 409:
+        admin.post(f"/api/v1/admin/bookings/{job['id']}/cancel", {"reason": "smoke 3.5D", "waiveFee": True})
+
+    # a second inspection: declined
+    slot, _ = first_free_slot(anon, genie_id, f"items={wiring['serviceId']}")
+    s, insp2 = customer.post("/api/v1/bookings", {**body_of(wiring, address_id, genie_id), "slotStart": slot})
+    genie.post(f"/api/v1/genie/bookings/{insp2['id']}/accept")
+    finish_job(customer, genie, insp2["id"])
+    genie.post(f"/api/v1/genie/bookings/{insp2['id']}/quote", {"lines": [{"description": "Small fix", "quantity": 1, "unitPrice": 900}],
+                                                              "durationMinutes": 60})
+    _, mine = customer.get(f"/api/v1/bookings/{insp2['id']}")
+    s, declined = customer.post(f"/api/v1/quotes/{mine['quote']['id']}/decline", {"reason": "Not now"})
+    check(s == 200 and declined["quote"]["status"] == "DECLINED" and "ACCEPT_QUOTE" not in declined["allowedActions"],
+          "the customer can decline a quote", declined.get("quote"))
+
+
+def body_of(service, address_id, genie_id):
+    return {"genieId": genie_id, "serviceId": service["serviceId"], "addressId": address_id, "paymentMethod": "CASH", "tipAmount": 0}
+
+
+def phase35_exit_gate(anon, customer, genie, admin, ctx):
+    """Phase 3.5 exit gate (roadmap 5.4), end to end over the API."""
+    import re
+    genie_id, address_id = ctx["genie_id"], ctx["address_id"]
+    section("Phase 3.5 exit gate: notify me → inspection for someone else → quote → one job → review photo, ratings → book again → help")
+    # 1. an unserved PIN code: notify me, then the area opens and the message arrives
+    pin = None
+    for _ in range(20):
+        candidate = "39" + str(int(uuid.uuid4().int % 9000) + 1000)
+        if not anon.get(f"/api/v1/serviceability?pincode={candidate}")[1]["serviceable"]:
+            pin = candidate
+            break
+    phone = "8" + str(int(time.time() * 1000))[-9:]
+    s, _ = anon.post("/api/v1/launch-alerts", {"pincode": pin, "phone": phone, "consent": True})
+    s2, city = admin.post("/api/v1/admin/cities", {"slug": f"gate-{RUN}", "name": f"Gate City {RUN}", "state": "Gujarat",
+                                                   "centerLat": 22.3072, "centerLng": 73.1812, "radiusKm": 20})
+    before = seen(sms_address(phone))
+    if s2 == 201:
+        admin.put(f"/api/v1/admin/cities/{city['cityId']}/pincodes/{pin}", {"area": "Gate Area", "lat": 22.31, "lng": 73.17, "active": True})
+        admin.put(f"/api/v1/admin/cities/{city['cityId']}/status", {"active": True})
+    sms = wait_for_message(sms_address(phone), before)
+    check(s == 201 and sms and "Gate Area" in sms.get("Text", ""), "1. a customer asked to be told and hears when the area opens", (sms or {}).get("Text"))
+    if s2 == 201:
+        admin.put(f"/api/v1/admin/cities/{city['cityId']}/status", {"active": False})
+        admin.delete(f"/api/v1/admin/cities/{city['cityId']}/pincodes/{pin}")
+
+    # 2. an inspection for someone else
+    _, profile = anon.get(f"/api/v1/genies/{genie_id}")
+    wiring = next(x for x in profile["services"] if x["inspectionFirst"])
+    simple = [x for x in profile["services"] if not x["inspectionFirst"]][:2]
+    _, addresses = customer.get("/api/v1/me/addresses")
+    home = next(x for x in addresses if x["id"] == address_id)
+    contact = "9" + str(int(time.time() * 1000) + 7)[-9:]
+    s, parents = customer.post("/api/v1/me/addresses", {"label": "Other", "line1": f"Parents' house {RUN}", "pincode": home["pincode"],
+                                                        "lat": home["lat"], "lng": home["lng"], "isDefault": False,
+                                                        "contactName": "Meera Shah", "contactPhone": contact})
+    slot, _ = first_free_slot(anon, genie_id, f"items={wiring['serviceId']}")
+    s, insp = customer.post("/api/v1/bookings", {**body_of(wiring, parents["id"], genie_id), "slotStart": slot})
+    check(s == 201 and insp["kind"] == "INSPECTION" and insp["address"]["contactName"] == "Meera Shah",
+          "2. the customer books an inspection for someone else", insp.get("kind"))
+    if s != 201:
+        return
+    genie.post(f"/api/v1/genie/bookings/{insp['id']}/accept")
+    finish_job(customer, genie, insp["id"])
+
+    # 3. a quote with two services, accepted as one booking with two lines
+    lines = [{"serviceId": x["serviceId"], "quantity": 1, "unitPrice": x["price"]} for x in simple]
+    s, sent = genie.post(f"/api/v1/genie/bookings/{insp['id']}/quote", {"lines": lines, "durationMinutes": 90})
+    check(s == 200 and len(sent["quote"]["lines"]) == 2, "3. the Genie sends a quote with two services", sent.get("quote"))
+    _, mine = customer.get(f"/api/v1/bookings/{insp['id']}")
+    jslot, _ = first_free_slot(anon, genie_id, f"quoteId={mine['quote']['id']}")
+    s, job = customer.post(f"/api/v1/quotes/{mine['quote']['id']}/accept", {"slotStart": jslot, "paymentMethod": "CASH", "tipAmount": 0})
+    check(s == 201 and len(job["items"]) == 2 and job["address"]["contactName"] == "Meera Shah",
+          "4. the customer accepts it as one booking with two lines, at the same address", job.get("items"))
+    if s != 201:
+        return
+
+    # 4. after the job: a review with a photo, the Genie rates the customer
+    s, done = finish_job(customer, genie, job["id"])
+    s1, review = customer.post(f"/api/v1/bookings/{job['id']}/review", {"rating": 5, "comment": f"Gate review {RUN}"})
+    data, ctype = multipart({}, "file", "work.jpg", b"\xff\xd8\xff\xe0" + b"\x00" * 64, "image/jpeg")
+    s2, photo = customer.post(f"/api/v1/bookings/{job['id']}/review/photos", raw=data, content_type=ctype)
+    s3, _ = genie.post(f"/api/v1/genie/bookings/{job['id']}/customer-rating", {"rating": 5, "tags": ["GREAT"]})
+    check(s == 200 and s1 == 201 and s2 == 201 and s3 == 201, "5. the customer reviews with a photo and the Genie rates the customer", (s, s1, s2, s3))
+
+    # 5. book again: the same services and address
+    _, detail = customer.get(f"/api/v1/bookings/{job['id']}")
+    items = ",".join(f"{i['serviceId']}:{i['quantity']}" for i in detail["items"] if i["serviceId"])
+    again_slot, _ = first_free_slot(anon, genie_id, f"items={items}")
+    s, again = customer.post("/api/v1/bookings", {"genieId": genie_id, "addressId": detail["addressId"], "slotStart": again_slot,
+                                                  "paymentMethod": "CASH", "tipAmount": 0,
+                                                  "items": [{"serviceId": i["serviceId"], "quantity": i["quantity"]}
+                                                            for i in detail["items"] if i["serviceId"]]})
+    check(s == 201 and len(again["items"]) == 2, "6. Book again re-books both services at the same address", again.get("items"))
+    if s == 201:
+        admin.post(f"/api/v1/admin/bookings/{again['id']}/cancel", {"reason": "smoke exit gate", "waiveFee": True})
+
+    # 6. the help centre answers a question from Report a problem
+    s, tips = customer.get("/api/v1/help/suggestions?ticketCategory=QUALITY")
+    check(s == 200 and len(tips) >= 1, "7. Report a problem suggests help answers", [t["question"] for t in tips] if s == 200 else tips)
+    customer.delete(f"/api/v1/me/addresses/{parents['id']}")
+
 
 if __name__ == "__main__":
     print(f"ProGenie API smoke test against {BASE} (run {RUN})")

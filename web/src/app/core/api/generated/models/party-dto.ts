@@ -3,7 +3,9 @@
 
 export interface PartyDto {
   avgRating: (number | null);
+  flagReason: (string | null);
   id: string;
   name: string;
   phone: (string | null);
+  ratingCount: (number | null);
 }

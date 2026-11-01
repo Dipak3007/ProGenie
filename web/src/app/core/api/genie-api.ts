@@ -4,6 +4,8 @@ import { Observable } from 'rxjs';
 
 import { API } from './api';
 import {
+  CustomerRating,
+  CustomerRatingRequest,
   AvailabilityWindow,
   BookingDetail,
   BookingPhoto,
@@ -17,6 +19,7 @@ import {
   TimeOff,
   InstantOffer,
   Tracking,
+  QuoteRequest,
 } from './models';
 
 /** Genie self-service commands: onboarding, availability, jobs and reviews. */
@@ -118,6 +121,11 @@ export class GenieApi {
     return this.http.put<Tracking>(`${this.base}/bookings/${id}/location`, { lat, lng, accuracyM });
   }
 
+  /** Phase 3.5D: send or revise the quote after a completed inspection visit. */
+  sendQuote(id: string, body: QuoteRequest): Observable<BookingDetail> {
+    return this.http.post<BookingDetail>(`${this.base}/bookings/${id}/quote`, body);
+  }
+
   start(id: string, code: string): Observable<BookingDetail> {
     return this.http.post<BookingDetail>(`${this.base}/bookings/${id}/start`, { code });
   }
@@ -131,6 +139,16 @@ export class GenieApi {
     const form = new FormData();
     form.append('file', file);
     return this.http.post<BookingPhoto>(`${this.base}/bookings/${bookingId}/photos`, form, { params: { stage } });
+  }
+
+  /** Phase 3.5A: rate the customer right after completing the job (never shown to them). */
+  rateCustomer(bookingId: string, body: CustomerRatingRequest): Observable<CustomerRating> {
+    return this.http.post<CustomerRating>(`${this.base}/bookings/${bookingId}/customer-rating`, body);
+  }
+
+  /** Phase 3.5A: report a photo in a review of your work; an admin decides whether to hide it. */
+  reportReviewPhoto(reviewId: string, photoId: string, reason: string | null): Observable<void> {
+    return this.http.post<void>(`${this.base}/reviews/${reviewId}/photos/${photoId}/report`, { reason });
   }
 
   deletePhoto(bookingId: string, photoId: string): Observable<void> {

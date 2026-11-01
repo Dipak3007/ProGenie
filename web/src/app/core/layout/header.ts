@@ -9,12 +9,14 @@ import {
   LucideDynamicIcon,
   LucideLogOut as LogOut,
   LucideMenu as Menu,
+  LucideShoppingCart as ShoppingCart,
   LucideUser as User,
   LucideX as X,
 } from '@lucide/angular';
 
 import { Role } from '../api/models';
 import { AuthStore } from '../auth/auth-store';
+import { CartStore } from '../cart/cart-store';
 import { NotificationStore } from '../notifications/notification-store';
 import { Logo } from '../../shared/ui/logo';
 import { CitySwitcher } from './city-switcher';
@@ -108,6 +110,21 @@ const MENU: Record<Role, Link[]> = {
         </nav>
 
         <div class="flex items-center gap-1 md:gap-2">
+          @if (showCart()) {
+            <a
+              routerLink="/cart"
+              class="relative grid size-11 place-items-center rounded-full hover:bg-white/10"
+              [attr.aria-label]="cartCount() ? 'Cart, ' + cartCount() + (cartCount() === 1 ? ' service' : ' services') : 'Cart'"
+              data-testid="header-cart"
+            >
+              <svg [lucideIcon]="Cart" [size]="20" aria-hidden="true"></svg>
+              @if (cartCount()) {
+                <span class="absolute right-1.5 top-1.5 grid min-w-5 place-items-center rounded-full bg-gold px-1 text-[11px] font-bold leading-5 text-ink" data-testid="header-cart-count">
+                  {{ cartCount() }}
+                </span>
+              }
+            </a>
+          }
           @if (auth.user(); as user) {
             <!-- Notifications -->
             <div class="relative" data-popover>
@@ -232,6 +249,7 @@ const MENU: Record<Role, Link[]> = {
 export class Header {
   protected readonly auth = inject(AuthStore);
   protected readonly notes = inject(NotificationStore);
+  private readonly carts = inject(CartStore);
   private readonly el = inject(ElementRef<HTMLElement>);
 
   protected readonly open = signal(false);
@@ -245,6 +263,10 @@ export class Header {
   protected readonly showCity = computed(() => (this.auth.role() ?? 'CUSTOMER') === 'CUSTOMER');
   protected readonly roleLabel = computed(() => ({ CUSTOMER: 'Customer', GENIE: 'Genie', ADMIN: 'Administrator' })[this.auth.role() ?? 'CUSTOMER']);
 
+  /** Phase 3.5E: customers always see their cart; guests once they have picked something. */
+  protected readonly cartCount = computed(() => this.carts.summary()?.count ?? 0);
+  protected readonly showCart = computed(() => this.auth.role() === 'CUSTOMER' || (!this.auth.role() && this.cartCount() > 0));
+  protected readonly Cart = ShoppingCart;
   protected readonly Menu = Menu;
   protected readonly X = X;
   protected readonly UserIcon = User;

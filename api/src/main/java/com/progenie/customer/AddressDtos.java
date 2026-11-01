@@ -21,7 +21,8 @@ public final class AddressDtos {
     }
 
     public record AddressDto(UUID id, String label, String line1, @Nullable String line2, @Nullable String landmark, @Nullable String area,
-                             long cityId, @Nullable String cityName, String pincode, double lat, double lng, boolean isDefault) {
+                             long cityId, @Nullable String cityName, String pincode, double lat, double lng, boolean isDefault,
+                             @Nullable String contactName, @Nullable String contactPhone) {
     }
 
     public record AddressRequest(
@@ -33,6 +34,9 @@ public final class AddressDtos {
         @NotBlank @Pattern(regexp = ServiceabilityService.PINCODE, message = "must be a 6-digit PIN code") String pincode,
         @NotNull @DecimalMin("-90") @DecimalMax("90") Double lat,
         @NotNull @DecimalMin("-180") @DecimalMax("180") Double lng,
-        boolean isDefault) {
+        boolean isDefault,
+        // "Who will be there?" when booking for someone else: both or neither (Phase 3.5A)
+        @Size(max = 80) String contactName,
+        @Size(max = 20) String contactPhone) {
     }
 }

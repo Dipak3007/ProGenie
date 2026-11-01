@@ -13,6 +13,7 @@ export interface AdminOperationsUsers$Params {
   role?: string;
   status?: string;
   q?: string;
+  flagged?: boolean;
   page?: number;
   size?: number;
 }
@@ -23,6 +24,7 @@ export function adminOperationsUsers(http: HttpClient, rootUrl: string, params?:
     rb.query('role', params.role, {});
     rb.query('status', params.status, {});
     rb.query('q', params.q, {});
+    rb.query('flagged', params.flagged, {});
     rb.query('page', params.page, {});
     rb.query('size', params.size, {});
   }

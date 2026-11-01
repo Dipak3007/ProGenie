@@ -27,6 +27,10 @@ import { StatusBadge } from '../../shared/ui/status-badge';
         <option value="ACTIVE">Active</option>
         <option value="SUSPENDED">Suspended</option>
       </select>
+      <label class="flex min-h-11 items-center gap-2 whitespace-nowrap text-sm font-medium">
+        <input type="checkbox" class="size-5 rounded accent-brand" [checked]="flagged()" (change)="flagged.set($any($event.target).checked); page$.set(0)" />
+        Needs attention
+      </label>
       <form class="relative lg:w-64" role="search" (submit)="$event.preventDefault(); q.set(term); page$.set(0)">
         <label for="u-q" class="sr-only">Search users</label>
         <svg [lucideIcon]="SearchIcon" [size]="16" class="pointer-events-none absolute left-3.5 top-1/2 -translate-y-1/2 text-muted" aria-hidden="true"></svg>
@@ -46,6 +50,14 @@ import { StatusBadge } from '../../shared/ui/status-badge';
                     {{ u.fullName }} <span class="chip">{{ roleLabel(u.role) }}</span> <pg-status [status]="u.status" />
                   </p>
                   <p class="truncate text-sm text-muted">{{ u.phone }}{{ u.email ? ' · ' + u.email : '' }} · joined {{ u.createdAt | date: 'd MMM y' }} · {{ u.bookingCount }} bookings</p>
+                  @if (u.role === 'CUSTOMER' && u.customerRatingCount > 0) {
+                    <p class="text-sm text-muted" data-testid="user-customer-rating">
+                      Rated <span class="font-semibold text-ink">★ {{ u.customerRating }}</span> by {{ u.customerRatingCount }} Genie{{ u.customerRatingCount === 1 ? '' : 's' }}
+                    </p>
+                  }
+                  @if (u.flagReason) {
+                    <p class="mt-1 inline-flex rounded-lg bg-amber-50 px-2 py-1 text-xs font-medium text-amber-800" data-testid="user-flag">Needs attention: {{ u.flagReason }}</p>
+                  }
                 </div>
               </div>
               <div class="flex gap-2 sm:shrink-0">
@@ -81,6 +93,8 @@ export default class AdminUsersPage {
   protected readonly role = signal('ALL');
   protected readonly status = signal('');
   protected readonly q = signal('');
+  /** Customers Genies keep rating badly or reporting (Phase 3.5A). */
+  protected readonly flagged = signal(false);
   protected term = '';
   protected readonly page$ = signal(0);
   protected readonly roles: TabItem[] = [
@@ -96,6 +110,7 @@ export default class AdminUsersPage {
         role: this.role() === 'ALL' ? null : this.role(),
         status: this.status() || null,
         q: this.q() || null,
+        flagged: this.flagged() || null,
         page: this.page$(),
         size: 20,
       })}`,

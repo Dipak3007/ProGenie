@@ -61,7 +61,7 @@ public class ReceiptService {
                   String customerPhone, String genieName, String service, OffsetDateTime slotStart, String area,
                   String city, String pincode, BigDecimal serviceAmount, BigDecimal travelFee, BigDecimal extraAmount,
                   String extraNote, BigDecimal tipAmount, BigDecimal cancellationFee, BigDecimal discountAmount,
-                  String couponCode, BigDecimal instantFee) {
+                  String couponCode, BigDecimal instantFee, BigDecimal inspectionCredit) {
     }
 
     record PaymentInfo(UUID id, String purpose, String method, String provider, String providerRef, BigDecimal amount,
@@ -288,7 +288,24 @@ public class ReceiptService {
         } else if (p != null && "CANCELLATION_FEE".equals(p.purpose())) {
             lines.add(new Line("Late cancellation fee", "Paid to your Genie for the reserved slot", r.amount()));
         } else {
-            lines.add(new Line(s.service(), null, s.serviceAmount()));
+            // one line per service on the booking (Phase 3.5C)
+            record Item(String serviceName, int quantity, BigDecimal unitPrice, BigDecimal amount) {
+            }
+            List<Item> items = jdbc.sql(QueryUtil.get(QueryConstants.GET_RECEIPT_ITEMS)).param("id", s.bookingId())
+                .query(Item.class).list();
+            if (items.isEmpty()) {
+                lines.add(new Line(s.service(), null, s.serviceAmount()));
+            }
+            for (Item i : items) {
+                if (i.amount().signum() == 0 && items.size() > 1) {
+                    continue; // an inspection's services to look at (Phase 3.5D) cost nothing themselves
+                }
+                lines.add(new Line(i.serviceName(), i.quantity() > 1 ? i.quantity() + " \u00d7 \u20b9" + i.unitPrice().toPlainString() : null,
+                    i.amount()));
+            }
+            if (s.inspectionCredit() != null && s.inspectionCredit().signum() > 0) {
+                lines.add(new Line("Inspection fee already paid", "Taken off the quoted price", s.inspectionCredit().negate()));
+            }
             if (s.travelFee() != null && s.travelFee().signum() > 0) {
                 lines.add(new Line("Travel fee", null, s.travelFee()));
             }

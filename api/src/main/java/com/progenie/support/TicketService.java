@@ -4,6 +4,7 @@ import java.io.ByteArrayInputStream;
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.UncheckedIOException;
+import java.math.BigDecimal;
 import java.time.Clock;
 import java.time.Duration;
 import java.time.Instant;
@@ -53,7 +54,12 @@ public class TicketService {
     static final long MAX_PHOTO_BYTES = 5L * 1024 * 1024;
     static final List<String> OPEN = List.of("OPEN", "IN_REVIEW", "AWAITING_REPLY");
 
-    public record RaiseRequest(String category, String subject, String description) {
+    /** {@code itemIds} (Phase 3.5C): which of the booking's services the problem is about; empty = the whole booking. */
+    public record RaiseRequest(String category, String subject, String description, @Nullable List<Long> itemIds) {
+    }
+
+    /** A service a complaint is about, with what it cost (the admin's refund amount starts from these). */
+    public record TicketItemDto(long id, String serviceName, int quantity, BigDecimal amount, BigDecimal discountAmount) {
     }
 
     public record TicketSummary(UUID id, String ticketRef, String type, @Nullable UUID bookingId, @Nullable String bookingRef, String category,
@@ -81,7 +87,8 @@ public class TicketService {
                                @Nullable String resolutionActions, @Nullable String resolutionNote, @Nullable UUID refundId, @Nullable UUID redoBookingId,
                                @Nullable String redoBookingRef, OffsetDateTime createdAt, List<TicketMessageDto> messages,
                                List<AttachmentDto> attachments, boolean canReply, boolean canAddPhotos,
-                               boolean canAccept, boolean canReopen, List<BookingPhotoDto> jobPhotos) {
+                               boolean canAccept, boolean canReopen, List<BookingPhotoDto> jobPhotos,
+                               List<TicketItemDto> items) {
     }
 
     /** The row plus the booking parties, for access checks and events. */
@@ -147,7 +154,18 @@ public class TicketService {
         if (hasOpen) {
             throw ApiException.conflict("TICKET_ALREADY_OPEN", "There is already an open report for this booking");
         }
+        List<Long> itemIds = req.itemIds() == null ? List.of() : req.itemIds().stream().distinct().toList();
+        if (!itemIds.isEmpty()) {
+            long found = jdbc.sql(QueryUtil.get(QueryConstants.COUNT_TICKET_BOOKING_ITEMS)).param("b", bookingId)
+                .param("ids", itemIds).query(Long.class).single();
+            if (found != itemIds.size()) {
+                throw ApiException.badRequest("INVALID_ITEMS", "Pick services from this booking");
+            }
+        }
         UUID id = insert("COMPLAINT", bookingId, userId, role, category, subject, description, now);
+        for (Long itemId : itemIds) {
+            jdbc.sql(QueryUtil.get(QueryConstants.INSERT_TICKET_BOOKING_ITEM)).param("t", id).param("i", itemId).update();
+        }
         Ticket t = load(id);
         events.publishEvent(new TicketRaised(t.id(), t.ticketRef(), bookingId, b.bookingRef(), userId, role,
             b.customerId(), b.genieId(), category.name(), category.priority(), subject));
@@ -230,7 +248,8 @@ public class TicketService {
             r.redoBookingRef(), r.createdAt(), messages, attachments,
             t.isOpen(), t.isOpen() && attachments.size() < MAX_PHOTOS && (admin || t.isParty(viewerId)),
             raiser && reopenable && "RESOLVED".equals(t.status()), raiser && reopenable,
-            r.bookingId() == null ? List.of() : bookingPhotos.list(r.bookingId()));
+            r.bookingId() == null ? List.of() : bookingPhotos.list(r.bookingId()),
+            jdbc.sql(QueryUtil.get(QueryConstants.GET_TICKET_ITEMS)).param("id", ticketId).query(TicketItemDto.class).list());
     }
 
     // ------------------------------------------------------------------ thread

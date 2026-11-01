@@ -225,9 +225,11 @@ public class AccountDeletionService {
         List<String> exportFiles = jdbc.sql(QueryUtil.get(QueryConstants.GET_DELETION_EXPORT_FILE_KEYS))
             .param("u", userId).query(String.class).list();
         exportFiles.forEach(storage::delete);
-        // job photos show the inside of the customer's home: removed with the account
-        List<String> jobPhotos = jdbc.sql(QueryUtil.get(QueryConstants.GET_DELETION_BOOKING_PHOTO_KEYS))
-            .param("u", userId).query(String.class).list();
+        // job photos and the photos in their reviews show the inside of the customer's home: removed with the account
+        List<String> jobPhotos = new java.util.ArrayList<>(jdbc.sql(QueryUtil.get(QueryConstants.GET_DELETION_BOOKING_PHOTO_KEYS))
+            .param("u", userId).query(String.class).list());
+        jobPhotos.addAll(jdbc.sql(QueryUtil.get(QueryConstants.GET_DELETION_REVIEW_PHOTO_KEYS))
+            .param("u", userId).query(String.class).list());
         for (String key : jobPhotos) {
             try {
                 storage.delete(key);
@@ -239,8 +241,11 @@ public class AccountDeletionService {
             QueryConstants.DELETE_DELETION_EXPORT_JOBS,
             QueryConstants.DELETE_DELETION_RESET_TOKENS,
             QueryConstants.DELETE_DELETION_FAVOURITES,
+            QueryConstants.DELETE_DELETION_LAUNCH_ALERTS,
             QueryConstants.DELETE_DELETION_BOOKING_PHOTOS,
+            QueryConstants.DELETE_DELETION_REVIEW_PHOTOS,
             QueryConstants.DELETE_DELETION_NOTIFICATIONS,
+            QueryConstants.DELETE_DELETION_CARTS,
             QueryConstants.DELETE_DELETION_ADDRESSES,
             QueryConstants.UPDATE_DELETION_REDACT_MESSAGES,
             QueryConstants.UPDATE_DELETION_TRIM_BOOKING_ADDRESSES,

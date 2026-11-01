@@ -118,6 +118,10 @@ progenie:
     genie-cancellation-flag-window: 30d
     max-reschedules: 2
     reminder-lead: 60m                      # WhatsApp reminder to both sides this long before the slot
+  cart:                                     # the customer's saved checkout (Phase 3.5E; see Carts)
+    ttl: 30d                                # deleted this long after it was last saved
+    reminder-after: 24h                     # one in-app reminder when it was left alone this long
+    reminder-interval: PT1H                 # how often the reminder / clean-up job runs
   instant:                                  # Genie Now: the nearest free Genie right away (Phase 3C-9; see InstantProperties)
     offer-timeout: 45s                      # one Genie at a time gets the offer for this long
     max-genies: 5                           # Genies asked before "No Genie is free right now"

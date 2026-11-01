@@ -12,6 +12,7 @@ import { errorMessage } from '../api/api';
 import { PincodeCheck } from '../api/models';
 import { CityStore } from '../city/city-store';
 import { Spinner } from '../../shared/ui/kit';
+import { NotifyMe } from '../../shared/ui/notify-me';
 
 /**
  * City pill in the header: pick a live city, or type a PIN code to see whether ProGenie serves it.
@@ -20,7 +21,7 @@ import { Spinner } from '../../shared/ui/kit';
  */
 @Component({
   selector: 'pg-city-switcher',
-  imports: [FormsModule, NgTemplateOutlet, LucideDynamicIcon, Spinner],
+  imports: [FormsModule, NgTemplateOutlet, LucideDynamicIcon, NotifyMe, Spinner],
   changeDetection: ChangeDetectionStrategy.OnPush,
   host: { '(document:click)': 'onDocumentClick($event)', '(document:keydown.escape)': 'open.set(false)' },
   template: `
@@ -107,6 +108,11 @@ import { Spinner } from '../../shared/ui/kit';
             <span [class]="variant() === 'pill' ? 'text-rose-700' : 'text-rose-300'">{{ error() }}</span>
           }
         </p>
+        @if (result(); as r) {
+          @if (!r.serviceable) {
+            <pg-notify-me class="mt-1" [pincode]="r.pincode" [tone]="variant() === 'pill' ? 'light' : 'dark'" />
+          }
+        }
       </form>
     </ng-template>
   `,

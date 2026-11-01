@@ -6,5 +6,6 @@ export interface GenieReviewDto {
   createdAt: string;
   customerName: string;
   genieReply: (string | null);
+  photoUrls: Array<string>;
   rating: number;
 }

@@ -4,5 +4,6 @@
 export interface RaiseRequest {
   category?: (string | null);
   description?: (string | null);
+  itemIds?: (Array<number> | null);
   subject?: (string | null);
 }

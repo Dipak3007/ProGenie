@@ -11,7 +11,10 @@ import { DayCountDto } from '../../models/day-count-dto';
 
 export interface BookingSlotDays$Params {
   genieId: string;
-  serviceId: number;
+  serviceId?: number;
+  items?: string;
+  quoteId?: string;
+  minutes?: number;
   days?: number;
 }
 
@@ -20,6 +23,9 @@ export function bookingSlotDays(http: HttpClient, rootUrl: string, params: Booki
   if (params) {
     rb.path('genieId', params.genieId, {});
     rb.query('serviceId', params.serviceId, {});
+    rb.query('items', params.items, {});
+    rb.query('quoteId', params.quoteId, {});
+    rb.query('minutes', params.minutes, {});
     rb.query('days', params.days, {});
   }
 

@@ -75,6 +75,14 @@ import { StatusBadge } from '../../shared/ui/status-badge';
             <p class="text-sm"><span class="font-semibold">{{ t.raisedByName }}</span> <span class="text-muted">· {{ roleLabel(t.raisedByRole) }} · {{ t.createdAt | date: 'd MMM, h:mm a' }}</span></p>
             <p class="mt-1 font-semibold">{{ t.subject }}</p>
             <p class="mt-1 whitespace-pre-line text-sm text-ink/85">{{ t.description }}</p>
+            @if (t.items.length) {
+              <p class="mt-2 flex flex-wrap items-center gap-1.5 text-xs" data-testid="ticket-items">
+                <span class="text-muted">About:</span>
+                @for (i of t.items; track i.id) {
+                  <span class="chip bg-surface py-1">{{ i.serviceName }}{{ i.quantity > 1 ? ' ×' + i.quantity : '' }}</span>
+                }
+              </p>
+            }
           </div>
         </li>
         @for (m of t.messages; track m.id) {

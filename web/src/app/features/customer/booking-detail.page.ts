@@ -1,10 +1,12 @@
 import { ChangeDetectionStrategy, Component, computed, inject, input, signal, viewChild } from '@angular/core';
-import { httpResource } from '@angular/common/http';
+import { HttpClient, httpResource } from '@angular/common/http';
 import { CurrencyPipe, DatePipe, DecimalPipe, NgTemplateOutlet } from '@angular/common';
 import { FormsModule } from '@angular/forms';
-import { RouterLink } from '@angular/router';
+import { Router, RouterLink } from '@angular/router';
+import { firstValueFrom } from 'rxjs';
 import {
   LucideArrowLeft as ArrowLeft,
+  LucideCamera as Camera,
   LucideCalendarDays as CalendarDays,
   LucideClock3 as Clock,
   LucideDynamicIcon,
@@ -16,13 +18,15 @@ import {
   LucideNavigation as Navigation,
   LucidePartyPopper as PartyPopper,
   LucidePhone as Phone,
+  LucideRotateCcw as RotateCcw,
   LucideStar as Star,
   LucideTriangleAlert as TriangleAlert,
 } from '@lucide/angular';
 
 import { API, errorCode, errorMessage } from '../../core/api/api';
 import { CustomerApi } from '../../core/api/customer-api';
-import { BookingDetail, Payment, Receipt, Slot, StartCode } from '../../core/api/models';
+import { BookingDetail, BookingItem, GenieDetail, Payment, Receipt, Slot, StartCode } from '../../core/api/models';
+import { shrinkImage } from '../../shared/image';
 import { SupportApi } from '../../core/api/support-api';
 import { ReportDialog } from '../support/report-dialog';
 import { ConfirmService, ToastService } from '../../core/ui/feedback';
@@ -37,6 +41,8 @@ import { SlotPicker } from '../../shared/ui/slot-picker';
 import { StatusBadge } from '../../shared/ui/status-badge';
 import { PaymentDialog } from './payment-dialog';
 import { LiveTracking } from './live-tracking';
+import { QuotePanel } from './quote-panel';
+import { bookingItemsParam } from '../../shared/service-lines';
 
 const TIP_PRESETS = [0, 20, 50, 100];
 
@@ -56,6 +62,7 @@ const TIP_PRESETS = [0, 20, 50, 100];
     LiveTracking,
     NgTemplateOutlet,
     PaymentDialog,
+    QuotePanel,
     PriceSummary,
     ReportDialog,
     Skeleton,
@@ -78,7 +85,13 @@ const TIP_PRESETS = [0, 20, 50, 100];
           <span class="chip bg-gold py-1 text-xs font-semibold text-ink">Genie Now</span>
         }
       </div>
-      <p class="mt-1 text-sm text-muted">{{ b.categoryName }} · {{ b.bookingRef }} · booked {{ b.createdAt | date: 'd MMM, h:mm a' }}</p>
+      <p class="mt-1 text-sm text-muted">
+        {{ b.categoryName }} · {{ b.bookingRef }} · booked {{ b.createdAt | date: 'd MMM, h:mm a' }}
+        @if (b.kind === 'JOB' && b.quote) {
+          · from the quote after
+          <a [routerLink]="['/account/bookings', b.quote.inspectionBookingId]" class="font-semibold text-brand underline">{{ b.quote.inspectionBookingRef }}</a>
+        }
+      </p>
 
       <div class="mt-6 grid grid-cols-[minmax(0,1fr)] gap-6 xl:grid-cols-[minmax(0,1fr)_22rem]">
         <div class="min-w-0 space-y-6">
@@ -164,6 +177,18 @@ const TIP_PRESETS = [0, 20, 50, 100];
                     </div>
                   </div>
                 }
+                <div class="flex flex-col gap-2 border-t border-line p-5 sm:flex-row sm:items-center" data-testid="book-again">
+                  <p class="flex-1 text-sm text-ink/75">Need {{ b.serviceName }} again? Book {{ b.genie.name.split(' ')[0] }} with the same address.</p>
+                  <button type="button" class="btn-primary min-h-11" [disabled]="busy()" (click)="bookAgain(b)">
+                    <svg [lucideIcon]="RotateCcw" [size]="16" aria-hidden="true"></svg> Book again
+                  </button>
+                </div>
+                @if (bookAgainNote(); as note) {
+                  <div class="flex flex-col gap-2 bg-amber-50 px-5 py-4 text-sm sm:flex-row sm:items-center" role="status">
+                    <p class="flex-1">{{ note }}</p>
+                    <a [routerLink]="['/services', b.categorySlug]" [queryParams]="{ service: b.serviceId }" class="btn-ghost min-h-10">See other Genies</a>
+                  </div>
+                }
               }
               @case ('CANCELLED') {
                 @if (can('PAY_FEE')) {
@@ -216,6 +241,12 @@ const TIP_PRESETS = [0, 20, 50, 100];
                 <p class="mt-1 font-semibold">{{ a.label }}</p>
                 <p class="text-sm text-ink/75">{{ a.line1 }}{{ a.line2 ? ', ' + a.line2 : '' }}</p>
                 <p class="text-sm text-ink/75">{{ a.area ? a.area + ', ' : '' }}{{ a.city }} {{ a.pincode }}</p>
+                @if (a.contactName) {
+                  <p class="mt-1 text-sm" data-testid="booking-contact">
+                    For <span class="font-medium">{{ a.contactName }}</span> · {{ a.contactPhone }}
+                    <span class="block text-xs text-muted">Your Genie calls them, and they get an SMS with a tracking link and their own start code when the Genie sets off.</span>
+                  </p>
+                }
               }
             </div>
             <div class="flex items-center gap-3 sm:col-span-2">
@@ -243,6 +274,10 @@ const TIP_PRESETS = [0, 20, 50, 100];
           </section>
 
           <!-- Review -->
+          @if (b.kind === 'INSPECTION') {
+            <pg-quote-panel [booking]="b" (changed)="detail.set($event)" />
+          }
+
           @if (can('REVIEW')) {
             <section class="card p-5" aria-labelledby="review-h">
               <h2 id="review-h" class="text-lg font-bold">How did {{ b.genie.name }} do?</h2>
@@ -264,7 +299,37 @@ const TIP_PRESETS = [0, 20, 50, 100];
                 </div>
                 <label class="label mt-4" for="review-comment">Comment (optional)</label>
                 <textarea id="review-comment" name="comment" class="field min-h-24" maxlength="1000" [(ngModel)]="comment" placeholder="On time? Tidy? Fair price?"></textarea>
-                <button type="submit" class="btn-primary mt-4" [disabled]="rating() === 0 || busy()">Post review</button>
+                <div class="mt-4">
+                  <span class="label">Photos of the finished work (optional)</span>
+                  <p class="text-xs text-muted">Up to {{ maxReviewPhotos }}. They're shown with your review on {{ b.genie.name.split(' ')[0] }}'s public profile, so keep people and personal things out of the picture.</p>
+                  <div class="mt-2 flex flex-wrap items-center gap-2">
+                    @for (p of reviewPhotos(); track p.url) {
+                      <div class="relative">
+                        <img [src]="p.url" alt="Photo to post with your review" class="size-20 rounded-xl object-cover ring-1 ring-line" />
+                        <button
+                          type="button"
+                          class="absolute -right-2 -top-2 grid size-7 place-items-center rounded-full bg-white text-xs font-bold shadow ring-1 ring-line"
+                          [attr.aria-label]="'Remove photo ' + ($index + 1)"
+                          (click)="removeReviewPhoto($index)"
+                        >
+                          ✕
+                        </button>
+                      </div>
+                    }
+                    @if (reviewPhotos().length < maxReviewPhotos) {
+                      <label class="btn-ghost min-h-11 cursor-pointer" data-testid="review-photo-add">
+                        <svg [lucideIcon]="Camera" [size]="16" aria-hidden="true"></svg> Add photo
+                        <input type="file" accept="image/jpeg,image/png,image/webp" multiple class="sr-only" (change)="pickReviewPhotos($event)" />
+                      </label>
+                    }
+                  </div>
+                </div>
+                <button type="submit" class="btn-primary mt-4" [disabled]="rating() === 0 || busy()">
+                  @if (busy()) {
+                    <pg-spinner />
+                  }
+                  Post review
+                </button>
               </form>
             </section>
           }
@@ -290,7 +355,10 @@ const TIP_PRESETS = [0, 20, 50, 100];
               <h2 class="text-lg font-bold">Price</h2>
               <pg-status [status]="b.paymentStatus" [label]="b.paymentMethod === 'CASH' ? 'Cash · ' + payLabel(b) : 'Online · ' + payLabel(b)" [tone]="b.paymentStatus === 'PAID' ? 'success' : 'neutral'" />
             </div>
-            <pg-price-summary class="mt-4" [booking]="b" />
+            <pg-price-summary class="mt-4" [booking]="b" [removable]="can('REMOVE_SERVICE')" (removeItem)="removeService(b, $event)" />
+            @if (can('REMOVE_SERVICE')) {
+              <p class="mt-2 text-xs text-muted">You can remove a service until {{ b.genie.name.split(' ')[0] }} sets off; the price and time update.</p>
+            }
 
             @if (can('CHANGE_TIP')) {
               <div class="mt-5 border-t border-line pt-4">
@@ -414,7 +482,7 @@ const TIP_PRESETS = [0, 20, 50, 100];
 
       <pg-dialog [open]="rescheduleOpen()" heading="Pick a new time" subheading="The Genie will be asked to confirm the new time." size="lg" (closed)="rescheduleOpen.set(false)">
         @if (rescheduleOpen()) {
-          <pg-slot-picker #picker [genieId]="b.genie.id" [serviceId]="b.serviceId" [selected]="newSlot()?.start ?? null" (picked)="newSlot.set($event)" />
+          <pg-slot-picker #picker [genieId]="b.genie.id" [minutes]="slotMinutes(b)" [selected]="newSlot()?.start ?? null" (picked)="newSlot.set($event)" />
           <div class="mt-4 flex flex-col-reverse gap-2 border-t border-line pt-4 sm:flex-row sm:items-center sm:justify-between">
             <p class="text-sm text-muted">
               @if (newSlot(); as s) {
@@ -434,7 +502,7 @@ const TIP_PRESETS = [0, 20, 50, 100];
       </pg-dialog>
 
       <pg-payment-dialog [open]="payOpen()" [bookingId]="b.id" (closed)="payOpen.set(false)" (paid)="onPaid()" />
-      <pg-report-dialog [open]="reportOpen()" [bookingId]="b.id" [bookingRef]="b.bookingRef" role="CUSTOMER" (closed)="reportOpen.set(false)" />
+      <pg-report-dialog [open]="reportOpen()" [bookingId]="b.id" [bookingRef]="b.bookingRef" role="CUSTOMER" [items]="b.items" (closed)="reportOpen.set(false)" />
     } @else if (detail.isLoading()) {
       <pg-skeleton class="mt-6 block" [rows]="3" />
     } @else if (detail.error()) {
@@ -467,6 +535,12 @@ export default class BookingDetailPage {
   protected readonly newSlot = signal<Slot | null>(null);
   protected readonly payOpen = signal(false);
   protected readonly tipPresets = TIP_PRESETS;
+  protected readonly maxReviewPhotos = 3;
+  /** Photos picked for the review, posted right after it. */
+  protected readonly reviewPhotos = signal<{ file: File; url: string }[]>([]);
+  protected readonly bookAgainNote = signal<string | null>(null);
+  private readonly http = inject(HttpClient);
+  private readonly router = inject(Router);
   private readonly picker = viewChild<SlotPicker>('picker');
 
   protected readonly tel = computed(() => telLink(this.detail.value()?.genie.phone));
@@ -565,6 +639,33 @@ export default class BookingDetailPage {
     });
   }
 
+  /** The booking's services as `12:2,15:1` (the slot picker and "Book again" need all of them). */
+  protected itemsOf(b: BookingDetail): string {
+    return bookingItemsParam(b);
+  }
+
+  /** Moving a booking keeps its length. */
+  protected slotMinutes(b: BookingDetail): number {
+    return Math.round((new Date(b.slotEnd).getTime() - new Date(b.slotStart).getTime()) / 60000);
+  }
+
+  /** Phase 3.5C: drop one of several services before the Genie sets off. */
+  protected async removeService(b: BookingDetail, item: BookingItem): Promise<void> {
+    const { confirmed } = await this.confirm.ask({
+      title: `Remove ${item.serviceName}?`,
+      message: `${b.genie.name.split(' ')[0]} will be told. The price and the time you've booked get shorter`
+        + (b.couponCode ? '; your coupon is checked again on what is left.' : '.'),
+      confirmLabel: 'Remove service',
+      tone: 'danger',
+    });
+    if (!confirmed) return;
+    this.busy.set(true);
+    this.api.removeService(b.id, item.id).subscribe({
+      next: (updated) => this.apply(updated, `${item.serviceName} removed`),
+      error: (err) => this.fail(err),
+    });
+  }
+
   protected reschedule(b: BookingDetail): void {
     const slot = this.newSlot();
     if (!slot) return;
@@ -587,17 +688,75 @@ export default class BookingDetailPage {
     });
   }
 
-  protected submitReview(): void {
-    if (this.rating() === 0) return;
+  protected pickReviewPhotos(event: Event): void {
+    const input = event.target as HTMLInputElement;
+    const files = Array.from(input.files ?? []).filter((f) => f.type.startsWith('image/'));
+    input.value = '';
+    const room = this.maxReviewPhotos - this.reviewPhotos().length;
+    if (files.length > room) this.toast.error(`You can add up to ${this.maxReviewPhotos} photos.`);
+    const added = files.slice(0, Math.max(0, room)).map((file) => ({ file, url: URL.createObjectURL(file) }));
+    this.reviewPhotos.update((list) => [...list, ...added]);
+  }
+
+  protected removeReviewPhoto(index: number): void {
+    const photo = this.reviewPhotos()[index];
+    if (photo) URL.revokeObjectURL(photo.url);
+    this.reviewPhotos.update((list) => list.filter((_, i) => i !== index));
+  }
+
+  /** Posts the review, then its photos (shrunk in the browser first). A failed photo doesn't undo the review. */
+  protected async submitReview(): Promise<void> {
+    if (this.rating() === 0 || this.busy()) return;
     this.busy.set(true);
-    this.api.review(this.id(), { rating: this.rating(), comment: this.comment.trim() || null }).subscribe({
-      next: () => {
-        this.busy.set(false);
-        this.toast.success('Thanks! Your review is live.');
-        this.detail.reload();
-      },
-      error: (err) => this.fail(err),
-    });
+    try {
+      await firstValueFrom(this.api.review(this.id(), { rating: this.rating(), comment: this.comment.trim() || null }));
+    } catch (err) {
+      this.fail(err);
+      return;
+    }
+    let failed = 0;
+    for (const p of this.reviewPhotos()) {
+      try {
+        await firstValueFrom(this.api.addReviewPhoto(this.id(), await shrinkImage(p.file)));
+      } catch {
+        failed++;
+      }
+      URL.revokeObjectURL(p.url);
+    }
+    this.reviewPhotos.set([]);
+    this.busy.set(false);
+    if (failed) {
+      this.toast.error(`Your review is live, but ${failed} photo${failed > 1 ? 's' : ''} could not be added.`);
+    } else {
+      this.toast.success('Thanks! Your review is live.');
+    }
+    this.detail.reload();
+  }
+
+  /**
+   * "Book again" (Phase 3.5A): checkout with the same Genie, service and address. If that Genie can't take the
+   * service any more, the customer is pointed to the other Genies for it.
+   */
+  protected async bookAgain(b: BookingDetail): Promise<void> {
+    this.bookAgainNote.set(null);
+    this.busy.set(true);
+    let available = false;
+    try {
+      const g = await firstValueFrom(this.http.get<GenieDetail>(`${API}/genies/${b.genie.id}`));
+      const wanted = b.items?.length ? b.items.map((i) => i.serviceId) : [b.serviceId];
+      available = g.services.some((s) => wanted.includes(s.serviceId));
+    } catch {
+      available = false;
+    }
+    this.busy.set(false);
+    if (!available) {
+      this.bookAgainNote.set(`${b.genie.name} isn't taking bookings for ${b.serviceName} right now.`);
+      return;
+    }
+    // every service on the booking, with its quantity; checkout keeps those the Genie still offers
+    const queryParams: Record<string, string | number> = { items: this.itemsOf(b) };
+    if (b.addressId) queryParams['addressId'] = b.addressId;
+    void this.router.navigate(['/book', b.genie.id], { queryParams });
   }
 
   protected onPaid(): void {
@@ -610,6 +769,8 @@ export default class BookingDetailPage {
   }
 
   protected readonly ArrowLeft = ArrowLeft;
+  protected readonly Camera = Camera;
+  protected readonly RotateCcw = RotateCcw;
   protected readonly CalendarDays = CalendarDays;
   protected readonly Clock = Clock;
   protected readonly Hourglass = Hourglass;

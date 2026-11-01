@@ -51,7 +51,8 @@ public class CatalogAdminService {
                                  @NotNull @DecimalMin("1") @DecimalMax("100000") BigDecimal basePrice,
                                  @Min(15) @Max(720) int durationMinutes,
                                  boolean active,
-                                 @Nullable Boolean instantEnabled) {
+                                 @Nullable Boolean instantEnabled,
+                                 @Nullable Boolean inspectionFirst) {
     }
 
     public record AdminCategoryDto(long id, String slug, String name, @Nullable String description, @Nullable String icon, @Nullable String imageUrl,
@@ -60,7 +61,7 @@ public class CatalogAdminService {
 
     public record AdminServiceDto(long id, long categoryId, String categoryName, String slug, String name,
                                   @Nullable String description, BigDecimal basePrice, int durationMinutes, boolean active,
-                                  int genieCount, boolean instantEnabled) {
+                                  int genieCount, boolean instantEnabled, boolean inspectionFirst) {
     }
 
     public record PricingRequest(@NotNull @DecimalMin("0") @DecimalMax("0.5") BigDecimal commissionRate,
@@ -68,14 +69,16 @@ public class CatalogAdminService {
                                  @NotNull @DecimalMin("0") @DecimalMax("1000") BigDecimal travelBaseFee,
                                  @NotNull @DecimalMin("0") @DecimalMax("200") BigDecimal travelPerKm,
                                  @NotNull @DecimalMin("0") @DecimalMax("5000") BigDecimal travelFeeCap,
-                                 @DecimalMin("0") @DecimalMax("1000") BigDecimal instantFee) {
+                                 @DecimalMin("0") @DecimalMax("1000") BigDecimal instantFee,
+                                 @DecimalMin("0") @DecimalMax("5000") BigDecimal inspectionFee) {
     }
 
     /** A city as admins see it: live or not, its centre and radius, how many PIN codes, and its pricing. */
     public record AdminCityDto(long cityId, String slug, String name, String state, boolean active, @Nullable Double centerLat,
                                @Nullable Double centerLng, BigDecimal radiusKm, int pincodeCount, BigDecimal commissionRate,
                                BigDecimal travelFreeKm, BigDecimal travelBaseFee, BigDecimal travelPerKm,
-                               BigDecimal travelFeeCap, String currency, BigDecimal instantFee) {
+                               BigDecimal travelFeeCap, String currency, BigDecimal instantFee,
+                               @Nullable BigDecimal inspectionFee) {
     }
 
     /** Create or edit a city. A new city starts switched off, with default pricing. */
@@ -236,6 +239,7 @@ public class CatalogAdminService {
         p.put("duration", req.durationMinutes());
         p.put("active", req.active());
         p.put("instant", req.instantEnabled());
+        p.put("inspection", req.inspectionFirst());
         return p;
     }
 
@@ -303,6 +307,9 @@ public class CatalogAdminService {
         }
         jdbc.sql(QueryUtil.get(QueryConstants.UPDATE_CATALOG_CITY_ACTIVE)).param("active", active).param("id", id)
             .update();
+        if (active) {
+            events.publishEvent(new ServiceAreaOpened(id)); // people waiting for this city hear about it
+        }
         return city(id);
     }
 
@@ -344,6 +351,9 @@ public class CatalogAdminService {
         p.put("lng", req.lng());
         p.put("active", req.active());
         jdbc.sql(QueryUtil.get(QueryConstants.UPSERT_CATALOG_CITY_PINCODE)).params(p).update();
+        if (req.active()) {
+            events.publishEvent(new ServiceAreaOpened(cityId)); // only does something while the city is live
+        }
         return pincodes(cityId).stream().filter(x -> x.pincode().equals(pincode)).findFirst().orElseThrow();
     }
 
@@ -416,6 +426,7 @@ public class CatalogAdminService {
             .param("id", cityId).param("rate", req.commissionRate()).param("free", req.travelFreeKm())
             .param("base", req.travelBaseFee()).param("perKm", req.travelPerKm()).param("cap", req.travelFeeCap())
             .param("instantFee", req.instantFee())
+            .param("inspectionFee", req.inspectionFee())
             .update();
         return city(cityId);
     }

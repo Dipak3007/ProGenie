@@ -20,6 +20,7 @@ import { Logo } from '../../shared/ui/logo';
           <ul class="mt-4 space-y-2 text-sm">
             <li><a routerLink="/services" class="hover:text-white">All services</a></li>
             <li><a routerLink="/login" class="hover:text-white">My bookings</a></li>
+            <li><a routerLink="/help" class="hover:text-white">Help centre</a></li>
             <li><a routerLink="/" fragment="contact" class="hover:text-white">Contact us</a></li>
           </ul>
         </div>

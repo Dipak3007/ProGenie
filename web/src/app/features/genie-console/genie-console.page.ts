@@ -7,6 +7,7 @@ import {
   LucideLayoutDashboard as LayoutDashboard,
   LucideStar as Star,
   LucideLifeBuoy as LifeBuoy,
+  LucideCircleHelp as CircleHelp,
   LucideSettings as Settings,
   LucideUser as User,
   LucideWallet as Wallet,
@@ -40,6 +41,7 @@ export default class GenieConsolePage {
     { path: '/genie/wallet', label: 'Earnings', icon: Wallet },
     { path: '/genie/reviews', label: 'Reviews', icon: Star },
     { path: '/genie/tickets', label: 'Reported problems', icon: LifeBuoy },
+    { path: '/help', label: 'Help centre', icon: CircleHelp, queryParams: { category: 'GENIES' } },
     { path: '/genie/account', label: 'Account', icon: User },
     { path: '/genie/privacy', label: 'Settings & privacy', icon: Settings },
   ]);

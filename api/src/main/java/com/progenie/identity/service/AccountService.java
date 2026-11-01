@@ -1,5 +1,6 @@
 package com.progenie.identity.service;
 
+import java.math.BigDecimal;
 import java.time.Instant;
 import java.time.OffsetDateTime;
 import java.util.Locale;
@@ -14,6 +15,7 @@ import com.progenie.identity.repository.UserRepository;
 import com.progenie.identity.web.dto.AuthDtos.UserDto;
 import com.progenie.shared.config.QueryConstants;
 import com.progenie.shared.error.ApiException;
+import com.progenie.shared.util.CustomerRatingRules;
 import com.progenie.shared.util.QueryUtil;
 import com.progenie.shared.web.PageResponse;
 import org.slf4j.Logger;
@@ -91,22 +93,40 @@ public class AccountService {
     /** One row in the admin user list. */
     @org.springframework.modulith.NamedInterface("accounts")
     public record UserRowDto(UUID id, String fullName, @Nullable String email, String phone, String role, String status,
-                             OffsetDateTime createdAt, long bookingCount) {
+                             OffsetDateTime createdAt, long bookingCount, @Nullable BigDecimal customerRating,
+                             int customerRatingCount, @Nullable String flagReason) {
     }
 
-    /** Admin: search users by role, status and name/phone/email. */
+    record UserRow(UUID id, String fullName, String email, String phone, String role, String status,
+                   OffsetDateTime createdAt, long bookingCount, BigDecimal customerRating,
+                   Integer customerRatingCount, Integer customerRedTags) {
+
+        UserRowDto toDto() {
+            int count = customerRatingCount == null ? 0 : customerRatingCount;
+            return new UserRowDto(id, fullName, email, phone, role, status, createdAt, bookingCount, customerRating, count,
+                CustomerRatingRules.flagReason(customerRating, count, customerRedTags == null ? 0 : customerRedTags));
+        }
+    }
+
+    /** "Needs attention" filter: the same thresholds as {@link CustomerRatingRules#flagReason}. */
+    private static JdbcClient.StatementSpec flagParams(JdbcClient.StatementSpec spec, boolean flagged) {
+        return spec.param("flagged", flagged).param("flagRed", CustomerRatingRules.FLAG_RED_TAGS)
+            .param("flagMin", CustomerRatingRules.FLAG_MIN_RATINGS).param("flagBelow", CustomerRatingRules.FLAG_BELOW);
+    }
+
+    /** Admin: search users by role, status and name/phone/email; {@code flagged} keeps customers that need attention. */
     @Transactional(readOnly = true)
-    public PageResponse<UserRowDto> search(String role, String status, String q, int page, int size) {
+    public PageResponse<UserRowDto> search(String role, String status, String q, boolean flagged, int page, int size) {
         String roleFilter = StringUtils.hasText(role) ? role.trim().toUpperCase(Locale.ROOT) : null;
         String statusFilter = StringUtils.hasText(status) ? status.trim().toUpperCase(Locale.ROOT) : null;
         String query = StringUtils.hasText(q) ? "%" + q.trim() + "%" : null;
-        long total = jdbc.sql(QueryUtil.get(QueryConstants.COUNT_USER_SEARCH))
+        long total = flagParams(jdbc.sql(QueryUtil.get(QueryConstants.COUNT_USER_SEARCH)), flagged)
             .param("role", roleFilter).param("status", statusFilter).param("q", query)
             .query(Long.class).single();
-        var items = jdbc.sql(QueryUtil.get(QueryConstants.GET_USER_SEARCH))
+        var items = flagParams(jdbc.sql(QueryUtil.get(QueryConstants.GET_USER_SEARCH)), flagged)
             .param("role", roleFilter).param("status", statusFilter).param("q", query)
             .param("limit", PageResponse.clampSize(size)).param("offset", PageResponse.offset(page, size))
-            .query(UserRowDto.class).list();
+            .query(UserRow.class).list().stream().map(UserRow::toDto).toList();
         return new PageResponse<>(items, Math.max(page, 0), PageResponse.clampSize(size), total);
     }
 

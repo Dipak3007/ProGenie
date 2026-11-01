@@ -7,6 +7,8 @@ export interface BookingSummaryDto {
   cancellationFeeStatus: (string | null);
   categorySlug: string;
   counterpartName: string;
+  customerRating: (number | null);
+  customerRatingCount: (number | null);
   id: string;
   paymentMethod: string;
   paymentStatus: string;

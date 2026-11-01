@@ -16,5 +16,6 @@ public record BookingEvent(Type type, UUID bookingId, String bookingRef, UUID cu
     /** {@code reason} of the ACCEPTED event of a Genie Now booking (Phase 3C-9): the Genie is coming right away. */
     public static final String GENIE_NOW = "Genie Now";
 
-    public enum Type { REQUESTED, ACCEPTED, DECLINED, EXPIRED, CANCELLED, RESCHEDULED, ON_THE_WAY, STARTED, COMPLETED }
+    /** SERVICES_CHANGED (Phase 3.5C): the customer removed a service; {@code reason} says which and what is left. */
+    public enum Type { REQUESTED, ACCEPTED, DECLINED, EXPIRED, CANCELLED, RESCHEDULED, ON_THE_WAY, STARTED, COMPLETED, SERVICES_CHANGED }
 }

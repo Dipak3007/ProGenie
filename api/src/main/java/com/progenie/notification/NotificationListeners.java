@@ -6,6 +6,8 @@ import java.time.format.DateTimeFormatter;
 import java.util.Locale;
 
 import com.progenie.booking.BookingEvent;
+import com.progenie.booking.CartReminderDue;
+import com.progenie.booking.QuoteEvent;
 import com.progenie.messaging.NotificationService;
 import com.progenie.payment.PaymentDtos.PaymentReceived;
 import com.progenie.payment.PaymentDtos.RefundProcessed;
@@ -84,6 +86,8 @@ class NotificationListeners {
                     "Follow them on the map for " + e.bookingRef() + ". Share your start code when they arrive.", customerLink);
                 case STARTED -> notifications.notify(e.customerId(), "BOOKING_STARTED", "Your Genie has started",
                     "Work on " + e.bookingRef() + " has started.", customerLink);
+                case SERVICES_CHANGED -> notifications.notify(e.genieId(), "BOOKING_CHANGED", "Booking changed",
+                    e.bookingRef() + " for " + when + ": " + e.reason() + ".", genieLink);
                 case COMPLETED -> notifications.notify(e.customerId(), "BOOKING_COMPLETED", "Job done! How was it?",
                     "Please rate your Genie for " + e.bookingRef()
                         + (e.cashCollected() ? "." : ". You can pay in the app."), customerLink);
@@ -120,6 +124,32 @@ class NotificationListeners {
                     "/genie/wallet");
             }
         });
+    }
+
+    /** Phase 3.5D: quotes after an inspection visit. */
+    @TransactionalEventListener
+    @Transactional(propagation = Propagation.REQUIRES_NEW)
+    public void onQuote(QuoteEvent e) {
+        safely(() -> {
+            switch (e.type()) {
+                case SENT -> notifications.notify(e.customerId(), "QUOTE_READY",
+                    e.version() > 1 ? "Your quote was updated" : "Your quote is ready",
+                    e.bookingRef() + ": ₹" + e.totalAmount().toPlainString() + ". Accept it and pick a time, or decline it.",
+                    "/account/bookings/" + e.inspectionBookingId());
+                case ACCEPTED -> notifications.notify(e.genieId(), "QUOTE_ACCEPTED", "Quote accepted",
+                    "The customer booked the job " + e.bookingRef() + " for " + format(e.jobStart()) + ".",
+                    "/genie/bookings/" + e.jobBookingId());
+                case DECLINED -> notifications.notify(e.genieId(), "QUOTE_DECLINED", "Quote declined",
+                    "The customer declined your quote for " + e.bookingRef() + ".", "/genie/bookings/" + e.inspectionBookingId());
+            }
+        });
+    }
+
+    @TransactionalEventListener
+    @Transactional(propagation = Propagation.REQUIRES_NEW)
+    public void onCartReminder(CartReminderDue e) {
+        safely(() -> notifications.notify(e.customerId(), "CART_REMINDER", "You left a booking unfinished",
+            "Your booking with " + e.genieName().split(" ")[0] + " (" + e.services() + ") is waiting in your cart.", "/cart"));
     }
 
     @TransactionalEventListener

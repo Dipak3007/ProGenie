@@ -75,6 +75,9 @@ function slugify(text: string): string {
                       @if (s.instantEnabled) {
                         <span class="chip ml-1 bg-gold py-0.5 text-xs font-semibold text-ink">Genie Now</span>
                       }
+                      @if (s.inspectionFirst) {
+                        <span class="chip ml-1 bg-brand-mist py-0.5 text-xs font-semibold text-brand-600">Inspection first</span>
+                      }
                     </td>
                     <td class="px-4 py-3 text-right">
                       <button type="button" class="grid size-9 place-items-center rounded-full text-muted hover:bg-surface hover:text-brand" [attr.aria-label]="'Edit ' + s.name" (click)="editService(s)">
@@ -149,6 +152,10 @@ function slugify(text: string): string {
         <label class="flex items-start gap-3 text-sm sm:col-span-2">
           <input type="checkbox" name="instant" class="mt-0.5 size-5 rounded accent-brand" [(ngModel)]="serviceForm.instantEnabled" />
           <span><span class="font-semibold">Genie Now</span> · customers can book the nearest free Genie right away. Quick jobs only.</span>
+        </label>
+        <label class="flex items-start gap-3 text-sm sm:col-span-2">
+          <input type="checkbox" name="inspection" class="mt-0.5 size-5 rounded accent-brand" [(ngModel)]="serviceForm.inspectionFirst" />
+          <span><span class="font-semibold">Inspection first</span> · big jobs: customers book an inspection visit, the Genie sends a quote, the job is booked from it.</span>
         </label>
         <div class="flex flex-col-reverse gap-2 sm:col-span-2 sm:flex-row sm:justify-end">
           <button type="button" class="btn-ghost" (click)="serviceOpen.set(false)">Cancel</button>
@@ -225,7 +232,7 @@ export default class AdminCatalogPage {
   protected readonly firstCategory = computed(() => this.categories.value()?.[0]?.id ?? null);
 
   private blankService() {
-    return { id: null as number | null, categoryId: null as number | null, slug: '', name: '', description: '', basePrice: 299, durationMinutes: 60, active: true, instantEnabled: false };
+    return { id: null as number | null, categoryId: null as number | null, slug: '', name: '', description: '', basePrice: 299, durationMinutes: 60, active: true, instantEnabled: false, inspectionFirst: false };
   }
 
   private blankCategory() {
@@ -234,7 +241,7 @@ export default class AdminCatalogPage {
 
   protected editService(s: AdminService | null): void {
     this.serviceForm = s
-      ? { id: s.id, categoryId: s.categoryId, slug: s.slug, name: s.name, description: s.description ?? '', basePrice: s.basePrice, durationMinutes: s.durationMinutes, active: s.active, instantEnabled: s.instantEnabled }
+      ? { id: s.id, categoryId: s.categoryId, slug: s.slug, name: s.name, description: s.description ?? '', basePrice: s.basePrice, durationMinutes: s.durationMinutes, active: s.active, instantEnabled: s.instantEnabled, inspectionFirst: s.inspectionFirst }
       : { ...this.blankService(), categoryId: this.categoryFilter() ?? this.firstCategory() };
     this.serviceOpen.set(true);
   }
@@ -260,6 +267,7 @@ export default class AdminCatalogPage {
         durationMinutes: Number(f.durationMinutes),
         active: f.active,
         instantEnabled: f.instantEnabled,
+        inspectionFirst: f.inspectionFirst,
       })
       .subscribe({
         next: () => {

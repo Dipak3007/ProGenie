@@ -102,9 +102,10 @@ public class AdminOperationsController {
     public PageResponse<UserRowDto> users(@RequestParam(required = false) String role,
                                           @RequestParam(required = false) String status,
                                           @RequestParam(required = false) String q,
+                                          @RequestParam(defaultValue = "false") boolean flagged,
                                           @RequestParam(defaultValue = "0") int page,
                                           @RequestParam(defaultValue = "20") int size) {
-        return accounts.search(role, status, q, page, size);
+        return accounts.search(role, status, q, flagged, page, size);
     }
 
     /** ACTIVE or SUSPENDED. Suspending signs the user out everywhere. */

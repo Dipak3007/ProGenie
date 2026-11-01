@@ -20,6 +20,7 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.jdbc.core.simple.JdbcClient;
+import org.springframework.util.StringUtils;
 import org.springframework.stereotype.Component;
 
 /** Shared plumbing for the booking services: locked loading, status history, events, start codes. */
@@ -91,6 +92,30 @@ class BookingSupport {
         bookings.flush();
     }
 
+    /** The person at the address, when the customer booked for someone else. */
+    record Contact(String name, String phone) {
+    }
+
+    /**
+     * Booked for someone else: when the Genie sets off, the person at the address gets their own start code and a
+     * tracking link by SMS/WhatsApp ({@link ContactOnTheWay}). Nothing happens for a booking without a contact.
+     */
+    void sendContactCode(Booking b) {
+        Contact contact = jdbc.sql(QueryUtil.get(QueryConstants.GET_BOOKING_CONTACT)).param("id", b.getId())
+            .query(Contact.class).optional()
+            .filter(c -> StringUtils.hasText(c.phone()))
+            .orElse(null);
+        if (contact == null) {
+            return;
+        }
+        String code = newStartCode();
+        String token = newTrackToken();
+        b.issueContactStartCode(hashStartCode(b.getId(), code), token);
+        bookings.flush();
+        log.info("Booking {}: start code and tracking link sent to the person at the address", b.getBookingRef());
+        events.publishEvent(new ContactOnTheWay(b.getId(), contact.name(), contact.phone(), code, token));
+    }
+
     /** Pushes pending entity changes to the database so SQL read models see them. */
     void flush() {
         bookings.flush();
@@ -111,13 +136,24 @@ class BookingSupport {
         }
     }
 
+    /** The customer's code, or the code sent to the person at the address (booked for someone else). */
     static boolean startCodeMatches(Booking b, String code) {
-        if (b.getStartOtpHash() == null || code == null) {
+        if (code == null) {
             return false;
         }
-        return MessageDigest.isEqual(
-            b.getStartOtpHash().getBytes(StandardCharsets.UTF_8),
-            hashStartCode(b.getId(), code).getBytes(StandardCharsets.UTF_8));
+        byte[] given = hashStartCode(b.getId(), code).getBytes(StandardCharsets.UTF_8);
+        return matches(b.getStartOtpHash(), given) | matches(b.getContactStartOtpHash(), given);
+    }
+
+    private static boolean matches(String storedHash, byte[] given) {
+        return storedHash != null && MessageDigest.isEqual(storedHash.getBytes(StandardCharsets.UTF_8), given);
+    }
+
+    /** 32 random bytes, URL-safe: the contact's tracking link token. */
+    static String newTrackToken() {
+        byte[] bytes = new byte[32];
+        RANDOM.nextBytes(bytes);
+        return java.util.Base64.getUrlEncoder().withoutPadding().encodeToString(bytes);
     }
 
     private static ApiException notFound() {
