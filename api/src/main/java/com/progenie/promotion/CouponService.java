@@ -5,16 +5,21 @@ import java.time.Clock;
 import java.time.Instant;
 import java.time.OffsetDateTime;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
+import java.util.Set;
 import java.util.UUID;
+import java.util.stream.Collectors;
 
 import com.progenie.promotion.CouponRules.Coupon;
 import com.progenie.promotion.CouponRules.Order;
+import com.progenie.promotion.CouponRules.OrderLine;
 import com.progenie.promotion.CouponRules.Refusal;
 import com.progenie.promotion.CouponRules.Usage;
 import com.progenie.shared.config.QueryConstants;
 import com.progenie.shared.error.ApiException;
 import com.progenie.shared.util.QueryUtil;
+import com.progenie.shared.util.ServiceLines.ServiceLine;
 import com.progenie.shared.util.Times;
 import org.jspecify.annotations.Nullable;
 import org.slf4j.Logger;
@@ -44,11 +49,21 @@ public class CouponService {
                                  boolean applicable, @Nullable String reasonCode, @Nullable String reason) {
     }
 
-    /** A coupon applied to a new booking: store {@code couponId} and {@code discount} on it, then call {@link #recordUse}. */
-    public record AppliedCoupon(long couponId, String code, BigDecimal discount) {
+    /**
+     * A coupon applied to a new booking: store {@code couponId} and {@code discount} on it, then call {@link #recordUse}.
+     * {@code coveredServiceIds}: the booking's services it covers, over which the discount is spread (Phase 3.5C).
+     */
+    public record AppliedCoupon(long couponId, String code, BigDecimal discount, Set<Long> coveredServiceIds) {
     }
 
-    record OrderRow(BigDecimal serviceAmount, long serviceId, long categoryId, long cityId) {
+    /** A service on a booking and its amount (price × quantity), as the coupon sees it. */
+    public record CouponLine(long serviceId, BigDecimal amount) {
+    }
+
+    record OrderRow(BigDecimal unitPrice, long serviceId, long categoryId, long cityId) {
+    }
+
+    record ServiceCategory(long id, long categoryId) {
     }
 
     private final JdbcClient jdbc;
@@ -59,10 +74,10 @@ public class CouponService {
         this.clock = clock;
     }
 
-    /** Public coupons for this checkout (Genie, service, address), each with its discount or why it doesn't apply. */
+    /** Public coupons for this checkout (Genie, services, address), each with its discount or why it doesn't apply. */
     @Transactional(readOnly = true)
-    public List<CouponOfferDto> available(UUID customerId, @Nullable UUID genieId, long serviceId, UUID addressId) {
-        Order order = order(customerId, genieId, serviceId, addressId);
+    public List<CouponOfferDto> available(UUID customerId, @Nullable UUID genieId, List<ServiceLine> lines, UUID addressId) {
+        Order order = order(customerId, genieId, lines, addressId);
         Instant now = clock.instant();
         boolean booked = customerHasBooked(customerId);
         return jdbc.sql(QueryUtil.get(QueryConstants.GET_COUPON_PUBLIC_ACTIVE)).param("now", Times.odt(now))
@@ -74,8 +89,8 @@ public class CouponService {
 
     /** A typed code (public or private) for this checkout. 404 COUPON_NOT_FOUND / 422 with the reason. */
     @Transactional(readOnly = true)
-    public CouponOfferDto check(UUID customerId, String code, @Nullable UUID genieId, long serviceId, UUID addressId) {
-        Order order = order(customerId, genieId, serviceId, addressId);
+    public CouponOfferDto check(UUID customerId, String code, @Nullable UUID genieId, List<ServiceLine> lines, UUID addressId) {
+        Order order = order(customerId, genieId, lines, addressId);
         Coupon c = find(code, false);
         CouponOfferDto offer = offer(c, order, usage(c, customerId, customerHasBooked(customerId)), clock.instant());
         if (!offer.applicable()) {
@@ -89,13 +104,38 @@ public class CouponService {
      * per-customer limits hold even when two bookings race. Throws 404/422 when it doesn't apply.
      */
     @Transactional(propagation = Propagation.MANDATORY)
-    public AppliedCoupon apply(UUID customerId, String code, long serviceId, long cityId, BigDecimal serviceAmount) {
+    public AppliedCoupon apply(UUID customerId, String code, List<CouponLine> lines, long cityId) {
         Coupon c = find(code, true);
-        Refusal refusal = refusal(c, customerId, serviceId, cityId, serviceAmount);
+        Order order = order(lines, cityId);
+        Refusal refusal = refusal(c, customerId, order);
         if (refusal != null) {
             throw ApiException.unprocessable(refusal.code(), refusal.message());
         }
-        return new AppliedCoupon(c.id(), c.code(), CouponRules.discount(c, serviceAmount));
+        return applied(c, order);
+    }
+
+    /**
+     * A service was removed from a booking (Phase 3.5C): the coupon's discount on what is left, without counting
+     * uses again. Empty when it no longer applies (no service it covers, or under its minimum order); the use is
+     * then given back. Otherwise the recorded use takes the new discount.
+     */
+    @Transactional(propagation = Propagation.MANDATORY)
+    public Optional<AppliedCoupon> reprice(long couponId, UUID bookingId, List<CouponLine> lines, long cityId) {
+        Coupon c = jdbc.sql(QueryUtil.get(QueryConstants.GET_COUPON_BY_ID)).param("id", couponId)
+            .query(Coupon.class).single();
+        Order order = order(lines, cityId);
+        boolean applies = CouponRules.inScope(c, order)
+            && CouponRules.eligibleAmount(c, order).compareTo(c.minOrder()) >= 0
+            && CouponRules.discount(c, order).signum() > 0;
+        if (!applies) {
+            jdbc.sql(QueryUtil.get(QueryConstants.UPDATE_COUPON_RELEASE)).param("b", bookingId).update();
+            log.info("Coupon {} no longer applies after a service was removed: use given back", c.code());
+            return Optional.empty();
+        }
+        AppliedCoupon applied = applied(c, order);
+        jdbc.sql(QueryUtil.get(QueryConstants.UPDATE_COUPON_REDEMPTION_AMOUNT)).param("b", bookingId)
+            .param("amount", applied.discount()).update();
+        return Optional.of(applied);
     }
 
     /**
@@ -111,24 +151,38 @@ public class CouponService {
         }
         Optional<Coupon> found = jdbc.sql(QueryUtil.get(QueryConstants.LOCK_COUPON_BY_CODE))
             .param("code", normalised).query(Coupon.class).optional();
-        if (found.isEmpty() || refusal(found.get(), customerId, serviceId, cityId, serviceAmount) != null) {
+        Order order = order(List.of(new CouponLine(serviceId, serviceAmount)), cityId);
+        if (found.isEmpty() || refusal(found.get(), customerId, order) != null) {
             return Optional.empty();
         }
-        return Optional.of(new AppliedCoupon(found.get().id(), found.get().code(), CouponRules.discount(found.get(), serviceAmount)));
+        return Optional.of(applied(found.get(), order));
     }
 
-    private @Nullable Refusal refusal(Coupon c, UUID customerId, long serviceId, long cityId, BigDecimal serviceAmount) {
-        long categoryId = jdbc.sql(QueryUtil.get(QueryConstants.GET_COUPON_SERVICE_CATEGORY))
-            .param("serviceId", serviceId).query(Long.class).single();
-        Order order = new Order(serviceId, categoryId, cityId, serviceAmount);
+    private AppliedCoupon applied(Coupon c, Order order) {
+        Set<Long> covered = order.lines().stream().filter(l -> CouponRules.covers(c, l, order.cityId()))
+            .map(OrderLine::serviceId).collect(Collectors.toUnmodifiableSet());
+        return new AppliedCoupon(c.id(), c.code(), CouponRules.discount(c, order), covered);
+    }
+
+    private @Nullable Refusal refusal(Coupon c, UUID customerId, Order order) {
         Refusal refusal = CouponRules.check(c, order, usage(c, customerId, customerHasBooked(customerId)), clock.instant());
         if (refusal != null) {
             return refusal;
         }
-        if (CouponRules.discount(c, serviceAmount).signum() <= 0) {
+        if (CouponRules.discount(c, order).signum() <= 0) {
             return new Refusal("COUPON_NOT_APPLICABLE", "This coupon gives no discount on this service");
         }
         return null;
+    }
+
+    /** The booking's lines with their services' categories. */
+    private Order order(List<CouponLine> lines, long cityId) {
+        Map<Long, Long> categories = jdbc.sql(QueryUtil.get(QueryConstants.GET_COUPON_SERVICE_CATEGORIES))
+            .param("ids", lines.stream().map(CouponLine::serviceId).toList())
+            .query(ServiceCategory.class).list().stream()
+            .collect(Collectors.toMap(ServiceCategory::id, ServiceCategory::categoryId));
+        return new Order(cityId, lines.stream()
+            .map(l -> new OrderLine(l.serviceId(), categories.getOrDefault(l.serviceId(), 0L), l.amount())).toList());
     }
 
     /** Records the use once the booking exists. */
@@ -152,17 +206,26 @@ public class CouponService {
     // ------------------------------------------------------------------ helpers
 
     /**
-     * The order a coupon is checked against. Without a Genie (Genie Now, Phase 3C-9: the Genie is not known yet) the
-     * service's base price is used; the booking applies the coupon to the accepting Genie's price.
+     * The order a coupon is checked against: the Genie's price × quantity for each service. Without a Genie (Genie
+     * Now, Phase 3C-9: the Genie is not known yet) the service's base price is used; the booking applies the coupon to
+     * the accepting Genie's price.
      */
-    private Order order(UUID customerId, @Nullable UUID genieId, long serviceId, UUID addressId) {
-        OrderRow row = jdbc.sql(QueryUtil.get(genieId == null ? QueryConstants.GET_COUPON_CONTEXT_SERVICE
+    private Order order(UUID customerId, @Nullable UUID genieId, List<ServiceLine> lines, UUID addressId) {
+        Map<Long, OrderRow> rows = jdbc.sql(QueryUtil.get(genieId == null ? QueryConstants.GET_COUPON_CONTEXT_SERVICE
                 : QueryConstants.GET_COUPON_CONTEXT))
-            .param("customerId", customerId).param("genieId", genieId).param("serviceId", serviceId)
+            .param("customerId", customerId).param("genieId", genieId)
+            .param("ids", lines.stream().map(ServiceLine::serviceId).toList())
             .param("addressId", addressId)
-            .query(OrderRow.class).optional()
-            .orElseThrow(() -> ApiException.notFound("QUOTE_UNAVAILABLE", "This Genie does not offer that service at that address"));
-        return new Order(row.serviceId(), row.categoryId(), row.cityId(), row.serviceAmount());
+            .query(OrderRow.class).list().stream()
+            .collect(Collectors.toMap(OrderRow::serviceId, r -> r));
+        if (rows.size() != lines.size()) {
+            throw ApiException.notFound("QUOTE_UNAVAILABLE", "This Genie does not offer that service at that address");
+        }
+        long cityId = rows.values().iterator().next().cityId();
+        return new Order(cityId, lines.stream().map(l -> {
+            OrderRow r = rows.get(l.serviceId());
+            return new OrderLine(r.serviceId(), r.categoryId(), r.unitPrice().multiply(BigDecimal.valueOf(l.quantity())));
+        }).toList());
     }
 
     private Coupon find(String code, boolean lock) {
@@ -190,7 +253,7 @@ public class CouponService {
 
     private static CouponOfferDto offer(Coupon c, Order order, Usage usage, Instant now) {
         Refusal refusal = CouponRules.check(c, order, usage, now);
-        BigDecimal discount = CouponRules.discount(c, order.serviceAmount());
+        BigDecimal discount = CouponRules.discount(c, order);
         return new CouponOfferDto(c.code(), c.title(), c.description(), c.discountType(), c.discountValue(),
             c.maxDiscount(), c.minOrder(), c.validUntil(), c.firstBookingOnly(), discount, refusal == null,
             refusal == null ? null : refusal.code(), refusal == null ? null : refusal.message());

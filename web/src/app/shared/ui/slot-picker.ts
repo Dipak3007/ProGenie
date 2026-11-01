@@ -10,7 +10,7 @@ import {
 } from '@lucide/angular';
 import { DayPipe } from './day.pipe';
 
-import { ApiClient, errorMessage } from '../../core/api/api';
+import { ApiClient, errorMessage, SlotQuery } from '../../core/api/api';
 import { DayCount, Slot } from '../../core/api/models';
 import { IST } from '../format';
 import { Spinner } from './kit';
@@ -94,7 +94,15 @@ interface SlotGroup {
 })
 export class SlotPicker {
   readonly genieId = input.required<string>();
-  readonly serviceId = input.required<number>();
+  /** The services the slot is for: `12:2,15:1` or one service id (Phase 3.5C: the slot is as long as all of them). */
+  readonly items = input<string | null>(null);
+  /** Or a quoted job (Phase 3.5D: as long as the Genie's estimate). */
+  readonly quoteId = input<string | null>(null);
+  /** Or a given length (moving a booking keeps its length). */
+  readonly minutes = input<number | null>(null);
+  private readonly what = computed<SlotQuery>(() => ({ items: this.items(), quoteId: this.quoteId(), minutes: this.minutes() }), {
+    equal: (a, b) => a.items === b.items && a.quoteId === b.quoteId && a.minutes === b.minutes,
+  });
   /** ISO start of the currently selected slot. */
   readonly selected = input<string | null>(null);
   readonly horizon = input(14);
@@ -130,14 +138,14 @@ export class SlotPicker {
     // Reload whenever the Genie or service changes.
     effect(() => {
       const genieId = this.genieId();
-      const serviceId = this.serviceId();
-      untracked(() => this.loadDays(genieId, serviceId));
+      const what = this.what();
+      untracked(() => this.loadDays(genieId, what));
     });
   }
 
   /** Called by the parent after a "slot taken" error. */
   reload(): void {
-    this.loadDays(this.genieId(), this.serviceId(), this.day());
+    this.loadDays(this.genieId(), this.what(), this.day());
   }
 
   protected pickDay(date: string): void {
@@ -145,12 +153,12 @@ export class SlotPicker {
     this.loadSlots(date);
   }
 
-  private loadDays(genieId: string, serviceId: number, keepDay: string | null = null): void {
+  private loadDays(genieId: string, what: SlotQuery, keepDay: string | null = null): void {
     this.loadingDays.set(true);
     this.error.set(null);
     this.days.set([]);
     this.slots.set([]);
-    this.api.slotDays(genieId, serviceId, this.horizon()).subscribe({
+    this.api.slotDays(genieId, what, this.horizon()).subscribe({
       next: (days) => {
         this.loadingDays.set(false);
         this.days.set(days);
@@ -172,7 +180,7 @@ export class SlotPicker {
   private loadSlots(date: string): void {
     this.loadingSlots.set(true);
     this.error.set(null);
-    this.api.slots(this.genieId(), this.serviceId(), date).subscribe({
+    this.api.slots(this.genieId(), this.what(), date).subscribe({
       next: (res) => {
         if (this.day() !== date) return; // a newer day was picked meanwhile
         this.loadingSlots.set(false);

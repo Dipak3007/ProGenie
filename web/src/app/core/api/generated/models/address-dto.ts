@@ -5,6 +5,8 @@ export interface AddressDto {
   area: (string | null);
   cityId: number;
   cityName: (string | null);
+  contactName: (string | null);
+  contactPhone: (string | null);
   id: string;
   isDefault: boolean;
   label: string;

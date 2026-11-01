@@ -119,6 +119,33 @@ public class BookingTracking {
         return toDto(r);
     }
 
+    /**
+     * What the person at the address sees through their tracking link (booked for someone else, Phase 3.5A): the
+     * Genie's first name, the service and the same map as the customer. Works while the Genie is on the way or
+     * working; 404 LINK_EXPIRED before and after.
+     */
+    public record ContactTrackingDto(String status, String genieName, String serviceName, boolean active,
+                                     @Nullable Double lat, @Nullable Double lng, @Nullable BigDecimal accuracyM,
+                                     @Nullable BigDecimal distanceKm, @Nullable Integer etaMinutes,
+                                     @Nullable OffsetDateTime updatedAt, @Nullable Double homeLat, @Nullable Double homeLng) {
+    }
+
+    record ContactBooking(UUID id, String genieName, String serviceName) {
+    }
+
+    @Transactional(readOnly = true)
+    public ContactTrackingDto forContact(String token) {
+        ContactBooking b = token == null || token.length() < 20 ? null
+            : jdbc.sql(QueryUtil.get(QueryConstants.GET_BOOKING_CONTACT_TRACK)).param("token", token)
+                .query(ContactBooking.class).optional().orElse(null);
+        if (b == null) {
+            throw ApiException.notFound("LINK_EXPIRED", "This tracking link has expired");
+        }
+        TrackingDto t = toDto(row(b.id()).orElseThrow());
+        return new ContactTrackingDto(t.status(), b.genieName(), b.serviceName(), t.active(), t.lat(), t.lng(),
+            t.accuracyM(), t.distanceKm(), t.etaMinutes(), t.updatedAt(), t.customerLat(), t.customerLng());
+    }
+
     /** Safety net: no position outlives the trip, even if a status change skipped the clean-up. */
     @Scheduled(fixedDelayString = "${progenie.booking.tracking-sweep-interval:10m}", initialDelayString = "1m")
     @Transactional

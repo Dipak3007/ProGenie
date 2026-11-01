@@ -1,9 +1,9 @@
-import { ChangeDetectionStrategy, Component, computed, input } from '@angular/core';
+import { ChangeDetectionStrategy, Component, computed, input, output } from '@angular/core';
 import { CurrencyPipe, DatePipe } from '@angular/common';
 import { RouterLink } from '@angular/router';
-import { LucideChevronRight as ChevronRight, LucideDynamicIcon, LucideMapPin as MapPin } from '@lucide/angular';
+import { LucideChevronRight as ChevronRight, LucideDynamicIcon, LucideMapPin as MapPin, LucideStar as Star } from '@lucide/angular';
 
-import { BookingDetail, BookingSummary, HistoryItem } from '../../core/api/models';
+import { BookingDetail, BookingItem, BookingSummary, HistoryItem } from '../../core/api/models';
 import { humanize, statusMeta } from '../format';
 import { categoryIcon, iconNameForSlug } from './icons';
 import { StatusBadge } from './status-badge';
@@ -35,6 +35,11 @@ import { StatusBadge } from './status-badge';
         </div>
         <p class="mt-1 text-sm text-muted">
           {{ b.slotStart | date: 'EEE d MMM · h:mm a' }} · {{ counterpartLabel() }} {{ b.counterpartName }}
+          @if (audience() === 'GENIE' && b.customerRating != null) {
+            <span class="whitespace-nowrap" [attr.aria-label]="'customer rated ' + b.customerRating + ' by ' + b.customerRatingCount + ' Genies'">
+              · <svg [lucideIcon]="Star" [size]="12" class="inline fill-gold text-gold" aria-hidden="true"></svg> {{ b.customerRating }}
+            </span>
+          }
         </p>
         <p class="mt-0.5 flex items-center gap-1 text-xs text-muted">
           @if (b.area) {
@@ -64,6 +69,7 @@ export class BookingRow {
 
   protected readonly icon = computed(() => categoryIcon(iconNameForSlug(this.booking().categorySlug)));
   protected readonly MapPin = MapPin;
+  protected readonly Star = Star;
   protected readonly ChevronRight = ChevronRight;
 }
 
@@ -76,7 +82,35 @@ export class BookingRow {
   template: `
     @let b = booking();
     <dl class="space-y-2 text-sm [&_dd]:shrink-0 [&_dd]:whitespace-nowrap">
-      <div class="flex justify-between gap-3"><dt class="text-muted">{{ b.serviceName }}</dt><dd>{{ b.serviceAmount | currency: 'INR' }}</dd></div>
+      @if (b.kind === 'INSPECTION') {
+        <div class="flex justify-between gap-3"><dt class="text-muted">Inspection visit</dt><dd>{{ b.serviceAmount | currency: 'INR' }}</dd></div>
+      } @else if (showLines()) {
+        @for (i of b.items; track i.id) {
+          <div class="flex justify-between gap-3" data-testid="price-line">
+            <dt class="min-w-0 text-muted">
+              {{ i.serviceName }}{{ i.quantity > 1 ? ' ×' + i.quantity : '' }}
+              @if (removable() && b.items.length > 1) {
+                <button
+                  type="button"
+                  class="ml-1 text-xs font-semibold text-rose-700 underline underline-offset-2 hover:text-rose-800"
+                  [attr.aria-label]="'Remove ' + i.serviceName + ' from this booking'"
+                  (click)="removeItem.emit(i)"
+                >
+                  Remove
+                </button>
+              }
+            </dt>
+            <dd>{{ i.amount | currency: 'INR' }}</dd>
+          </div>
+        }
+      } @else {
+        <div class="flex justify-between gap-3"><dt class="text-muted">{{ b.serviceName }}</dt><dd>{{ b.serviceAmount | currency: 'INR' }}</dd></div>
+      }
+      @if (b.inspectionCredit > 0) {
+        <div class="flex justify-between gap-3 text-emerald-700" data-testid="inspection-credit">
+          <dt>Inspection fee already paid</dt><dd>− {{ b.inspectionCredit | currency: 'INR' }}</dd>
+        </div>
+      }
       <div class="flex justify-between gap-3">
         <dt class="text-muted">Travel ({{ b.distanceKm }} km)</dt>
         <dd>{{ b.travelFee > 0 ? (b.travelFee | currency: 'INR') : 'Free' }}</dd>
@@ -119,10 +153,20 @@ export class BookingRow {
 export class PriceSummary {
   readonly booking = input.required<BookingDetail>();
   readonly audience = input<'CUSTOMER' | 'GENIE' | 'ADMIN'>('CUSTOMER');
+  /** The customer may drop one of several services (Phase 3.5C, REMOVE_SERVICE): shows a Remove link per line. */
+  readonly removable = input(false);
+  readonly removeItem = output<BookingItem>();
+  /** One line per service when there are several (or several of one). */
+  protected readonly showLines = computed(() => {
+    const b = this.booking();
+    const items = b.items ?? [];
+    return items.length > 1 || items.some((i) => i.quantity > 1) || b.inspectionCredit > 0;
+  });
   protected readonly feeLabel = computed(() => statusMeta(this.booking().cancellationFeeStatus).label.toLowerCase());
   protected readonly rate = computed(() => {
     const b = this.booking();
-    return b.serviceAmount > 0 ? Math.round((b.commissionAmount / b.serviceAmount) * 1000) / 10 : 5;
+    const base = b.serviceAmount + (b.inspectionCredit ?? 0);
+    return base > 0 ? Math.round((b.commissionAmount / base) * 1000) / 10 : 5;
   });
 }
 
@@ -159,6 +203,7 @@ export class Timeline {
   protected label(h: HistoryItem): string {
     if (!h.fromStatus) return 'Booking requested';
     if (h.reason?.startsWith('Moved to ')) return 'Rescheduled · waiting for the Genie to confirm';
+    if (h.reason?.startsWith('Removed ')) return 'Services changed';
     if (h.fromStatus === h.toStatus) return h.toStatus === 'REQUESTED' ? 'Rescheduled' : humanize(h.toStatus);
     return statusMeta(h.toStatus).label;
   }
@@ -170,6 +215,7 @@ export class Timeline {
       const day = new Date(`${m[1]}T00:00:00Z`).toLocaleDateString('en-IN', { weekday: 'short', day: 'numeric', month: 'short', timeZone: 'UTC' });
       return `Moved to ${day}, ${m[2]}`;
     }
+    if (reason.startsWith('Removed ')) return reason;
     return `“${reason}”`;
   }
 

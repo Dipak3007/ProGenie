@@ -7,6 +7,7 @@ import com.progenie.booking.BookingDtos.BookingPhotoDto;
 import com.progenie.booking.BookingDtos.BookingSummaryDto;
 import com.progenie.booking.BookingDtos.CancelRequest;
 import com.progenie.booking.BookingDtos.CompleteRequest;
+import com.progenie.booking.BookingDtos.QuoteRequest;
 import com.progenie.booking.BookingDtos.DeclineRequest;
 import com.progenie.booking.BookingDtos.StartRequest;
 import com.progenie.booking.BookingQueryService.Scope;
@@ -38,8 +39,11 @@ public class GenieJobController {
     private final BookingPhotos photos;
     private final BookingTracking tracking;
 
+    private final Quotes quotes;
+
     public GenieJobController(GenieJobService jobs, BookingQueryService queries, BookingPhotos photos,
-                              BookingTracking tracking) {
+                              BookingTracking tracking, Quotes quotes) {
+        this.quotes = quotes;
         this.tracking = tracking;
         this.jobs = jobs;
         this.queries = queries;
@@ -95,6 +99,15 @@ public class GenieJobController {
     @PostMapping("/{id}/complete")
     public BookingDetailDto complete(@PathVariable UUID id, @Valid @RequestBody CompleteRequest req) {
         return jobs.complete(CurrentUser.id(), id, req);
+    }
+
+    /**
+     * Phase 3.5D: the quote after a completed inspection visit (action SEND_QUOTE). Sending again revises it until the
+     * customer answers; it stays valid 7 days from the latest version.
+     */
+    @PostMapping("/{id}/quote")
+    public BookingDetailDto sendQuote(@PathVariable UUID id, @Valid @RequestBody QuoteRequest req) {
+        return quotes.send(CurrentUser.id(), id, req);
     }
 
     /** Optional job photo (multipart field "file"): stage=BEFORE while the job is in progress, AFTER until 24 h after. */

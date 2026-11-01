@@ -4,6 +4,7 @@ import java.math.BigDecimal;
 import java.math.RoundingMode;
 import java.time.Instant;
 import java.time.OffsetDateTime;
+import java.util.List;
 import java.util.Locale;
 
 import org.jspecify.annotations.Nullable;
@@ -32,8 +33,21 @@ public final class CouponRules {
                          @Nullable Long serviceId, @Nullable Long cityId, boolean isPublic, String status) {
     }
 
-    /** What is being booked. */
-    public record Order(long serviceId, long categoryId, long cityId, BigDecimal serviceAmount) {
+    /** One service being booked (its amount = price × quantity). */
+    public record OrderLine(long serviceId, long categoryId, BigDecimal amount) {
+    }
+
+    /** What is being booked: one or more services (Phase 3.5C) in a city. */
+    public record Order(long cityId, List<OrderLine> lines) {
+
+        /** A single service. */
+        public static Order of(long serviceId, long categoryId, long cityId, BigDecimal serviceAmount) {
+            return new Order(cityId, List.of(new OrderLine(serviceId, categoryId, serviceAmount)));
+        }
+
+        public BigDecimal serviceAmount() {
+            return lines.stream().map(OrderLine::amount).reduce(BigDecimal.ZERO, BigDecimal::add);
+        }
     }
 
     /** How often the coupon was used, overall and by this customer, and whether the customer booked before. */
@@ -67,10 +81,10 @@ public final class CouponRules {
         }
         if (!inScope(c, order)) {
             return new Refusal("COUPON_NOT_APPLICABLE", "This coupon doesn't apply to this "
-                + ("CITY".equals(c.scope()) ? "city" : "service"));
+                + ("CITY".equals(c.scope()) ? "city" : order.lines().size() > 1 ? "booking's services" : "service"));
         }
-        if (order.serviceAmount().compareTo(c.minOrder()) < 0) {
-            return new Refusal("COUPON_MIN_ORDER", "This coupon needs a service of at least ₹" + plain(c.minOrder()));
+        if (eligibleAmount(c, order).compareTo(c.minOrder()) < 0) {
+            return new Refusal("COUPON_MIN_ORDER", "This coupon needs an order of at least ₹" + plain(c.minOrder()));
         }
         if (c.totalLimit() != null && usage.totalUses() >= c.totalLimit()) {
             return new Refusal("COUPON_USED_UP", "This coupon has been fully used");
@@ -85,14 +99,30 @@ public final class CouponRules {
         return null;
     }
 
-    /** Whether the coupon covers this order's category, service or city (always, for scope ALL). */
+    /** Whether the coupon covers at least one of the order's services (by category, service or city; ALL always). */
     public static boolean inScope(Coupon c, Order order) {
+        return order.lines().stream().anyMatch(l -> covers(c, l, order.cityId()));
+    }
+
+    /** Whether the coupon covers this service in this city. */
+    public static boolean covers(Coupon c, OrderLine line, long cityId) {
         return switch (c.scope()) {
-            case "CATEGORY" -> c.categoryId() != null && c.categoryId() == order.categoryId();
-            case "SERVICE" -> c.serviceId() != null && c.serviceId() == order.serviceId();
-            case "CITY" -> c.cityId() != null && c.cityId() == order.cityId();
+            case "CATEGORY" -> c.categoryId() != null && c.categoryId() == line.categoryId();
+            case "SERVICE" -> c.serviceId() != null && c.serviceId() == line.serviceId();
+            case "CITY" -> c.cityId() != null && c.cityId() == cityId;
             default -> true;
         };
+    }
+
+    /** The amount the coupon works on: the services it covers (Phase 3.5C), not the whole booking. */
+    public static BigDecimal eligibleAmount(Coupon c, Order order) {
+        return order.lines().stream().filter(l -> covers(c, l, order.cityId())).map(OrderLine::amount)
+            .reduce(BigDecimal.ZERO, BigDecimal::add);
+    }
+
+    /** The discount on this order: on the services it covers only. */
+    public static BigDecimal discount(Coupon c, Order order) {
+        return discount(c, eligibleAmount(c, order));
     }
 
     /** Codes are case-insensitive: stored and compared in upper case without spaces. */

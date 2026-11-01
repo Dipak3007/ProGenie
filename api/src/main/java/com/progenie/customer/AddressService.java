@@ -1,6 +1,7 @@
 package com.progenie.customer;
 
 import java.util.List;
+import java.util.Map;
 import java.util.UUID;
 
 import com.progenie.catalog.ServiceabilityService;
@@ -10,6 +11,8 @@ import com.progenie.customer.AddressDtos.AddressRequest;
 import com.progenie.shared.config.QueryConstants;
 import com.progenie.shared.error.ApiException;
 import com.progenie.shared.util.QueryUtil;
+import com.progenie.shared.util.Phones;
+import org.jspecify.annotations.Nullable;
 import org.springframework.jdbc.core.simple.JdbcClient;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -57,6 +60,7 @@ public class AddressService {
             throw ApiException.unprocessable("ADDRESS_LIMIT", "You can save up to " + MAX_ADDRESSES + " addresses");
         }
         ServedAddress served = serviceability.requireServedAddress(req.pincode(), req.lat(), req.lng());
+        Contact contact = contact(req);
         boolean makeDefault = req.isDefault() || count == 0;
         if (makeDefault) {
             clearDefault(userId);
@@ -73,6 +77,8 @@ public class AddressService {
             .param("lat", req.lat())
             .param("lng", req.lng())
             .param("isDefault", makeDefault)
+            .param("contactName", contact.name())
+            .param("contactPhone", contact.phone())
             .query(UUID.class)
             .single();
         return getOwned(userId, id);
@@ -82,6 +88,7 @@ public class AddressService {
     public AddressDto update(UUID userId, UUID addressId, AddressRequest req) {
         AddressDto existing = getOwned(userId, addressId);
         ServedAddress served = serviceability.requireServedAddress(req.pincode(), req.lat(), req.lng());
+        Contact contact = contact(req);
         boolean makeDefault = req.isDefault() || existing.isDefault();
         if (makeDefault && !existing.isDefault()) {
             clearDefault(userId);
@@ -97,6 +104,8 @@ public class AddressService {
             .param("lat", req.lat())
             .param("lng", req.lng())
             .param("isDefault", makeDefault)
+            .param("contactName", contact.name())
+            .param("contactPhone", contact.phone())
             .param("id", addressId)
             .param("userId", userId)
             .update();
@@ -130,6 +139,28 @@ public class AddressService {
     }
 
     /** The area the customer typed, else the PIN code's area name (e.g. Navrangpura). */
+    /** The person at the address, when booking for someone else; both name and phone, or neither. */
+    record Contact(@Nullable String name, @Nullable String phone) {
+    }
+
+    static Contact contact(AddressRequest req) {
+        String name = req.contactName() == null ? "" : req.contactName().trim();
+        String phone = req.contactPhone() == null ? "" : req.contactPhone().trim();
+        if (name.isEmpty() && phone.isEmpty()) {
+            return new Contact(null, null);
+        }
+        if (name.isEmpty() || phone.isEmpty()) {
+            throw ApiException.badRequest("CONTACT_INCOMPLETE", "Add both the name and the phone number of the person who will be there")
+                .with("errors", Map.of(name.isEmpty() ? "contactName" : "contactPhone", "required with the other"));
+        }
+        String national = Phones.national(phone);
+        if (national == null || !national.matches("[6-9][0-9]{9}")) {
+            throw ApiException.badRequest("INVALID_CONTACT_PHONE", "Enter a 10-digit Indian mobile number for the contact")
+                .with("errors", Map.of("contactPhone", "must be a 10-digit mobile number"));
+        }
+        return new Contact(name, national);
+    }
+
     private static String area(AddressRequest req, ServedAddress served) {
         String typed = req.area() == null ? "" : req.area().trim();
         if (!typed.isEmpty()) {

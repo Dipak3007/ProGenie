@@ -11,7 +11,8 @@ import { PriceBreakdown } from '../../models/price-breakdown';
 
 export interface PricingEstimate$Params {
   genieId: string;
-  serviceId: number;
+  serviceId?: number;
+  items?: string;
   lat: number;
   lng: number;
   tip?: number;
@@ -22,6 +23,7 @@ export function pricingEstimate(http: HttpClient, rootUrl: string, params: Prici
   if (params) {
     rb.query('genieId', params.genieId, {});
     rb.query('serviceId', params.serviceId, {});
+    rb.query('items', params.items, {});
     rb.query('lat', params.lat, {});
     rb.query('lng', params.lng, {});
     rb.query('tip', params.tip, {});

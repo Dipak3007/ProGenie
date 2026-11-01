@@ -1,7 +1,7 @@
 import { ChangeDetectionStrategy, Component, DestroyRef, computed, effect, inject, input, signal, untracked } from '@angular/core';
 import { firstValueFrom } from 'rxjs';
 import { httpResource } from '@angular/common/http';
-import { CurrencyPipe, DatePipe } from '@angular/common';
+import { CurrencyPipe, DatePipe, DecimalPipe } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { RouterLink } from '@angular/router';
 import {
@@ -14,11 +14,12 @@ import {
   LucideMapPin as MapPin,
   LucideNavigation as Navigation,
   LucidePhone as Phone,
+  LucideStar as Star,
 } from '@lucide/angular';
 
 import { API, errorCode, errorMessage } from '../../core/api/api';
 import { GenieApi } from '../../core/api/genie-api';
-import { BookingDetail, BookingPhoto, Tracking } from '../../core/api/models';
+import { BookingDetail, BookingPhoto, CustomerRatingTag, Tracking } from '../../core/api/models';
 import { ReportDialog } from '../support/report-dialog';
 import { ConfirmService, ToastService } from '../../core/ui/feedback';
 import { liveReload } from '../../core/live/live-stream';
@@ -33,10 +34,20 @@ import { PhotoPicker } from '../../shared/ui/photo-picker';
 import { StatusBadge } from '../../shared/ui/status-badge';
 import { GenieStore } from './genie-store';
 import { LocationSharer } from './location-sharer';
+import { QuoteEditor } from './quote-editor';
+import { QuoteSummary } from '../../shared/ui/quote-summary';
+
+/** Tags a Genie can add when rating a customer (Phase 3.5A). */
+export const RATING_TAGS: { value: CustomerRatingTag; label: string }[] = [
+  { value: 'GREAT', label: 'Great to work with' },
+  { value: 'NOT_AT_HOME', label: 'Not at home when I arrived' },
+  { value: 'RUDE', label: 'Rude' },
+  { value: 'UNSAFE', label: 'I felt unsafe' },
+];
 
 @Component({
   selector: 'pg-job-detail-page',
-  imports: [RouterLink, CurrencyPipe, DatePipe, FormsModule, LucideDynamicIcon, Avatar, Dialog, EmptyState, JobPhotos, PhotoPicker, PriceSummary, ReportDialog, Skeleton, Spinner, StatusBadge, Timeline],
+  imports: [RouterLink, CurrencyPipe, DatePipe, DecimalPipe, FormsModule, LucideDynamicIcon, Avatar, Dialog, EmptyState, JobPhotos, PhotoPicker, PriceSummary, QuoteEditor, QuoteSummary, ReportDialog, Skeleton, Spinner, StatusBadge, Timeline],
   changeDetection: ChangeDetectionStrategy.OnPush,
   template: `
     <a routerLink="/genie/jobs" class="inline-flex items-center gap-1 text-sm font-semibold text-muted hover:text-brand">
@@ -138,7 +149,13 @@ import { LocationSharer } from './location-sharer';
               <h2 id="start-h" class="flex items-center gap-2 text-lg font-bold">
                 <svg [lucideIcon]="KeyRound" [size]="20" class="text-brand" aria-hidden="true"></svg> Start the job
               </h2>
-              <p class="mt-1 text-sm text-muted">At the door, ask {{ b.customer.name.split(' ')[0] }} for the 4-digit code shown in their app.</p>
+              @if (b.address?.contactName; as contact) {
+                <p class="mt-1 text-sm text-muted">
+                  At the door, ask {{ contact }} for the 4-digit start code we sent them by SMS ({{ b.customer.name.split(' ')[0] }}'s code from the app works too).
+                </p>
+              } @else {
+                <p class="mt-1 text-sm text-muted">At the door, ask {{ b.customer.name.split(' ')[0] }} for the 4-digit code shown in their app.</p>
+              }
               <form class="mt-4 flex flex-col gap-3 sm:flex-row" (ngSubmit)="start()">
                 <label class="sr-only" for="otp">Start code</label>
                 <input
@@ -178,6 +195,29 @@ import { LocationSharer } from './location-sharer';
             </section>
           }
 
+          @if (b.kind === 'INSPECTION') {
+            <section class="card p-5" aria-labelledby="quote-h" data-testid="genie-quote">
+              <h2 id="quote-h" class="text-lg font-bold">Quote for the customer</h2>
+              @if (b.quote) {
+                <pg-quote-summary class="mt-3" [quote]="b.quote" audience="GENIE" />
+              }
+              @if (can('SEND_QUOTE')) {
+                @if (b.quote && !reviseOpen()) {
+                  <button type="button" class="btn-ghost mt-4" (click)="reviseOpen.set(true)">Change the quote</button>
+                } @else {
+                  @if (!b.quote) {
+                    <p class="mt-1 text-sm text-muted">Price what you saw: your services and anything else as custom lines. Send it within 7 days of the visit.</p>
+                  }
+                  <pg-quote-editor class="mt-4" [booking]="b" (sent)="detail.set($event); reviseOpen.set(false)" />
+                }
+              } @else if (!b.quote) {
+                <p class="mt-2 text-sm text-muted">
+                  {{ b.status === 'COMPLETED' ? 'The 7 days to send a quote have passed.' : 'Complete the inspection visit, then send the customer a priced quote here.' }}
+                </p>
+              }
+            </section>
+          }
+
           @if (b.photos.length || addable().length) {
             <section class="card p-5" aria-labelledby="photos-h">
               <h2 id="photos-h" class="flex items-center gap-2 text-lg font-bold">
@@ -197,18 +237,82 @@ import { LocationSharer } from './location-sharer';
             </section>
           }
 
+          <!-- Rate the customer (Phase 3.5A): right after completing; never shown to the customer -->
+          @if (can('RATE_CUSTOMER')) {
+            <section class="card p-5" aria-labelledby="rate-h" data-testid="rate-customer">
+              <h2 id="rate-h" class="text-lg font-bold">How was it working for {{ b.customer.name.split(' ')[0] }}?</h2>
+              <p class="mt-1 text-sm text-muted">Only you, other Genies (as an average) and ProGenie see this. The customer never does. You can rate right after the job.</p>
+              <form class="mt-4" (ngSubmit)="rateCustomer()">
+                <div class="flex gap-1" role="radiogroup" aria-label="Customer rating">
+                  @for (n of [1, 2, 3, 4, 5]; track n) {
+                    <button
+                      type="button"
+                      role="radio"
+                      class="grid size-11 place-items-center rounded-xl transition hover:bg-gold/10"
+                      [attr.aria-checked]="customerStars() === n"
+                      [attr.aria-label]="n + ' star' + (n > 1 ? 's' : '')"
+                      (click)="customerStars.set(n)"
+                    >
+                      <svg [lucideIcon]="Star" [size]="28" [class]="n <= customerStars() ? 'fill-gold text-gold' : 'text-line'" aria-hidden="true"></svg>
+                    </button>
+                  }
+                </div>
+                <div class="mt-4 flex flex-wrap gap-2" role="group" aria-label="What happened (optional)">
+                  @for (t of ratingTags; track t.value) {
+                    <button
+                      type="button"
+                      class="min-h-10 rounded-full border px-4 text-sm font-medium"
+                      [class]="customerTags().includes(t.value) ? 'border-brand bg-brand text-white' : 'border-line bg-white hover:border-brand'"
+                      [attr.aria-pressed]="customerTags().includes(t.value)"
+                      (click)="toggleTag(t.value)"
+                    >
+                      {{ t.label }}
+                    </button>
+                  }
+                </div>
+                <button type="submit" class="btn-primary mt-4" [disabled]="customerStars() === 0 || busy()">Save rating</button>
+              </form>
+            </section>
+          } @else if (b.customerRating; as given) {
+            <p class="card flex items-center gap-2 p-4 text-sm" data-testid="customer-rated">
+              You rated {{ b.customer.name.split(' ')[0] }}
+              <span class="font-semibold"><svg [lucideIcon]="Star" [size]="14" class="inline fill-gold text-gold" aria-hidden="true"></svg> {{ given.rating }}</span>
+              @for (t of given.tags; track t) {
+                <span class="chip">{{ tagLabel(t) }}</span>
+              }
+            </p>
+          }
+
           <!-- Customer & address -->
           <section class="card grid gap-5 p-5 sm:grid-cols-2">
             <div class="flex items-center gap-3 sm:col-span-2">
               <pg-avatar [name]="b.customer.name" [size]="48" />
               <div class="min-w-0 flex-1">
                 <p class="font-semibold">{{ b.customer.name }}</p>
-                <p class="text-sm text-muted">Customer</p>
+                <p class="text-sm text-muted" data-testid="customer-rating">
+                  {{ b.address?.contactName ? 'Booked by the customer' : 'Customer' }}
+                  @if (b.customer.avgRating != null) {
+                    · <svg [lucideIcon]="Star" [size]="13" class="inline fill-gold text-gold" aria-hidden="true"></svg>
+                    {{ b.customer.avgRating | number: '1.1-1' }} from {{ b.customer.ratingCount }} Genies
+                  }
+                </p>
               </div>
               @if (tel(); as t) {
                 <a [href]="t" class="btn-ghost min-h-10 px-4"><svg [lucideIcon]="Phone" [size]="16" aria-hidden="true"></svg> Call</a>
               }
             </div>
+            @if (b.address?.contactName; as contact) {
+              <div class="flex items-center gap-3 rounded-2xl bg-brand-mist/40 p-4 sm:col-span-2" data-testid="job-contact">
+                <div class="min-w-0 flex-1">
+                  <p class="text-xs font-semibold uppercase tracking-wider text-muted">Person at the address</p>
+                  <p class="mt-0.5 font-semibold">{{ contact }}</p>
+                  <p class="text-xs text-muted">Booked for them by {{ b.customer.name.split(' ')[0] }}. Call them when you're on the way or at the door.</p>
+                </div>
+                @if (contactTel(); as t) {
+                  <a [href]="t" class="btn-ghost min-h-10 px-4"><svg [lucideIcon]="Phone" [size]="16" aria-hidden="true"></svg> Call</a>
+                }
+              </div>
+            }
             <div class="sm:col-span-2">
               <p class="text-xs font-semibold uppercase tracking-wider text-muted">Address</p>
               @if (b.address; as a) {
@@ -269,7 +373,7 @@ import { LocationSharer } from './location-sharer';
           }
         </aside>
       </div>
-      <pg-report-dialog [open]="reportOpen()" [bookingId]="b.id" [bookingRef]="b.bookingRef" role="GENIE" (closed)="reportOpen.set(false)" />
+      <pg-report-dialog [open]="reportOpen()" [bookingId]="b.id" [bookingRef]="b.bookingRef" role="GENIE" [items]="b.items" (closed)="reportOpen.set(false)" />
 
       <pg-dialog [open]="completeOpen()" heading="Complete the job" size="sm" (closed)="completeOpen.set(false)">
         <form class="space-y-4" (ngSubmit)="complete(b)">
@@ -328,6 +432,7 @@ export default class JobDetailPage {
   private readonly confirm = inject(ConfirmService);
 
   protected readonly detail = httpResource<BookingDetail>(() => `${API}/genie/bookings/${this.id()}`);
+  protected readonly reviseOpen = signal(false);
   protected readonly reportOpen = signal(false);
 
   /** Accepted, and the slot ended less than 7 days ago. */
@@ -364,6 +469,11 @@ export default class JobDetailPage {
   protected cashCollected = true;
 
   protected readonly tel = computed(() => telLink(this.detail.value()?.customer.phone));
+  /** Booked for someone else: the person at the address. */
+  protected readonly contactTel = computed(() => telLink(this.detail.value()?.address?.contactPhone));
+  protected readonly customerStars = signal(0);
+  protected readonly customerTags = signal<CustomerRatingTag[]>([]);
+  protected readonly ratingTags = RATING_TAGS;
   protected readonly beforeFiles = signal<File[]>([]);
   protected readonly afterFiles = signal<File[]>([]);
   protected readonly uploading = signal<PhotoStage | false>(false);
@@ -461,6 +571,32 @@ export default class JobDetailPage {
     });
   }
 
+  protected toggleTag(tag: CustomerRatingTag): void {
+    this.customerTags.update((list) => {
+      if (list.includes(tag)) return list.filter((t) => t !== tag);
+      // "great" doesn't go with "unsafe" or "rude"
+      const clash: CustomerRatingTag[] = tag === 'GREAT' ? ['UNSAFE', 'RUDE'] : tag === 'UNSAFE' || tag === 'RUDE' ? ['GREAT'] : [];
+      return [...list.filter((t) => !clash.includes(t)), tag];
+    });
+  }
+
+  protected tagLabel(tag: string): string {
+    return RATING_TAGS.find((t) => t.value === tag)?.label ?? tag;
+  }
+
+  protected rateCustomer(): void {
+    if (this.customerStars() === 0) return;
+    this.busy.set(true);
+    this.api.rateCustomer(this.id(), { rating: this.customerStars(), tags: this.customerTags() }).subscribe({
+      next: () => {
+        this.busy.set(false);
+        this.toast.success('Thanks, your rating is saved.');
+        this.detail.reload();
+      },
+      error: (e) => this.failed(e),
+    });
+  }
+
   protected async complete(b: BookingDetail): Promise<void> {
     const extra = Number(this.extraAmount) || 0;
     this.busy.set(true);
@@ -548,4 +684,5 @@ export default class JobDetailPage {
   protected readonly MapPin = MapPin;
   protected readonly Navigation = Navigation;
   protected readonly Phone = Phone;
+  protected readonly Star = Star;
 }

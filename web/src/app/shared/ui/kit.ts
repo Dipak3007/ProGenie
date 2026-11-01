@@ -177,6 +177,8 @@ export interface NavItem {
   badge?: number | null;
   /** Other URL prefixes that should highlight this item (e.g. job details under /genie/bookings). */
   also?: string[];
+  /** Query parameters for the link (e.g. the help centre's "For Genies" section). */
+  queryParams?: Record<string, string>;
 }
 
 /**
@@ -203,6 +205,7 @@ export interface NavItem {
               <li>
                 <a
                   [routerLink]="item.path"
+                  [queryParams]="item.queryParams ?? null"
                   [class.!bg-navy]="active(item)"
                   [class.!text-white]="active(item)"
                   [attr.aria-current]="active(item) ? 'page' : null"

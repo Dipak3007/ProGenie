@@ -19,7 +19,7 @@ class BookingTest {
     private static Booking booking(PaymentMethod method) {
         Booking.Price price = new Booking.Price(new BigDecimal("499.00"), new BigDecimal("7.40"), new BigDecimal("84.00"),
             new BigDecimal("20.00"), new BigDecimal("0.0500"), new BigDecimal("24.95"));
-        return Booking.request("PG-2026-000001", UUID.randomUUID(), UUID.randomUUID(), 1L, 1L, UUID.randomUUID(),
+        return Booking.request("PG-2026-000001", UUID.randomUUID(), UUID.randomUUID(), 1L, "Fan installation", 1L, UUID.randomUUID(),
             SLOT, SLOT.plus(Duration.ofHours(1)), NOW.plus(Duration.ofMinutes(30)), price, method, null, null);
     }
 
@@ -54,6 +54,20 @@ class BookingTest {
         assertThat(b.getTotalAmount()).isEqualByComparingTo("753.00");
         assertThat(b.getGeniePayout()).isEqualByComparingTo("728.05"); // commission stays on the service price only
         assertThat(b.getPaymentMethod()).isEqualTo(PaymentMethod.CASH);
+    }
+
+    /** Booked for someone else (3.5A): the person at the address gets their own code once the Genie sets off. */
+    @Test
+    void theContactsStartCodeWorksWithoutTheCustomersCode() {
+        Booking b = booking(PaymentMethod.CASH);
+        b.accept(NOW.plus(Duration.ofMinutes(5)));
+        assertThatThrownBy(() -> b.issueContactStartCode("contact-hash", "token")).isInstanceOf(ApiException.class);
+        b.startTravel(SLOT.minus(Duration.ofMinutes(30)));
+        b.issueContactStartCode("contact-hash", "token");
+        assertThat(b.getContactStartOtpHash()).isEqualTo("contact-hash");
+        b.start(SLOT, true); // no customer code issued: the contact's code is enough
+        assertThat(b.getStatus()).isEqualTo(BookingStatus.IN_PROGRESS);
+        assertThat(b.getContactStartOtpHash()).isNull();
     }
 
     @Test
@@ -119,5 +133,40 @@ class BookingTest {
         b.complete(SLOT.plus(Duration.ofHours(1)), null, null, false);
         b.markPaid();
         assertThatThrownBy(() -> b.changeTip(BigDecimal.TEN)).hasMessageContaining("no longer");
+    }
+
+    @Test
+    void removingAServiceTakesTheNewTotalsAndOnlyBeforeTheGenieSetsOff() {
+        Booking b = booking(PaymentMethod.CASH);
+        b.applyCoupon(7L, new BigDecimal("50.00"));
+        b.changeServices(2L, "Switchboard repair", new BigDecimal("219.00"), new BigDecimal("10.95"),
+            SLOT.plus(Duration.ofMinutes(30)), 7L, new BigDecimal("21.90"));
+        assertThat(b.getServiceId()).isEqualTo(2L);
+        assertThat(b.getServicesLabel()).isEqualTo("Switchboard repair");
+        assertThat(b.getTotalAmount()).isEqualByComparingTo("301.10");   // 219 + 84 travel + 20 tip − 21.90
+        assertThat(b.getGeniePayout()).isEqualByComparingTo("312.05");   // 323 − 10.95 commission
+        assertThat(b.getSlotEnd()).isEqualTo(SLOT.plus(Duration.ofMinutes(30)));
+        b.changeServices(2L, "Switchboard repair", new BigDecimal("219.00"), new BigDecimal("10.95"),
+            SLOT.plus(Duration.ofMinutes(30)), null, new BigDecimal("21.90"));
+        assertThat(b.getCouponId()).isNull();
+        assertThat(b.getDiscountAmount()).isEqualByComparingTo("0.00");
+        b.accept(NOW);
+        b.startTravel(NOW);
+        assertThatThrownBy(() -> b.changeServices(2L, "x", BigDecimal.TEN, BigDecimal.ONE, SLOT, null, BigDecimal.ZERO))
+            .hasMessageContaining("until the Genie sets off");
+    }
+
+    @Test
+    void inspectionsAndQuotedJobsAreMarkedBeforeTheyAreAccepted() {
+        Booking visit = booking(PaymentMethod.CASH);
+        visit.markInspection();
+        assertThat(visit.getKind()).isEqualTo(Booking.KIND_INSPECTION);
+        Booking job = booking(PaymentMethod.CASH);
+        java.util.UUID quote = java.util.UUID.randomUUID();
+        job.markFromQuote(quote, new BigDecimal("199"));
+        assertThat(job.getQuoteId()).isEqualTo(quote);
+        assertThat(job.getInspectionCredit()).isEqualByComparingTo("199.00");
+        assertThat(job.getTotalAmount()).as("the credit is already in the service amount").isEqualByComparingTo("603.00");
+        assertThatThrownBy(() -> job.markFromQuote(quote, BigDecimal.ONE)).hasMessageContaining("make from a quote");
     }
 }

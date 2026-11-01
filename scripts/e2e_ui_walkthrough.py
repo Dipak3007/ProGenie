@@ -305,6 +305,13 @@ with sync_playwright() as p:
         gp.wait_for_function("document.querySelectorAll('pg-job-photos img').length === 2", timeout=15000)
         ok(gp.locator("pg-job-photos img").count() == 2, "before and after photos on the completed job")
         shot(gp, "desktop-genie-job-completed")
+        # Phase 3.5A: the Genie rates the customer right after the job (never shown to the customer)
+        ok(has(gp, "How was it working for"), "right after completing, the Genie is asked to rate the customer")
+        rate = gp.locator("[data-testid=rate-customer]")
+        rate.get_by_role("radio", name="4 stars").click()
+        rate.get_by_role("button", name="Great to work with").click()
+        rate.get_by_role("button", name="Save rating").click()
+        ok(has(gp, "You rated"), "the Genie's rating of the customer is saved and shown to them")
 
         # ------------------------------------------------------------ customer pays online + reviews
         print("CUSTOMER pay + review")
@@ -317,11 +324,30 @@ with sync_playwright() as p:
         ok(has(cp, "Payment failed"), "declined payment shows an error and allows retry")
         cp.locator("pg-payment-dialog button.btn-gold").click()
         ok(has(cp, "and paid", timeout=12000), "payment succeeds and booking shows paid")
+        ok(has(cp, "You rated", timeout=1500, absent=True), "the customer never sees the Genie's rating of them")
         cp.get_by_role("radio", name="5 stars").click()
         cp.fill("#review-comment", "Quick, tidy and friendly. Fans work perfectly!")
-        cp.get_by_role("button", name="Post review").click(); cp.wait_for_timeout(1200)
+        # Phase 3.5A: a photo of the finished work with the review
+        cp.locator("[data-testid=review-photo-add] input[type=file]").set_input_files(photo)
+        ok(cp.locator("img[alt='Photo to post with your review']").count() == 1, "a review photo is previewed before posting")
+        cp.get_by_role("button", name="Post review").click(); cp.wait_for_timeout(2500)
         ok(has(cp, "How did", absent=True), "review form disappears after posting")
         shot(cp, "phone-booking-completed")
+        # Phase 3.5A: book the same Genie, service and address again
+        ok(cp.locator("[data-testid=book-again]").count() == 1, "a completed booking offers Book again")
+        cp.get_by_role("button", name="Book again").click()
+        cp.wait_for_url(re.compile(r"/book/[0-9a-f-]{36}\?.*addressId="), timeout=10000); settle(cp)
+        ok("items=" in cp.url and cp.locator("[data-testid=summary-services]").inner_text().strip().startswith("Fan installation"), "Book again opens checkout with the same services and address")
+        cp.goto(booking_url); settle(cp)
+        # the photo is public with the review on the Genie's profile
+        profile = cp.locator("a[href^='/genies/']").first.get_attribute("href")
+        cp.goto(BASE + profile); settle(cp)
+        try:
+            cp.wait_for_selector("pg-review-photos img", timeout=8000)
+        except Exception:
+            pass
+        ok(cp.locator("pg-review-photos img").count() >= 1, "the review photo shows on the Genie's public profile")
+        cp.goto(booking_url); settle(cp)
 
         print("CUSTOMER receipt + report a problem")
         cp.reload(); settle(cp)
@@ -331,6 +357,8 @@ with sync_playwright() as p:
         ok(name.endswith(".pdf") and size > 1000, f"receipt PDF downloads ({name}, {size} bytes)")
         cp.get_by_role("button", name=re.compile("Report a problem")).click()
         cp.get_by_label("Poor or incomplete work").check()
+        ok(cp.locator("[data-testid=help-suggestions]").get_by_text("This answered my question").count() == 1
+           or has(cp, "This answered my question"), "Report a problem suggests help answers before the form")
         cp.fill("#rp-subject", "One fan wobbles at full speed")
         cp.fill("#rp-desc", "The second fan wobbles and makes a clicking sound at speed 5. Please send someone to fix it or refund part of it.")
         shot(cp, "phone-report-dialog", full=False)
@@ -363,6 +391,13 @@ with sync_playwright() as p:
         ok(menu.get_by_text("Ahmedabad, Gujarat").count() >= 1, "phone menu lists the live cities")
         menu.locator("input[name=pincode]").fill("400001"); menu.get_by_role("button", name="Check").click()
         ok(has(cp, "Not in 400001 yet"), "header PIN code check: 400001 is not served")
+        # Phase 3.5B: ask to be told when we arrive there (the customer's number is filled in)
+        menu.locator("[data-testid=notify-open]").click()
+        ok(menu.locator("[data-testid=notify-form] input:not([type=checkbox])").input_value() != "", "Notify me fills in the customer's number")
+        menu.locator("[data-testid=notify-form] input[type=checkbox]").check()
+        menu.locator("[data-testid=notify-form]").get_by_role("button", name="Notify me").click()
+        ok(has(cp, "once when ProGenie arrives in 400001"), "Notify me: signed up for 400001 (one message, then forgotten)")
+        shot(cp, "phone-notify-me", full=False)
         menu.locator("input[name=pincode]").fill("380009"); menu.get_by_role("button", name="Check").click()
         ok(has(cp, "We serve 380009"), "header PIN code check: 380009 is served")
         shot(cp, "phone-city-switcher", full=False)
@@ -387,7 +422,8 @@ with sync_playwright() as p:
             cp.wait_for_function("document.querySelector('#a-area')?.value === 'Satellite'", timeout=5000)
         except Exception:
             pass
-        ok(cp.input_value("#a-area") == "Satellite", "area follows the new PIN code (it was filled in by us)")
+        ok(cp.input_value("#a-area") == "Satellite", "area follows the PIN code found from the map pin")
+        ok(cp.locator("#a-area").is_disabled(), "area is disabled (it comes from the PIN code)")
         cp.fill("#a-pin", "380054")
         ok(has(cp, "Pin moved to 380054"), "typing a PIN code again moves the pin back")
         cp.locator(".leaflet-container").click(position={"x": 150, "y": 120})
@@ -397,6 +433,29 @@ with sync_playwright() as p:
         shot(cp, "phone-address-form", full=False)
         cp.get_by_role("button", name="Save address").click(); cp.wait_for_timeout(1200)
         ok(has(cp, "Sunrise Park"), "new address saved with a map pin")
+        work = cp.locator("article", has_text="12, Sunrise Park").first
+        ok("Bodakdev" in work.inner_text(), "the saved address shows the area of its PIN code")
+        work.get_by_role("button", name="Edit").click()
+        cp.wait_for_selector("dialog[open] #a-area")
+        cp.wait_for_function("document.querySelector('dialog[open] #a-area')?.value === 'Bodakdev'", timeout=5000)
+        cp.fill("dialog[open] #a-pin", "380015")
+        try:
+            cp.wait_for_function("document.querySelector('dialog[open] #a-area')?.value === 'Satellite'", timeout=5000)
+        except Exception:
+            pass
+        ok(cp.input_value("dialog[open] #a-area") == "Satellite", "editing: the area follows a newly typed PIN code")
+        cp.get_by_role("button", name="Save changes").click(); cp.wait_for_timeout(1200)
+        work = cp.locator("article", has_text="12, Sunrise Park").first
+        ok("Satellite" in work.inner_text() and "380015" in work.inner_text(), "edited address saved with the new PIN code's area")
+        # Phase 3.5A: booking for someone else, the person who will be there
+        work.get_by_role("button", name="Edit").click()
+        cp.wait_for_selector("dialog[open] #a-contact-name")
+        cp.fill("dialog[open] #a-contact-name", "Asha Shah")
+        ok(has(cp, "Add both their name and mobile number"), "half a contact asks for the other half")
+        cp.fill("dialog[open] #a-contact-phone", "98250 12345")
+        cp.get_by_role("button", name="Save changes").click(); cp.wait_for_timeout(1200)
+        work = cp.locator("article", has_text="12, Sunrise Park").first
+        ok("For Asha Shah" in work.inner_text(), "the address shows who it's for")
         cp.goto(BASE + "/notifications"); settle(cp)
         ok(has(cp, "accepted"), "notifications page lists booking updates")
         shot(cp, "phone-notifications")
@@ -411,6 +470,12 @@ with sync_playwright() as p:
         gp.locator("textarea").first.fill("Thank you! Happy to help anytime.")
         gp.get_by_role("button", name="Post reply").click(); gp.wait_for_timeout(1000)
         ok(has(gp, "Your reply"), "Genie replied to the review")
+        ok(gp.locator("img[alt^='Customer photo']").count() >= 1, "the Genie sees the photo in the review")
+        gp.get_by_role("button", name="Report").first.click()
+        gp.wait_for_selector("dialog[open]")
+        gp.locator("dialog[open] input, dialog[open] textarea").first.fill("Walkthrough: checking the report flow")
+        gp.get_by_role("button", name="Report photo").click()
+        ok(has(gp, "Reported"), "the Genie reports a review photo")
         gp.goto(BASE + "/genie/wallet"); settle(gp)
         ok(has(gp, "Job earnings"), "wallet shows ledger entries")
         ok(has(gp, "Monthly statement"), "wallet offers the monthly statement")
@@ -438,39 +503,43 @@ with sync_playwright() as p:
         elif gp.get_by_role("button", name="Go online").count():
             gp.get_by_role("button", name="Go online").click(); gp.wait_for_timeout(800)
         ok(has(gp, "You're online"), "the Genie is online (ProGenie open) and can get Genie Now jobs")
-        cp.goto(BASE + "/services/electrician"); settle(cp)
-        cp.get_by_role("button", name=re.compile("Fan installation")).first.click()
-        cp.wait_for_selector("[data-testid=genie-now-link]", timeout=8000)
-        ok(cp.locator("[data-testid=genie-now-link]").count() == 1, "a Genie Now service offers 'Need it now?'")
-        cp.locator("[data-testid=genie-now-link]").click()
-        cp.wait_for_url(re.compile(r"/now/\d+"), timeout=10000); settle(cp)
-        cp.wait_for_selector("[data-testid=instant-quote] .font-display", timeout=15000)
-        quote_text = cp.locator("[data-testid=instant-quote]").inner_text()
-        ok("free near you" in quote_text and "Genie Now fee" in quote_text, "the customer sees free Genies nearby and the price range")
-        overflow(cp, "phone genie now")
-        shot(cp, "phone-genie-now")
-        cp.get_by_role("button", name="Find a Genie now").click()
-        cp.wait_for_selector("[data-testid=instant-search]", timeout=10000)
-        ok(has(cp, "Finding your Genie"), "the search screen asks one Genie at a time")
-        shot(cp, "phone-genie-now-searching", full=False)
-        try:
-            gp.wait_for_selector("[data-testid=instant-offer]", timeout=15000)
-            offered = True
-        except Exception:
-            offered = False
-        ok(offered, "the offer pops up on the Genie's open console (live stream), with a countdown")
-        if offered:
-            ok("you earn" in gp.locator("[data-testid=instant-offer]").inner_text().lower(), "the offer shows what the Genie earns")
-            shot(gp, "desktop-genie-now-offer", full=False)
-            gp.locator("[data-testid=instant-offer]").get_by_role("button", name="Accept job").click()
-            gp.wait_for_url(re.compile(r"/genie/bookings/[0-9a-f-]{36}"), timeout=15000); settle(gp)
-            ok(has(gp, "Genie Now"), "the Genie lands on the accepted job, marked Genie Now")
-            cp.wait_for_url(re.compile(r"/account/bookings/[0-9a-f-]{36}"), timeout=15000); settle(cp)
-            ok(has(cp, "within about an hour") and has(cp, "Genie Now fee"), "the customer's page opens the booking: arriving within an hour, with the fee")
-            shot(cp, "phone-genie-now-booked")
-            # free the Genie again for the rest of the walkthrough
-            now_booking_id = cp.url.rsplit("/", 1)[1]
-            api("POST", f"/api/v1/admin/bookings/{now_booking_id}/cancel", {"reason": "walkthrough", "waiveFee": True}, a_token)
+        ist = time.gmtime(time.time() + 5.5 * 3600)
+        if ist.tm_hour * 60 + ist.tm_min > 22 * 60:  # same rule as the smoke test
+            print("  (Genie Now skipped: after 22:00 in India no Genie Now job fits in a working day)")
+        else:
+            cp.goto(BASE + "/services/electrician"); settle(cp)
+            cp.get_by_role("button", name=re.compile("Fan installation")).first.click()
+            cp.wait_for_selector("[data-testid=genie-now-link]", timeout=8000)
+            ok(cp.locator("[data-testid=genie-now-link]").count() == 1, "a Genie Now service offers 'Need it now?'")
+            cp.locator("[data-testid=genie-now-link]").click()
+            cp.wait_for_url(re.compile(r"/now/\d+"), timeout=10000); settle(cp)
+            cp.wait_for_selector("[data-testid=instant-quote] .font-display", timeout=15000)
+            quote_text = cp.locator("[data-testid=instant-quote]").inner_text()
+            ok("free near you" in quote_text and "Genie Now fee" in quote_text, "the customer sees free Genies nearby and the price range")
+            overflow(cp, "phone genie now")
+            shot(cp, "phone-genie-now")
+            cp.get_by_role("button", name="Find a Genie now").click()
+            cp.wait_for_selector("[data-testid=instant-search]", timeout=10000)
+            ok(has(cp, "Finding your Genie"), "the search screen asks one Genie at a time")
+            shot(cp, "phone-genie-now-searching", full=False)
+            try:
+                gp.wait_for_selector("[data-testid=instant-offer]", timeout=15000)
+                offered = True
+            except Exception:
+                offered = False
+            ok(offered, "the offer pops up on the Genie's open console (live stream), with a countdown")
+            if offered:
+                ok("you earn" in gp.locator("[data-testid=instant-offer]").inner_text().lower(), "the offer shows what the Genie earns")
+                shot(gp, "desktop-genie-now-offer", full=False)
+                gp.locator("[data-testid=instant-offer]").get_by_role("button", name="Accept job").click()
+                gp.wait_for_url(re.compile(r"/genie/bookings/[0-9a-f-]{36}"), timeout=15000); settle(gp)
+                ok(has(gp, "Genie Now"), "the Genie lands on the accepted job, marked Genie Now")
+                cp.wait_for_url(re.compile(r"/account/bookings/[0-9a-f-]{36}"), timeout=15000); settle(cp)
+                ok(has(cp, "within about an hour") and has(cp, "Genie Now fee"), "the customer's page opens the booking: arriving within an hour, with the fee")
+                shot(cp, "phone-genie-now-booked")
+                # free the Genie again for the rest of the walkthrough
+                now_booking_id = cp.url.rsplit("/", 1)[1]
+                api("POST", f"/api/v1/admin/bookings/{now_booking_id}/cancel", {"reason": "walkthrough", "waiveFee": True}, a_token)
         api("PUT", "/api/v1/genie/availability", {"windows": saved_hours}, g_token)
         api("PUT", f"/api/v1/admin/cities/{city['cityId']}/pricing", {**pricing, "instantFee": 0}, a_token)
 
@@ -614,8 +683,42 @@ with sync_playwright() as p:
         shot(ap, "desktop-admin-demand-bookings")
         ap.get_by_role("radio", name="Unmet demand").click(); ap.wait_for_timeout(1500)
         ok(has(ap, "What people couldn") and has(ap, "PIN code we don"), "the unmet layer shows the unserved PIN code typed in the address form")
+        waiting = ap.locator("[data-testid=demand-waiting]")
+        ok(waiting.count() == 1 and "400001" in waiting.inner_text(), "People waiting for us lists the PIN code from Notify me")
         overflow(ap, "admin demand map")
         shot(ap, "desktop-admin-demand-unmet")
+
+        # ------------------------------------------------------------ Phase 3.5B: help centre editor
+        print("ADMIN help centre")
+        ap.goto(BASE + "/admin/help"); settle(ap)
+        ap.wait_for_selector("[data-testid=admin-help-row]", timeout=10000)
+        ok(ap.locator("[data-testid=admin-help-row]").count() >= 30 and has(ap, "For Genies"), "admin sees every help answer, grouped")
+        ok(has(ap, "👍"), "admin sees how often each answer helped")
+        ap.locator("[data-testid=admin-help-row]").first.get_by_role("button", name="Edit").click()
+        ap.wait_for_selector("dialog[open] #hans")
+        ap.locator("dialog[open] #hans").press("Control+End")
+        ap.locator("dialog[open] #hans").type("\n\n**Walkthrough preview**")
+        try:
+            ap.locator("dialog[open] pg-markdown strong", has_text="Walkthrough preview").wait_for(timeout=5000)
+        except Exception:
+            pass
+        ok(ap.locator("dialog[open] pg-markdown strong", has_text="Walkthrough preview").count() == 1, "the answer editor previews Markdown")
+        shot(ap, "desktop-admin-help-editor", full=False)
+        ap.keyboard.press("Escape"); ap.wait_for_timeout(400)
+        overflow(ap, "admin help centre")
+
+        # ------------------------------------------------------------ Phase 3.5A: review photos, customers to watch
+        print("ADMIN review photos + customers that need attention")
+        ap.goto(BASE + "/admin/review-photos"); settle(ap)
+        card = ap.locator("[data-testid=admin-review-photo]", has_text="Walkthrough: checking the report flow").first
+        ok(card.count() == 1, "the reported photo is in the admin queue with the Genie's reason")
+        shot(ap, "desktop-admin-review-photos")
+        card.get_by_role("button", name="Keep").click(); ap.wait_for_timeout(1000)
+        ok(has(ap, "Photo kept"), "admin keeps the photo (the report is cleared)")
+        ap.goto(BASE + "/admin/users"); settle(ap)
+        ap.get_by_label("Needs attention").check(); ap.wait_for_timeout(1000)
+        ok(ap.get_by_label("Needs attention").is_checked(), "admins can list customers who need attention")
+        overflow(ap, "admin users")
 
         print("ADMIN complaint → split partial refund")
         ap.goto(BASE + "/admin/tickets"); settle(ap)
@@ -680,6 +783,96 @@ with sync_playwright() as p:
         ap.goto(BASE + "/admin/coupons"); settle(ap)
         row = ap.locator("tr", has_text=coupon_code)
         ok("0" in row.locator("td").nth(3).inner_text(), "admin sees the use given back after the cancellation")
+
+        # ------------------------------------------------------------ Phase 3.5C: several services in one booking
+        print("CUSTOMER books two services in one visit, then drops one")
+        cp.goto(BASE + "/genies/1af855e6-31a8-5caa-bffa-6f864b9644ff"); settle(cp)
+        cp.get_by_role("button", name=re.compile("Fan installation")).first.click()
+        cp.get_by_role("button", name=re.compile("Switchboard repair")).first.click()
+        cp.wait_for_timeout(600)
+        picked = cp.locator("[data-testid=picked-services]").inner_text()
+        ok("Fan installation" in picked and "Switchboard repair" in picked, "the Genie profile lets the customer tick two services")
+        cp.get_by_role("button", name="Choose a time").click()
+        cp.wait_for_url(re.compile(r"/book/.*items=")); settle(cp)
+        cp.locator("[aria-label='One more Fan installation']").click(); cp.wait_for_timeout(800)
+        summary = cp.locator("[data-testid=summary-services]").inner_text()
+        ok("Fan installation ×2" in summary and "Switchboard repair" in summary, "checkout carries both services and the quantity")
+        ok(has(cp, "About 2 h") or has(cp, "About 1 h"), "checkout says how long the whole job takes")
+        cp.wait_for_selector("pg-slot-picker button[aria-pressed]", timeout=15000)
+        cp.locator("pg-slot-picker button[aria-pressed]").last.click()
+        cp.wait_for_timeout(800)
+        ok(cp.locator("#summary dl").get_by_text("Switchboard repair").count() >= 1, "the price lists each service")
+        overflow(cp, "phone checkout with two services")
+        shot(cp, "phone-checkout-two-services", full=False)
+        cp.locator("div.sticky button.btn-gold").click()
+        cp.wait_for_url(re.compile(r"/account/bookings/[0-9a-f-]{36}"), timeout=15000); settle(cp)
+        ok(cp.locator("[data-testid=price-line]").count() == 2, "the booking shows one price line per service")
+        ok(has(cp, "Fan installation ×2 + Switchboard repair"), "the booking is named after both services")
+        shot(cp, "phone-booking-two-services")
+        cp.locator("[aria-label='Remove Switchboard repair from this booking']").click()
+        cp.locator("dialog[open]").get_by_role("button", name="Remove service").click(); cp.wait_for_timeout(1500)
+        ok(cp.locator("[data-testid=price-line]").count() == 1 and has(cp, "Switchboard repair removed"), "the customer drops a service before the Genie sets off")
+        ok(has(cp, "Services changed"), "the timeline shows the change")
+        cp.get_by_role("button", name="Cancel booking").first.click(); cp.wait_for_timeout(500)
+        cp.get_by_role("button", name="Cancel booking").last.click(); cp.wait_for_timeout(1500)
+        ok(has(cp, "Cancelled"), "the two-service booking is cancelled again")
+
+        # ------------------------------------------------------------ Phase 3.5D: inspection visit and quote
+        print("CUSTOMER books an inspection; the GENIE sends a quote; the CUSTOMER accepts it")
+        gid = "1af855e6-31a8-5caa-bffa-6f864b9644ff"
+        c_tok, g_tok, a_tok = api_token("customer@example.com"), api_token("genie@example.com"), api_token("admin@progenie.in")
+        prof = api("GET", f"/api/v1/genies/{gid}")[1]
+        wiring = next(x for x in prof["services"] if x["inspectionFirst"])
+        cp.goto(BASE + f"/book/{gid}?items={wiring['serviceId']}:1"); settle(cp)
+        ok(cp.locator("[data-testid=checkout-inspection]").count() == 1, "checkout says an inspection visit comes first")
+        cp.wait_for_selector("pg-slot-picker button[aria-pressed]", timeout=15000)
+        cp.locator("pg-slot-picker button[aria-pressed]").first.click(); cp.wait_for_timeout(800)
+        ok(cp.locator("#summary dl").get_by_text("Inspection visit").count() >= 1 and "Book inspection" in cp.locator("div.sticky button.btn-gold").inner_text(),
+           "checkout prices the inspection visit, not the job")
+        overflow(cp, "phone checkout inspection")
+        shot(cp, "phone-checkout-inspection", full=False)
+        cp.locator("div.sticky button.btn-gold").click()
+        cp.wait_for_url(re.compile(r"/account/bookings/[0-9a-f-]{36}"), timeout=15000); settle(cp)
+        insp_id = cp.url.rstrip("/").split("/")[-1]
+        ok(has(cp, "Inspection: House wiring check-up") and cp.locator("[data-testid=quote-panel]").count() == 1,
+           "the inspection booking shows where the quote will appear")
+        api("POST", f"/api/v1/genie/bookings/{insp_id}/accept", None, g_tok)
+        code = api("POST", f"/api/v1/bookings/{insp_id}/start-code", None, c_tok)[1]["code"]
+        api("POST", f"/api/v1/genie/bookings/{insp_id}/start", {"code": code}, g_tok)
+        api("POST", f"/api/v1/genie/bookings/{insp_id}/complete", {"cashCollected": True}, g_tok)
+        gp.goto(BASE + f"/genie/bookings/{insp_id}"); settle(gp)
+        gp.wait_for_selector("[data-testid=quote-line]", timeout=10000)
+        ok(gp.locator("[data-testid=quote-line]").count() == 1, "the Genie's quote starts from the service the customer asked about")
+        gp.locator("[data-testid=quote-line] select").first.select_option(label="Fan installation"); gp.wait_for_timeout(300)
+        gp.get_by_role("button", name="Add a line").click(); gp.wait_for_timeout(300)
+        line2 = gp.locator("[data-testid=quote-line]").nth(1)
+        line2.locator("input[maxlength='150']").fill("Replace 20 m of old wiring")
+        line2.locator("input[type=number]").nth(1).fill("4500")
+        gp.fill("#q-minutes", "180"); gp.fill("#q-note", "Materials included")
+        gp.wait_for_timeout(300)
+        ok("4,7" in gp.locator("[data-testid=quote-total]").inner_text(), "the quote total adds up the lines")
+        shot(gp, "desktop-genie-quote-editor")
+        gp.get_by_role("button", name="Send quote").click(); gp.wait_for_timeout(1500)
+        ok(gp.locator("pg-quote-summary").count() == 1 and has(gp, "Change the quote"), "the Genie sends the quote and can still change it")
+        cp.reload(); settle(cp)
+        lines = cp.locator("[data-testid=quote-lines]").inner_text()
+        ok("Fan installation" in lines and "Replace 20 m of old wiring" in lines and "Inspection fee already paid" in lines,
+           "the customer sees the quote with the inspection fee taken off")
+        shot(cp, "phone-quote-ready")
+        cp.get_by_role("button", name="Accept and pick a time").click()
+        cp.wait_for_selector("dialog[open] pg-slot-picker button[aria-pressed]", timeout=15000)
+        cp.locator("dialog[open] pg-slot-picker button[aria-pressed]").first.click(); cp.wait_for_timeout(500)
+        cp.locator("dialog[open]").get_by_role("button", name="Book the job").click()
+        cp.wait_for_url(lambda u: insp_id not in u and "/account/bookings/" in u, timeout=15000); settle(cp)
+        ok(cp.locator("[data-testid=price-line]").count() == 2 and cp.locator("[data-testid=inspection-credit]").count() == 1,
+           "the job is booked from the quote: two lines, inspection fee taken off")
+        ok(has(cp, "from the quote after"), "the job links back to the inspection")
+        overflow(cp, "phone quote job")
+        shot(cp, "phone-quote-job")
+        job_id = cp.url.rstrip("/").split("/")[-1]
+        ap.goto(BASE + f"/admin/bookings/{insp_id}"); settle(ap)
+        ok(ap.locator("[data-testid=admin-quote]").count() == 1 and has(ap, "Accepted"), "admin sees the accepted quote on the inspection")
+        api("POST", f"/api/v1/admin/bookings/{job_id}/cancel", {"reason": "walkthrough", "waiveFee": True}, a_tok)
 
         print("CUSTOMER settings & privacy")
         cp.goto(BASE + "/account/privacy"); settle(cp)
@@ -750,7 +943,7 @@ with sync_playwright() as p:
         tctx = browser.new_context(viewport={"width": 768, "height": 1024}, **IN)
         tp = tctx.new_page(); watch(tp, "tablet-admin")
         login(tp, "admin@progenie.in")
-        for path in ["/admin", "/admin/genies", "/admin/bookings", "/admin/users", "/admin/catalog", "/admin/finance", "/admin/coupons", "/admin/demand", "/admin/inbox",
+        for path in ["/admin", "/admin/genies", "/admin/bookings", "/admin/users", "/admin/catalog", "/admin/finance", "/admin/coupons", "/admin/demand", "/admin/review-photos", "/admin/help", "/admin/inbox",
                      "/admin/tickets", f"/admin/tickets/{ticket_id}", f"/admin/bookings/{booking_id}", "/admin/messages", "/admin/legal",
                      "/admin/legal/privacy", "/admin/deletions", "/admin/settings"]:
             tp.goto(BASE + path); settle(tp); tp.wait_for_timeout(300)
@@ -763,7 +956,7 @@ with sync_playwright() as p:
         login(sp, "customer@example.com")
         for path in ["/", "/services", "/services/electrician", "/genies/1af855e6-31a8-5caa-bffa-6f864b9644ff", "/book/1af855e6-31a8-5caa-bffa-6f864b9644ff",
                      "/account/bookings", booking_url.replace(BASE, ""), "/account/addresses", "/account/favourites", "/account/profile", "/notifications",
-                     "/account/tickets", ticket_url.replace(BASE, ""), "/account/privacy", "/legal/terms", "/legal/privacy"]:
+                     "/account/tickets", ticket_url.replace(BASE, ""), "/account/privacy", "/help", "/legal/terms", "/legal/privacy"]:
             sp.goto(BASE + path); settle(sp); sp.wait_for_timeout(400)
             overflow(sp, f"360 {path}")
         shot(sp, "360-booking-detail")
@@ -771,14 +964,29 @@ with sync_playwright() as p:
         sctx.clear_cookies()
         login(s2, "genie@example.com")
         for path in ["/genie", "/genie/jobs", f"/genie/bookings/{booking_id}", "/genie/onboarding", "/genie/availability", "/genie/wallet", "/genie/reviews",
-                     "/genie/tickets", f"/genie/tickets/{ticket_id}", "/genie/privacy"]:
+                     "/genie/tickets", f"/genie/tickets/{ticket_id}", "/genie/privacy", "/help?category=GENIES"]:
             s2.goto(BASE + path); settle(s2); s2.wait_for_timeout(400)
             overflow(s2, f"360 {path}")
         shot(s2, "360-genie-dashboard")
         # guest pages at 360
         gctx2 = browser.new_context(viewport={"width": 360, "height": 740}, is_mobile=True, has_touch=True, **IN)
         g2 = gctx2.new_page(); watch(g2, "360-guest")
-        for path in ["/login", "/forgot-password", "/register", "/register?role=GENIE", "/legal/genie-agreement"]:
+        g2.goto(BASE + "/track/not-a-real-token-000000000000000000000000000000"); settle(g2)
+        ok(has(g2, "This tracking link has expired"), "an old or wrong tracking link says it has expired (no login needed)")
+        # Phase 3.5B: the help centre needs no login
+        g2.goto(BASE + "/help"); settle(g2)
+        g2.wait_for_selector("[data-testid=help-article]", timeout=10000)
+        g2.fill("#help-q", "start code")
+        g2.wait_for_timeout(300)
+        found = g2.locator("[data-testid=help-article]")
+        ok(found.count() >= 1 and all("start" in t and "code" in t for t in (found.nth(i).inner_text().lower() for i in range(found.count()))),
+           f"help centre search finds answers about the start code ({found.count()})")
+        found.first.get_by_role("button", name="Yes").click(); g2.wait_for_timeout(500)
+        ok(has(g2, "Thanks for telling us"), "a guest can say an answer helped")
+        shot(g2, "360-help-centre")
+        g2.goto(BASE + "/help?category=GENIES"); settle(g2)
+        ok([h.strip() for h in g2.locator("main h2").all_inner_texts()] == ["For Genies"], "the Genie console's link opens For Genies only")
+        for path in ["/login", "/forgot-password", "/register", "/register?role=GENIE", "/legal/genie-agreement", "/help"]:
             g2.goto(BASE + path); settle(g2); g2.wait_for_timeout(300)
             overflow(g2, f"360 {path}")
         g2.goto(BASE + "/login"); g2.get_by_role("tab", name="One-time code").click(); g2.wait_for_timeout(200)

@@ -11,6 +11,7 @@ import {
   LucideCreditCard as CreditCard,
   LucideDynamicIcon,
   LucideMapPin as MapPin,
+  LucideMinus as Minus,
   LucidePlus as Plus,
   LucideShieldCheck as ShieldCheck,
 } from '@lucide/angular';
@@ -29,11 +30,20 @@ import { Rating } from '../../shared/ui/rating';
 import { SlotPicker } from '../../shared/ui/slot-picker';
 import { AddressForm } from './address-form';
 import { CouponPicker } from './coupon-picker';
+import {
+  durationText,
+  itemsParam,
+  MAX_MINUTES,
+  MAX_QUANTITY,
+  MAX_SERVICES,
+  parseItems,
+  ServiceLineSel,
+} from '../../shared/service-lines';
 
 const TIPS = [0, 20, 50, 100];
 
 /**
- * Book a Genie: service → day and time → address → payment and tip → confirm.
+ * Book a Genie: services (one or several, Phase 3.5C) → day and time → address → payment and tip → confirm.
  * One page (not a multi-screen wizard) so people can see and change every choice; the summary follows them.
  */
 @Component({
@@ -68,37 +78,75 @@ const TIPS = [0, 20, 50, 100];
 
         <div class="mt-8 grid grid-cols-[minmax(0,1fr)] gap-6 lg:grid-cols-[minmax(0,1fr)_24rem] lg:gap-8">
           <div class="min-w-0 space-y-6">
-            <!-- 1. Service -->
+            <!-- 1. Services -->
             <section class="card p-5 sm:p-6" aria-labelledby="s1">
-              <h2 id="s1" class="flex items-center gap-3 text-lg font-bold"><span class="step">1</span> Service</h2>
+              <h2 id="s1" class="flex items-center gap-3 text-lg font-bold"><span class="step">1</span> Services</h2>
+              <p class="mt-1 text-sm text-muted">
+                Add another of {{ g.genie.fullName.split(' ')[0] }}'s services to the same visit: one travel fee. Up to {{ maxServices }}, each up to {{ maxQuantity }} times.
+              </p>
               <div class="mt-4 grid gap-3 sm:grid-cols-2">
                 @for (s of g.services; track s.serviceId) {
-                  <button
-                    type="button"
-                    class="flex items-start justify-between gap-3 rounded-2xl border p-4 text-left transition"
-                    [class]="s.serviceId === serviceIdNum() ? 'border-brand bg-brand-mist/40 ring-2 ring-brand' : 'border-line bg-white hover:border-brand-soft'"
-                    [attr.aria-pressed]="s.serviceId === serviceIdNum()"
-                    (click)="chooseService(s.serviceId)"
+                  @let qty = quantityOf(s.serviceId);
+                  <div
+                    class="flex flex-col rounded-2xl border transition"
+                    [class]="qty ? 'border-brand bg-brand-mist/40 ring-2 ring-brand' : 'border-line bg-white hover:border-brand-soft'"
+                    data-testid="checkout-service"
                   >
-                    <span>
-                      <span class="block font-semibold">{{ s.name }}</span>
-                      <span class="mt-1 inline-flex items-center gap-1 text-xs text-muted">
-                        <svg [lucideIcon]="Clock" [size]="13" aria-hidden="true"></svg> ~{{ s.durationMinutes }} min
+                    <button
+                      type="button"
+                      class="flex items-start justify-between gap-3 p-4 text-left disabled:opacity-50"
+                      [attr.aria-pressed]="qty > 0"
+                      [disabled]="!qty && lines().length >= maxServices"
+                      (click)="toggleService(s.serviceId)"
+                    >
+                      <span>
+                        <span class="block font-semibold">{{ s.name }}</span>
+                        <span class="mt-1 inline-flex items-center gap-1 text-xs text-muted">
+                          <svg [lucideIcon]="Clock" [size]="13" aria-hidden="true"></svg> ~{{ s.durationMinutes }} min
+                        </span>
+                        @if (s.inspectionFirst) {
+                          <span class="chip ml-1 bg-brand-mist py-0.5 text-xs font-semibold text-brand-600">Inspection first</span>
+                        }
                       </span>
-                    </span>
-                    <span class="font-display text-lg font-bold">{{ s.price | currency: 'INR' : 'symbol' : '1.0-0' }}</span>
-                  </button>
+                      <span class="font-display text-lg font-bold">{{ s.price | currency: 'INR' : 'symbol' : '1.0-0' }}</span>
+                    </button>
+                    @if (qty) {
+                      <div class="flex items-center justify-between gap-3 border-t border-brand-soft/60 px-4 py-2">
+                        <span class="text-sm text-muted" [id]="'qty-' + s.serviceId">How many</span>
+                        <div class="flex items-center gap-2" role="group" [attr.aria-labelledby]="'qty-' + s.serviceId">
+                          <button type="button" class="qty-btn" [attr.aria-label]="'One fewer ' + s.name" (click)="changeQuantity(s.serviceId, -1)">
+                            <svg [lucideIcon]="Minus" [size]="16" aria-hidden="true"></svg>
+                          </button>
+                          <span class="w-6 text-center font-semibold tabular-nums" aria-live="polite" [attr.data-testid]="'qty-value-' + s.serviceId">{{ qty }}</span>
+                          <button type="button" class="qty-btn" [attr.aria-label]="'One more ' + s.name" [disabled]="qty >= maxQuantity" (click)="changeQuantity(s.serviceId, 1)">
+                            <svg [lucideIcon]="Plus" [size]="16" aria-hidden="true"></svg>
+                          </button>
+                        </div>
+                      </div>
+                    }
+                  </div>
                 }
               </div>
+              @if (lines().length) {
+                <p class="mt-3 text-sm" [class]="tooLong() ? 'text-rose-700' : 'text-muted'" data-testid="checkout-duration" [attr.role]="tooLong() ? 'alert' : null">
+                  @if (inspection()) {
+                    <span data-testid="checkout-inspection">An inspection visit first (30 min). {{ g.genie.fullName.split(' ')[0] }} then sends you a priced quote; you book the job from it.</span>
+                  } @else if (tooLong()) {
+                    That's {{ durationLabel() }} of work, more than one day (8 h). Remove a service or book the rest separately.
+                  } @else {
+                    About {{ durationLabel() }} in total.
+                  }
+                </p>
+              }
             </section>
 
             <!-- 2. Time -->
             <section class="card p-5 sm:p-6" aria-labelledby="s2">
               <h2 id="s2" class="flex items-center gap-3 text-lg font-bold"><span class="step">2</span> Day and time</h2>
-              @if (serviceIdNum(); as sid) {
-                <pg-slot-picker #picker class="mt-4" [genieId]="genieId()" [serviceId]="sid" [selected]="slot()?.start ?? null" (picked)="slot.set($event)" />
+              @if (items() && !tooLong()) {
+                <pg-slot-picker #picker class="mt-4" [genieId]="genieId()" [items]="items()" [selected]="slot()?.start ?? null" (picked)="slot.set($event)" />
               } @else {
-                <p class="mt-3 text-sm text-muted">Choose a service first.</p>
+                <p class="mt-3 text-sm text-muted">{{ tooLong() ? 'Shorten the job first.' : 'Choose a service first.' }}</p>
               }
             </section>
 
@@ -190,10 +238,10 @@ const TIPS = [0, 20, 50, 100];
             </section>
 
             <!-- 5. Coupon -->
-            <section class="card p-5 sm:p-6" aria-labelledby="s5">
+            <section class="card p-5 sm:p-6" aria-labelledby="s5" [hidden]="inspection()">
               <h2 id="s5" class="flex items-center gap-3 text-lg font-bold"><span class="step">5</span> Coupon <span class="text-sm font-normal text-muted">(optional)</span></h2>
               <p class="mt-1 text-sm text-muted">Coupons take money off the service price. Your Genie still earns the full amount.</p>
-              <pg-coupon-picker #coupons class="mt-4 block" [genieId]="genieId()" [serviceId]="selectedService()" [addressId]="addressId()" [(applied)]="coupon" />
+              <pg-coupon-picker #coupons class="mt-4 block" [genieId]="genieId()" [items]="items() || null" [addressId]="addressId()" [(applied)]="coupon" />
             </section>
           </div>
 
@@ -210,7 +258,14 @@ const TIPS = [0, 20, 50, 100];
               </div>
               <div class="space-y-3 p-5 text-sm">
                 <div class="flex justify-between gap-3">
-                  <span class="text-muted">Service</span><span class="text-right font-medium">{{ service()?.name ?? '—' }}</span>
+                  <span class="text-muted">{{ chosen().length > 1 ? 'Services' : 'Service' }}</span>
+                  <span class="text-right font-medium" data-testid="summary-services">
+                    @for (c of chosen(); track c.serviceId) {
+                      <span class="block">{{ c.name }}{{ c.quantity > 1 ? ' ×' + c.quantity : '' }}</span>
+                    } @empty {
+                      —
+                    }
+                  </span>
                 </div>
                 <div class="flex justify-between gap-3">
                   <span class="text-muted">When</span>
@@ -223,7 +278,15 @@ const TIPS = [0, 20, 50, 100];
                 <div class="border-t border-line pt-3">
                   @if (quote(); as q) {
                     <dl class="space-y-2">
-                      <div class="flex justify-between"><dt class="text-muted">Service price</dt><dd>{{ q.serviceAmount | currency: 'INR' }}</dd></div>
+                      @if (q.inspection) {
+                        <div class="flex justify-between"><dt class="text-muted">Inspection visit</dt><dd>{{ q.inspectionFee | currency: 'INR' }}</dd></div>
+                      } @else if (q.lines.length > 1) {
+                        @for (l of q.lines; track l.serviceId) {
+                          <div class="flex justify-between"><dt class="text-muted">{{ l.serviceName }}{{ l.quantity > 1 ? ' ×' + l.quantity : '' }}</dt><dd>{{ l.amount | currency: 'INR' }}</dd></div>
+                        }
+                      } @else {
+                        <div class="flex justify-between"><dt class="text-muted">Service price{{ q.lines[0] && q.lines[0].quantity > 1 ? ' (×' + q.lines[0].quantity + ')' : '' }}</dt><dd>{{ q.serviceAmount | currency: 'INR' }}</dd></div>
+                      }
                       <div class="flex justify-between">
                         <dt class="text-muted">Travel ({{ q.distanceMethod === 'ROAD' ? '' : '≈ ' }}{{ q.distanceKm | number: '1.1-1' }} km{{ q.distanceMethod === 'ROAD' ? ' by road' : '' }})</dt>
                         <dd>{{ q.travelFee > 0 ? (q.travelFee | currency: 'INR') : 'Free' }}</dd>
@@ -238,10 +301,12 @@ const TIPS = [0, 20, 50, 100];
                         <dt>Total</dt><dd>{{ total() | currency: 'INR' }}</dd>
                       </div>
                     </dl>
-                    <p class="mt-2 text-xs text-muted">Parts or materials, if needed, are added by the Genie at the end with a note.</p>
-                  } @else if (service()) {
+                    <p class="mt-2 text-xs text-muted">
+                      {{ q.inspection ? 'The inspection fee is taken off the job if you accept the quote.' : 'Parts or materials, if needed, are added by the Genie at the end with a note.' }}
+                    </p>
+                  } @else if (chosen().length) {
                     <p class="flex justify-between font-semibold">
-                      <span>From</span><span>{{ service()!.price | currency: 'INR' }}</span>
+                      <span>From</span><span>{{ fromPrice() | currency: 'INR' }}</span>
                     </p>
                     <p class="mt-1 text-xs text-muted">Choose an address to see the travel fee.</p>
                   }
@@ -260,7 +325,7 @@ const TIPS = [0, 20, 50, 100];
                   @if (submitting()) {
                     <pg-spinner />
                   }
-                  {{ ready() ? 'Confirm booking' : missingText() }}
+                  {{ ready() ? (inspection() ? 'Book the inspection' : 'Confirm booking') : missingText() }}
                 </button>
                 <p class="flex items-start gap-2 text-xs text-muted">
                   <svg [lucideIcon]="ShieldCheck" [size]="14" class="mt-0.5 shrink-0 text-brand" aria-hidden="true"></svg>
@@ -276,7 +341,7 @@ const TIPS = [0, 20, 50, 100];
           <div class="mx-auto flex max-w-3xl items-center gap-3">
             <div class="min-w-0 flex-1">
               <p class="text-xs text-muted">{{ quote() ? 'Total' : 'From' }}</p>
-              <p class="font-display text-xl font-bold">{{ (total() ?? service()?.price ?? 0) | currency: 'INR' : 'symbol' : '1.2-2' }}</p>
+              <p class="font-display text-xl font-bold">{{ (total() ?? fromPrice()) | currency: 'INR' : 'symbol' : '1.2-2' }}</p>
             </div>
             <button type="button" class="btn-gold min-h-12 px-6" [disabled]="!ready() || submitting()" (click)="submit()">
               @if (submitting()) {
@@ -284,7 +349,7 @@ const TIPS = [0, 20, 50, 100];
               } @else if (ready()) {
                 <svg [lucideIcon]="CircleCheck" [size]="18" aria-hidden="true"></svg>
               }
-              {{ ready() ? 'Confirm' : missingText() }}
+              {{ ready() ? (inspection() ? 'Book inspection' : 'Confirm') : missingText() }}
             </button>
           </div>
         </div>
@@ -304,6 +369,18 @@ const TIPS = [0, 20, 50, 100];
     </div>
   `,
   styles: `
+    .qty-btn {
+      display: inline-grid;
+      place-items: center;
+      width: 2.25rem;
+      height: 2.25rem;
+      border-radius: 9999px;
+      border: 1px solid var(--color-line);
+      background: white;
+    }
+    .qty-btn:disabled {
+      opacity: 0.4;
+    }
     .step {
       display: inline-grid;
       place-items: center;
@@ -318,8 +395,11 @@ const TIPS = [0, 20, 50, 100];
 })
 export default class CheckoutPage {
   readonly genieId = input.required<string>();
-  /** Optional ?serviceId= from the Genie profile page. */
+  /** Optional ?serviceId= (one service) or ?items=12:2,15:1 (several, Phase 3.5C) from the Genie profile or "Book again". */
   readonly serviceId = input<string | undefined>(undefined);
+  readonly itemsFromUrl = input<string | undefined>(undefined, { alias: 'items' });
+  /** Optional ?addressId= from "Book again" (Phase 3.5A): that saved address is preselected. */
+  readonly addressFromUrl = input<string | undefined>(undefined, { alias: 'addressId' });
 
   private readonly api = inject(ApiClient);
   private readonly customer = inject(CustomerApi);
@@ -329,7 +409,11 @@ export default class CheckoutPage {
   protected readonly genie = httpResource<GenieDetail>(() => `${API}/genies/${encodeURIComponent(this.genieId())}`);
   protected readonly addresses = httpResource<Address[]>(() => `${API}/me/addresses`);
 
-  protected readonly selectedService = signal<number | null>(null);
+  /** The chosen services and quantities, in the order they were picked (Phase 3.5C). */
+  protected readonly lines = signal<ServiceLineSel[]>([]);
+  private linesSet = false;
+  protected readonly maxServices = MAX_SERVICES;
+  protected readonly maxQuantity = MAX_QUANTITY;
   protected readonly slot = signal<Slot | null>(null);
   protected readonly addressId = signal<string | null>(null);
   protected readonly method = signal<PaymentMethod>('CASH');
@@ -351,23 +435,40 @@ export default class CheckoutPage {
     { value: 'ONLINE' as const, label: 'Pay online after the job', hint: 'UPI or card in the app once it is done.', icon: CreditCard },
   ];
 
-  protected readonly serviceIdNum = computed(() => this.selectedService());
-  protected readonly service = computed(() => this.genie.value()?.services.find((s) => s.serviceId === this.selectedService()) ?? null);
+  protected readonly items = computed(() => itemsParam(this.lines()));
+  /** The chosen lines with the Genie's names, prices and durations. */
+  protected readonly chosen = computed(() => {
+    const services = this.genie.value()?.services ?? [];
+    return this.lines()
+      .map((l) => {
+        const s = services.find((x) => x.serviceId === l.serviceId);
+        return s ? { ...l, name: s.name, price: s.price, minutes: s.durationMinutes, inspectionFirst: s.inspectionFirst } : null;
+      })
+      .filter((c): c is NonNullable<typeof c> => c !== null);
+  });
+  protected readonly minutes = computed(() => this.chosen().reduce((sum, c) => sum + c.minutes * c.quantity, 0));
+  /** Phase 3.5D: one of the services needs an inspection visit first (30 min, a fee, then a quote). */
+  protected readonly inspection = computed(() => this.chosen().some((c) => c.inspectionFirst));
+  protected readonly tooLong = computed(() => !this.inspection() && this.minutes() > MAX_MINUTES);
+  protected readonly durationLabel = computed(() => durationText(this.minutes()));
+  protected readonly fromPrice = computed(() =>
+    this.inspection() ? (this.quote()?.inspectionFee ?? 0) : this.chosen().reduce((sum, c) => sum + c.price * c.quantity, 0),
+  );
   protected readonly address = computed(() => this.addresses.value()?.find((a) => a.id === this.addressId()) ?? null);
 
   /** Live quote whenever service, address or tip change. */
   private readonly quoteInput = computed(() => {
-    const s = this.selectedService();
+    const items = this.items();
     const a = this.address();
-    return s && a ? { serviceId: s, lat: a.lat, lng: a.lng, tip: this.tip() } : null;
-  });
+    return items && a && !this.tooLong() ? { items, lat: a.lat, lng: a.lng, tip: this.tip() } : null;
+  }, { equal: (x, y) => x?.items === y?.items && x?.lat === y?.lat && x?.lng === y?.lng && x?.tip === y?.tip });
   protected readonly quote = toSignal(
     toObservable(this.quoteInput).pipe(
       debounceTime(150),
       switchMap((q) => {
         this.areaError.set(null);
         if (!q) return of(null);
-        return this.api.estimate(this.genieId(), q.serviceId, q.lat, q.lng, q.tip).pipe(
+        return this.api.estimate(this.genieId(), q.items, q.lat, q.lng, q.tip).pipe(
           catchError((err) => {
             this.areaError.set(errorMessage(err, 'Could not price this address.'));
             return of(null as PriceBreakdown | null);
@@ -384,21 +485,34 @@ export default class CheckoutPage {
     return q ? Math.max(0, Math.round((q.totalAmount - (this.coupon()?.discount ?? 0)) * 100) / 100) : null;
   });
 
-  protected readonly ready = computed(() => !!this.service() && !!this.slot() && !!this.address() && !this.areaError());
+  protected readonly ready = computed(
+    () => this.chosen().length > 0 && !this.tooLong() && !!this.slot() && !!this.address() && !this.areaError(),
+  );
   protected readonly missingText = computed(() =>
-    !this.service() ? 'Choose a service' : !this.slot() ? 'Pick a time' : !this.address() ? 'Add an address' : 'Check the address',
+    !this.chosen().length ? 'Choose a service' : this.tooLong() ? 'Shorten the job' : !this.slot() ? 'Pick a time' : !this.address() ? 'Add an address' : 'Check the address',
   );
 
   constructor() {
-    // Preselect the service from the URL, else the Genie's first service.
+    // Preselect the services from the URL (those this Genie still offers), else the Genie's first service.
     effect(() => {
       const g = this.genie.value();
       if (!g) return;
       untracked(() => {
-        if (this.selectedService() !== null) return;
-        const fromUrl = Number(this.serviceId());
-        const match = g.services.find((s) => s.serviceId === fromUrl) ?? g.services[0];
-        this.selectedService.set(match?.serviceId ?? null);
+        if (this.linesSet) return;
+        this.linesSet = true;
+        const offered = (l: ServiceLineSel) => g.services.some((s) => s.serviceId === l.serviceId);
+        const fromUrl = parseItems(this.itemsFromUrl() ?? this.serviceId()).filter(offered);
+        const first = g.services[0];
+        this.lines.set(fromUrl.length ? fromUrl : first ? [{ serviceId: first.serviceId, quantity: 1 }] : []);
+      });
+    });
+    // A different job length means different free times: pick the time again.
+    let lastMinutes = 0;
+    effect(() => {
+      const m = this.minutes();
+      untracked(() => {
+        if (lastMinutes && m !== lastMinutes) this.slot.set(null);
+        lastMinutes = m;
       });
     });
     // Preselect the default address.
@@ -406,15 +520,32 @@ export default class CheckoutPage {
       const list = this.addresses.value();
       if (!list?.length) return;
       untracked(() => {
-        if (!this.addressId()) this.addressId.set((list.find((a) => a.isDefault) ?? list[0]).id);
+        if (this.addressId()) return;
+        const fromUrl = list.find((a) => a.id === this.addressFromUrl());
+        this.addressId.set((fromUrl ?? list.find((a) => a.isDefault) ?? list[0]).id);
       });
     });
   }
 
-  protected chooseService(id: number): void {
-    if (id === this.selectedService()) return;
-    this.selectedService.set(id);
-    this.slot.set(null); // durations differ, so free times differ too
+  protected quantityOf(id: number): number {
+    return this.lines().find((l) => l.serviceId === id)?.quantity ?? 0;
+  }
+
+  protected toggleService(id: number): void {
+    const list = this.lines();
+    if (list.some((l) => l.serviceId === id)) {
+      this.lines.set(list.filter((l) => l.serviceId !== id));
+    } else if (list.length < MAX_SERVICES) {
+      this.lines.set([...list, { serviceId: id, quantity: 1 }]);
+    }
+  }
+
+  protected changeQuantity(id: number, delta: number): void {
+    this.lines.set(
+      this.lines()
+        .map((l) => (l.serviceId === id ? { ...l, quantity: Math.min(MAX_QUANTITY, l.quantity + delta) } : l))
+        .filter((l) => l.quantity > 0),
+    );
   }
 
   protected onAddressSaved(a: Address): void {
@@ -424,10 +555,10 @@ export default class CheckoutPage {
   }
 
   protected submit(): void {
-    const s = this.service();
+    const lines = this.lines();
     const slot = this.slot();
     const a = this.address();
-    if (!s || !slot || !a || this.submitting()) return;
+    if (!lines.length || !slot || !a || this.submitting()) return;
     this.submitting.set(true);
     this.error.set(null);
     this.feeDue.set(false);
@@ -435,7 +566,7 @@ export default class CheckoutPage {
       .createBooking(
         {
           genieId: this.genieId(),
-          serviceId: s.serviceId,
+          items: lines,
           addressId: a.id,
           slotStart: slot.start,
           paymentMethod: this.method(),
@@ -454,7 +585,7 @@ export default class CheckoutPage {
           this.submitting.set(false);
           const code = errorCode(err);
           this.error.set(errorMessage(err, 'Could not create the booking.'));
-          if (code === 'SLOT_TAKEN' || code === 'SLOT_UNAVAILABLE' || code === 'SLOT_TOO_SOON') {
+          if (code === 'SLOT_TAKEN' || code === 'SLOT_UNAVAILABLE' || code === 'SLOT_TOO_SOON' || code === 'SERVICE_NOT_OFFERED') {
             this.slot.set(null);
             this.picker()?.reload();
             document.getElementById('s2')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
@@ -474,6 +605,7 @@ export default class CheckoutPage {
   protected readonly Clock = Clock;
   protected readonly MapPin = MapPin;
   protected readonly Plus = Plus;
+  protected readonly Minus = Minus;
   protected readonly ShieldCheck = ShieldCheck;
   protected readonly CircleCheck = CircleCheck;
 }

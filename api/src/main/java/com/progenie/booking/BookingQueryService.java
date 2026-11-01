@@ -13,14 +13,19 @@ import java.util.UUID;
 
 import com.progenie.booking.BookingDtos.AddressView;
 import com.progenie.booking.BookingDtos.BookingDetailDto;
+import com.progenie.booking.BookingDtos.BookingItemDto;
+import com.progenie.booking.BookingDtos.QuoteDto;
+import com.progenie.booking.domain.Booking;
 import com.progenie.booking.BookingDtos.BookingPhotoDto;
 import com.progenie.booking.BookingDtos.BookingSummaryDto;
+import com.progenie.booking.BookingDtos.CustomerRatingView;
 import com.progenie.booking.BookingDtos.HistoryDto;
 import com.progenie.booking.BookingDtos.PartyDto;
 import com.progenie.booking.domain.BookingStatus;
 import com.progenie.shared.config.AppProperties;
 import com.progenie.shared.config.QueryConstants;
 import com.progenie.shared.error.ApiException;
+import com.progenie.shared.util.CustomerRatingRules;
 import com.progenie.shared.util.QueryUtil;
 import com.progenie.shared.util.Times;
 import com.progenie.shared.web.PageResponse;
@@ -39,6 +44,8 @@ public class BookingQueryService {
     public enum Scope { ACTIVE, REQUESTS, UPCOMING, PAST, ALL }
 
     static final Duration REVIEW_WINDOW = Duration.ofDays(14);
+    /** The Genie rates the customer right after completing the job (Phase 3.5A). */
+    public static final Duration CUSTOMER_RATING_WINDOW = Duration.ofHours(1);
     private static final Set<String> CONTACT_VISIBLE = Set.of("ACCEPTED", "ON_THE_WAY", "IN_PROGRESS");
     private static final Set<String> ADDRESS_VISIBLE = Set.of("ACCEPTED", "ON_THE_WAY", "IN_PROGRESS", "COMPLETED");
 
@@ -47,14 +54,16 @@ public class BookingQueryService {
                String serviceName, String categoryName, String categorySlug, String genieName, String geniePhone,
                BigDecimal genieRating, String customerName, String customerPhone, String addrLabel, String addrLine1,
                String addrLine2, String addrLandmark, String addrArea, String addrCity, String addrPincode,
-               OffsetDateTime slotStart, OffsetDateTime slotEnd, OffsetDateTime expiresAt, String notes,
+               String addrContactName, String addrContactPhone, UUID addressId, OffsetDateTime slotStart, OffsetDateTime slotEnd, OffsetDateTime expiresAt, String notes,
                BigDecimal serviceAmount, BigDecimal extraAmount, String extraNote, BigDecimal distanceKm,
                BigDecimal travelFee, BigDecimal tipAmount, BigDecimal totalAmount, BigDecimal commissionAmount,
                BigDecimal geniePayout, String paymentMethod, String paymentStatus, BigDecimal cancellationFee,
                String cancellationFeeStatus, String cancelReason, String cancelledByRole, int rescheduledCount,
                boolean reviewed, OffsetDateTime createdAt, OffsetDateTime acceptedAt, OffsetDateTime startedAt,
                OffsetDateTime completedAt, OffsetDateTime cancelledAt, BigDecimal discountAmount, String couponCode,
-               OffsetDateTime travelStartedAt, BigDecimal instantFee, boolean instant) {
+               OffsetDateTime travelStartedAt, BigDecimal instantFee, boolean instant, BigDecimal customerRatingAvg,
+               int customerRatingCount, int customerRedTags, Integer givenRating, String givenTags, OffsetDateTime givenAt,
+               String kind, BigDecimal inspectionCredit, UUID quoteId) {
     }
 
     /** Status filter per list tab: keys of SQL fragments in sql_scripts.properties. */
@@ -69,8 +78,13 @@ public class BookingQueryService {
     private final AppProperties.Booking rules;
     private final Clock clock;
     private final BookingPhotos photos;
+    private final BookingItems items;
+    private final QuoteReader quotes;
 
-    public BookingQueryService(JdbcClient jdbc, AppProperties props, Clock clock, BookingPhotos photos) {
+    public BookingQueryService(JdbcClient jdbc, AppProperties props, Clock clock, BookingPhotos photos, BookingItems items,
+                               QuoteReader quotes) {
+        this.items = items;
+        this.quotes = quotes;
         this.jdbc = jdbc;
         this.rules = props.booking();
         this.clock = clock;
@@ -82,18 +96,18 @@ public class BookingQueryService {
     @Transactional(readOnly = true)
     public PageResponse<BookingSummaryDto> customerBookings(UUID customerId, Scope scope, int page, int size) {
         return list(QueryConstants.FRAGMENT_BOOKING_COUNTERPART_GENIE, QueryConstants.FRAGMENT_BOOKING_OWNER_CUSTOMER,
-            customerId, scope, page, size);
+            customerId, scope, page, size, false);
     }
 
     @Transactional(readOnly = true)
     public PageResponse<BookingSummaryDto> genieBookings(UUID genieId, Scope scope, int page, int size) {
         return list(QueryConstants.FRAGMENT_BOOKING_COUNTERPART_CUSTOMER, QueryConstants.FRAGMENT_BOOKING_OWNER_GENIE,
-            genieId, scope, page, size);
+            genieId, scope, page, size, true);
     }
 
     /** {@code counterpart} and {@code owner} are fragment keys: whose name to show and whose bookings to list. */
     private PageResponse<BookingSummaryDto> list(String counterpart, String owner, UUID ownerId, Scope scope,
-                                                 int page, int size) {
+                                                 int page, int size, boolean showCustomerRating) {
         String scopeFilter = SCOPE_FILTER.get(scope);
         // Upcoming work is most useful soonest-first; history newest-first.
         String order = scope == Scope.PAST || scope == Scope.ALL
@@ -107,7 +121,7 @@ public class BookingQueryService {
             .param("limit", PageResponse.clampSize(size))
             .param("offset", PageResponse.offset(page, size))
             .query(BookingSummaryDto.class)
-            .list();
+            .list().stream().map(b -> b.forViewer(showCustomerRating)).toList();
         return new PageResponse<>(items, Math.max(page, 0), PageResponse.clampSize(size), total);
     }
 
@@ -145,14 +159,27 @@ public class BookingQueryService {
         boolean moneyVisible = viewer != Viewer.CUSTOMER;
 
         PartyDto genie = new PartyDto(r.genieId(), r.genieName(),
-            viewer != Viewer.GENIE && contactVisible ? r.geniePhone() : null, r.genieRating());
+            viewer != Viewer.GENIE && contactVisible ? r.geniePhone() : null, r.genieRating(), null, null);
         String customerName = viewer == Viewer.GENIE && "REQUESTED".equals(r.status())
             ? r.customerName().split(" ")[0] : r.customerName();
+        // Booked for someone else: the Genie calls the person at the address instead of the customer.
+        boolean hasContact = StringUtils.hasText(r.addrContactPhone());
+        boolean customerPhoneVisible = viewer == Viewer.ADMIN || (viewer == Viewer.GENIE && contactVisible && !hasContact);
+        // Customers never see Genies' ratings of them; Genies from MIN_SHOWN ratings; admins always, with the flag.
+        boolean ratingVisible = viewer == Viewer.ADMIN
+            || (viewer == Viewer.GENIE && r.customerRatingCount() >= CustomerRatingRules.MIN_SHOWN);
         PartyDto customer = new PartyDto(r.customerId(), customerName,
-            viewer != Viewer.CUSTOMER && contactVisible ? r.customerPhone() : null, null);
+            customerPhoneVisible ? r.customerPhone() : null,
+            ratingVisible ? r.customerRatingAvg() : null, ratingVisible ? r.customerRatingCount() : null,
+            viewer == Viewer.ADMIN ? CustomerRatingRules.flagReason(r.customerRatingAvg(), r.customerRatingCount(), r.customerRedTags()) : null);
+        boolean contactShown = viewer != Viewer.GENIE || contactVisible;
         AddressView address = fullAddress
-            ? new AddressView(r.addrLabel(), r.addrLine1(), r.addrLine2(), r.addrLandmark(), r.addrArea(), r.addrCity(), r.addrPincode())
-            : new AddressView(null, null, null, null, r.addrArea(), r.addrCity(), r.addrPincode());
+            ? new AddressView(r.addrLabel(), r.addrLine1(), r.addrLine2(), r.addrLandmark(), r.addrArea(), r.addrCity(), r.addrPincode(),
+                contactShown ? r.addrContactName() : null, contactShown ? r.addrContactPhone() : null)
+            : new AddressView(null, null, null, null, r.addrArea(), r.addrCity(), r.addrPincode(), null, null);
+        CustomerRatingView given = viewer != Viewer.CUSTOMER && r.givenRating() != null
+            ? new CustomerRatingView(r.givenRating(), StringUtils.hasText(r.givenTags()) ? List.of(r.givenTags().split(",")) : List.of(), r.givenAt())
+            : null;
 
         Instant now = clock.instant();
         BookingStatus status = BookingStatus.valueOf(r.status());
@@ -165,6 +192,25 @@ public class BookingQueryService {
         if (viewer == Viewer.GENIE) {
             actions.addAll(photos.genieActions(r.status(), r.completedAt(), jobPhotos));
         }
+        List<BookingItemDto> lines = items.dtos(bookingId);
+        boolean inspection = Booking.KIND_INSPECTION.equals(r.kind());
+        if (viewer == Viewer.CUSTOMER && lines.size() > 1 && !inspection && r.quoteId() == null
+            && (status == BookingStatus.REQUESTED || status == BookingStatus.ACCEPTED)) {
+            actions.add("REMOVE_SERVICE");
+        }
+        // Phase 3.5D: the quote after an inspection visit
+        QuoteDto quote = quotes.forBooking(bookingId, r.kind(), r.quoteId());
+        if (inspection && QuoteReader.open(quote, now)) {
+            if (viewer == Viewer.CUSTOMER) {
+                actions.add("ACCEPT_QUOTE");
+                actions.add("DECLINE_QUOTE");
+            }
+        }
+        if (inspection && viewer == Viewer.GENIE && status == BookingStatus.COMPLETED && r.completedAt() != null
+            && now.isBefore(r.completedAt().toInstant().plus(Quotes.SEND_WINDOW))
+            && (quote == null || QuoteReader.open(quote, now))) {
+            actions.add("SEND_QUOTE");
+        }
 
         return new BookingDetailDto(r.id(), r.bookingRef(), r.status(), r.serviceId(), r.serviceName(), r.categoryName(),
             r.categorySlug(), genie, customer, address, r.slotStart(), r.slotEnd(), r.expiresAt(), r.notes(),
@@ -173,7 +219,8 @@ public class BookingQueryService {
             r.paymentMethod(), r.paymentStatus(), r.cancellationFee(), r.cancellationFeeStatus(), feeIfNow,
             r.cancelReason(), r.cancelledByRole(), r.rescheduledCount(), r.reviewed(), r.createdAt(), r.acceptedAt(),
             r.startedAt(), r.completedAt(), r.cancelledAt(), actions, history(bookingId), jobPhotos, r.discountAmount(),
-            r.couponCode(), r.travelStartedAt(), r.instantFee(), r.instant());
+            r.couponCode(), r.travelStartedAt(), r.instantFee(), r.instant(),
+            viewer == Viewer.CUSTOMER ? r.addressId() : null, given, lines, r.kind(), r.inspectionCredit(), quote);
     }
 
     List<String> allowedActions(Row r, Viewer viewer, Instant now) {
@@ -230,6 +277,10 @@ public class BookingQueryService {
                 if (status == BookingStatus.IN_PROGRESS) {
                     actions.add("COMPLETE");
                 }
+                if (status == BookingStatus.COMPLETED && r.givenRating() == null && r.completedAt() != null
+                    && now.isBefore(r.completedAt().toInstant().plus(CUSTOMER_RATING_WINDOW))) {
+                    actions.add("RATE_CUSTOMER");
+                }
             }
             case ADMIN -> {
                 if (status == BookingStatus.REQUESTED || status.isConfirmed()) {
@@ -265,6 +316,28 @@ public class BookingQueryService {
         }
         if (clock.instant().isAfter(b.completedAt().toInstant().plus(REVIEW_WINDOW))) {
             throw ApiException.unprocessable("REVIEW_WINDOW_CLOSED", "Reviews can be written up to 14 days after the job");
+        }
+        return b;
+    }
+
+    public record RatableBooking(UUID bookingId, String bookingRef, UUID customerId, String status, OffsetDateTime completedAt) {
+    }
+
+    /**
+     * The Genie's own completed job they may rate the customer for: only right after completing it
+     * ({@link #CUSTOMER_RATING_WINDOW}).
+     */
+    @Transactional(readOnly = true)
+    public RatableBooking ratableByGenie(UUID genieId, UUID bookingId) {
+        RatableBooking b = jdbc.sql(QueryUtil.get(QueryConstants.GET_BOOKING_RATABLE_BY_GENIE))
+            .param("id", bookingId).param("g", genieId)
+            .query(RatableBooking.class).optional()
+            .orElseThrow(() -> ApiException.notFound("BOOKING_NOT_FOUND", "Booking not found"));
+        if (!"COMPLETED".equals(b.status())) {
+            throw ApiException.unprocessable("NOT_COMPLETED", "You can rate the customer once the job is done");
+        }
+        if (clock.instant().isAfter(b.completedAt().toInstant().plus(CUSTOMER_RATING_WINDOW))) {
+            throw ApiException.unprocessable("RATING_WINDOW_CLOSED", "Customers can be rated right after the job is completed");
         }
         return b;
     }

@@ -11,7 +11,8 @@ import { CouponOfferDto } from '../../models/coupon-offer-dto';
 
 export interface CouponAvailable$Params {
   genieId?: string;
-  serviceId: number;
+  serviceId?: number;
+  items?: string;
   addressId: string;
 }
 
@@ -20,6 +21,7 @@ export function couponAvailable(http: HttpClient, rootUrl: string, params: Coupo
   if (params) {
     rb.query('genieId', params.genieId, {});
     rb.query('serviceId', params.serviceId, {});
+    rb.query('items', params.items, {});
     rb.query('addressId', params.addressId, {});
   }
 

@@ -18,11 +18,12 @@ import { JobPhotos } from '../../shared/ui/job-photos';
 import { Dialog } from '../../shared/ui/dialog';
 import { EmptyState, Skeleton, Spinner } from '../../shared/ui/kit';
 import { StatusBadge } from '../../shared/ui/status-badge';
+import { QuoteSummary } from '../../shared/ui/quote-summary';
 import { RefundFields, newRefund, refundValid, refundable } from './refund-fields';
 
 @Component({
   selector: 'pg-admin-booking-page',
-  imports: [RouterLink, CurrencyPipe, DatePipe, LowerCasePipe, FormsModule, LucideDynamicIcon, Avatar, Dialog, EmptyState, JobPhotos, PriceSummary, RefundFields, Skeleton, Spinner, StatusBadge, Timeline],
+  imports: [RouterLink, CurrencyPipe, DatePipe, LowerCasePipe, FormsModule, LucideDynamicIcon, Avatar, Dialog, EmptyState, JobPhotos, PriceSummary, QuoteSummary, RefundFields, Skeleton, Spinner, StatusBadge, Timeline],
   changeDetection: ChangeDetectionStrategy.OnPush,
   template: `
     <a routerLink="/admin/bookings" class="inline-flex items-center gap-1 text-sm font-semibold text-muted hover:text-brand">
@@ -53,6 +54,13 @@ import { RefundFields, newRefund, refundValid, refundable } from './refund-field
                   <p class="text-sm text-muted">{{ party.role }}{{ party.p.phone ? ' · ' + party.p.phone : '' }}</p>
                   @if (party.role === 'Genie') {
                     <a [routerLink]="['/admin/genies', party.p.id]" class="text-xs font-semibold text-brand hover:underline">Open Genie</a>
+                  } @else {
+                    @if (party.p.ratingCount) {
+                      <p class="text-xs text-muted">Rated ★ {{ party.p.avgRating }} by {{ party.p.ratingCount }} Genies</p>
+                    }
+                    @if (party.p.flagReason) {
+                      <p class="mt-1 rounded-lg bg-amber-50 px-2 py-1 text-xs font-medium text-amber-800" data-testid="customer-flag">Needs attention: {{ party.p.flagReason }}</p>
+                    }
                   }
                 </div>
               </div>
@@ -61,6 +69,12 @@ import { RefundFields, newRefund, refundValid, refundable } from './refund-field
               <p class="text-xs font-semibold uppercase tracking-wider text-muted">Address</p>
               @if (b.address; as a) {
                 <p class="mt-1 text-sm">{{ a.line1 }}{{ a.line2 ? ', ' + a.line2 : '' }}{{ a.area ? ', ' + a.area : '' }}, {{ a.city }} {{ a.pincode }}</p>
+                @if (a.contactName) {
+                  <p class="mt-1 text-sm">Booked for <span class="font-medium">{{ a.contactName }}</span> · {{ a.contactPhone }}</p>
+                }
+              }
+              @if (b.customerRating; as given) {
+                <p class="mt-2 text-sm text-muted">The Genie rated the customer ★ {{ given.rating }}{{ given.tags.length ? ' · ' + given.tags.join(', ').toLowerCase().replaceAll('_', ' ') : '' }}</p>
               }
             </div>
             @if (b.notes) {
@@ -141,6 +155,20 @@ import { RefundFields, newRefund, refundValid, refundable } from './refund-field
               <h2 id="photos-h" class="text-lg font-bold">Job photos</h2>
               <p class="mt-1 text-sm text-muted">Taken by the Genie at the start and end of the job (kept for a year).</p>
               <pg-job-photos class="mt-4 block" [photos]="b.photos" (expired)="detail.reload()" />
+            </section>
+          }
+
+          @if (b.quote) {
+            <section class="card p-5" aria-labelledby="q-h" data-testid="admin-quote">
+              <h2 id="q-h" class="text-lg font-bold">
+                {{ b.kind === 'INSPECTION' ? 'Quote after this inspection' : 'Quote this job came from' }}
+              </h2>
+              @if (b.kind === 'JOB') {
+                <p class="mt-1 text-sm text-muted">
+                  Inspection <a [routerLink]="['/admin/bookings', b.quote.inspectionBookingId]" class="font-semibold text-brand underline">{{ b.quote.inspectionBookingRef }}</a>
+                </p>
+              }
+              <pg-quote-summary class="mt-3" [quote]="b.quote" audience="ADMIN" />
             </section>
           }
 

@@ -161,6 +161,24 @@ function ensureLeafletCss(): void {
               <pg-bar-list class="mt-4" [items]="reasonItems()" />
             </section>
           }
+          @if (data()?.waiting; as w) {
+            <section class="card p-5" aria-labelledby="waiting-h" data-testid="demand-waiting">
+              <h2 id="waiting-h" class="font-bold">People waiting for us</h2>
+              <p class="mt-1 text-xs text-muted">
+                {{ w.total }} {{ w.total === 1 ? 'person asked' : 'people asked' }} to be told when we arrive (all time, any city). They get one message when you open the area.
+              </p>
+              @if (w.top.length) {
+                <ol class="mt-3 divide-y divide-line text-sm">
+                  @for (p of w.top; track p.pincode) {
+                    <li class="flex items-center justify-between gap-3 py-2">
+                      <span class="font-semibold">{{ p.pincode }}</span>
+                      <span class="font-display text-lg font-bold tabular-nums">{{ p.count }}</span>
+                    </li>
+                  }
+                </ol>
+              }
+            </section>
+          }
         }
         <section class="card p-5" aria-labelledby="top-h">
           <h2 id="top-h" class="font-bold">Top places</h2>

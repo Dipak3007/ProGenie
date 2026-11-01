@@ -366,6 +366,12 @@ public class GenieProfileService {
             .param("id", genieId).update();
     }
 
+    /** Review module: a photo in a review was added, removed, hidden or shown again (the profile shows them). */
+    @GenieCaches.EvictsGenies
+    public void reviewsChanged() {
+        // the annotation empties the caches
+    }
+
     void requireProfile(UUID genieId) {
         boolean exists = jdbc.sql(QueryUtil.get(QueryConstants.EXISTS_GENIE_PROFILE_BY_ID))
             .param("id", genieId).query(Boolean.class).single();

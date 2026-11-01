@@ -6,6 +6,8 @@ import java.time.Duration;
 import java.time.Instant;
 import java.time.LocalDate;
 import java.time.ZoneId;
+import java.util.ArrayList;
+import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
 
@@ -21,16 +23,21 @@ import com.progenie.customer.AddressDtos.AddressDto;
 import com.progenie.customer.AddressService;
 import com.progenie.identity.AccountGuards;
 import com.progenie.legal.ConsentService;
+import com.progenie.pricing.PriceCalculator;
 import com.progenie.pricing.PriceCalculator.PriceBreakdown;
+import com.progenie.pricing.PriceCalculator.PriceLine;
 import com.progenie.pricing.PricingService;
 import com.progenie.promotion.CouponService;
 import com.progenie.promotion.CouponService.AppliedCoupon;
+import com.progenie.promotion.CouponService.CouponLine;
 import com.progenie.provider.GenieDirectory.Offer;
 import com.progenie.provider.GenieDirectory;
 import com.progenie.shared.config.AppProperties;
 import com.progenie.shared.config.QueryConstants;
 import com.progenie.shared.error.ApiException;
 import com.progenie.shared.util.QueryUtil;
+import com.progenie.shared.util.ServiceLines;
+import com.progenie.shared.util.ServiceLines.ServiceLine;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.dao.DataIntegrityViolationException;
@@ -65,11 +72,13 @@ public class BookingService {
     private final AccountGuards guards;
     private final ConsentService consents;
     private final CouponService coupons;
+    private final BookingItems items;
 
     public BookingService(BookingRepository bookings, BookingSupport support, BookingQueryService queries,
                           SlotService slots, GenieDirectory directory, AddressService addresses, PricingService pricing,
                           JdbcClient jdbc, AppProperties props, Clock clock, AccountGuards guards,
-                          ConsentService consents, CouponService coupons) {
+                          ConsentService consents, CouponService coupons, BookingItems items) {
+        this.items = items;
         this.coupons = coupons;
         this.guards = guards;
         this.consents = consents;
@@ -109,7 +118,8 @@ public class BookingService {
             throw ApiException.unprocessable("OUTSTANDING_FEE", "Please pay your pending cancellation fee before booking again");
         }
 
-        Offer offer = directory.bookableOffer(req.genieId(), req.serviceId());
+        List<ServiceLine> lines = ServiceLines.of(req.serviceId(), req.items());
+        Offer offer = directory.bookableOffer(req.genieId(), lines.getFirst().serviceId());
         AddressDto address = addresses.getOwned(customerId, req.addressId());
         if (!directory.servesCity(offer.genieId(), address.cityId())) {
             throw ApiException.unprocessable("OUT_OF_SERVICE_AREA", "This Genie works in another city");
@@ -117,22 +127,30 @@ public class BookingService {
         if (!directory.servesLocation(offer.genieId(), address.lat(), address.lng())) {
             throw ApiException.unprocessable("OUT_OF_SERVICE_AREA", "This Genie does not travel to that address");
         }
-        Instant start = req.slotStart().toInstant();
-        Instant end = start.plus(Duration.ofMinutes(offer.durationMinutes()));
-        slots.assertBookable(offer.genieId(), start, offer.durationMinutes(), null);
-
         BigDecimal tip = req.tipAmount() == null ? BigDecimal.ZERO : req.tipAmount();
-        PriceBreakdown quote = pricing.estimate(offer.genieId(), offer.serviceId(), address.lat(), address.lng(), tip);
+        PriceBreakdown quote = pricing.estimate(offer.genieId(), lines, address.lat(), address.lng(), tip);
+        Instant start = req.slotStart().toInstant();
+        Instant end = start.plus(Duration.ofMinutes(quote.durationMinutes()));
+        slots.assertBookable(offer.genieId(), start, quote.durationMinutes(), null);
         Booking.Price price = new Booking.Price(quote.serviceAmount(), quote.distanceKm(), quote.travelFee(),
             quote.tipAmount(), quote.commissionRate(), quote.commissionAmount());
 
         Instant now = clock.instant();
+        String label = (quote.inspection() ? "Inspection: " : "") + BookingItems.label(quote.lines());
         Booking booking = Booking.request(nextBookingRef(now), customerId, offer.genieId(), offer.serviceId(),
-            address.cityId(), address.id(), start, end, BookingPolicy.requestExpiry(now, start, rules.requestTtl()),
+            label.length() > 400 ? label.substring(0, 399) + "\u2026" : label, address.cityId(), address.id(), start, end,
+            BookingPolicy.requestExpiry(now, start, rules.requestTtl()),
             price, req.paymentMethod(), StringUtils.hasText(req.notes()) ? req.notes().trim() : null, key);
+        if (quote.inspection()) {
+            // Phase 3.5D: big jobs start with an inspection visit; the job itself comes from the Genie's quote
+            if (StringUtils.hasText(req.couponCode())) {
+                throw ApiException.unprocessable("COUPON_NOT_APPLICABLE", "Coupons can't be used on an inspection visit");
+            }
+            booking.markInspection();
+        }
         AppliedCoupon coupon = null;
         if (StringUtils.hasText(req.couponCode())) {
-            coupon = coupons.apply(customerId, req.couponCode(), offer.serviceId(), address.cityId(), quote.serviceAmount());
+            coupon = coupons.apply(customerId, req.couponCode(), couponLines(quote.lines()), address.cityId());
             booking.applyCoupon(coupon.couponId(), coupon.discount());
         }
         try {
@@ -149,11 +167,17 @@ public class BookingService {
             .param("bookingId", booking.getId())
             .param("addressId", address.id())
             .update();
+        items.insert(booking.getId(), quote.lines(), discountShares(quote.lines(), coupon, booking.getDiscountAmount()));
+        if (quote.inspection()) {
+            items.insertCustom(booking.getId(), quote.lines().size() + 1, "Inspection visit", 1, quote.inspectionFee(),
+                BigDecimal.ZERO, quote.durationMinutes());
+        }
         if (coupon != null) {
             coupons.recordUse(coupon, booking.getId(), booking.getBookingRef(), customerId);
         }
         support.transitioned(booking, null, customerId, "CUSTOMER", BookingEvent.Type.REQUESTED, null, false);
-        log.info("Booking {} requested by {} for Genie {}", booking.getBookingRef(), customerId, offer.genieId());
+        log.info("Booking {} requested by {} for Genie {} ({} service(s), {} min)", booking.getBookingRef(), customerId,
+            offer.genieId(), lines.size(), quote.durationMinutes());
         return queries.detail(booking.getId(), Viewer.CUSTOMER, customerId);
     }
 
@@ -177,8 +201,8 @@ public class BookingService {
             quote.tipAmount(), quote.commissionRate(), quote.commissionAmount());
         Instant now = clock.instant();
         Instant end = now.plus(o.travel()).plus(Duration.ofMinutes(offer.durationMinutes()));
-        Booking booking = Booking.request(nextBookingRef(now), o.customerId(), o.genieId(), o.serviceId(), o.cityId(),
-            o.addressId(), now, end, now.plus(Duration.ofMinutes(5)), price, o.paymentMethod(),
+        Booking booking = Booking.request(nextBookingRef(now), o.customerId(), o.genieId(), o.serviceId(),
+            BookingItems.label(quote.lines()), o.cityId(), o.addressId(), now, end, now.plus(Duration.ofMinutes(5)), price, o.paymentMethod(),
             StringUtils.hasText(o.notes()) ? o.notes().trim() : null, null);
         booking.markInstant(o.requestId(), pricing.instantFee(o.cityId()));
         AppliedCoupon coupon = null;
@@ -204,12 +228,77 @@ public class BookingService {
             .param("bookingId", booking.getId())
             .param("addressId", o.addressId())
             .update();
+        items.insert(booking.getId(), quote.lines(), discountShares(quote.lines(), coupon, booking.getDiscountAmount()));
         if (coupon != null) {
             coupons.recordUse(coupon, booking.getId(), booking.getBookingRef(), o.customerId());
         }
         support.transitioned(booking, null, o.genieId(), "GENIE", BookingEvent.Type.ACCEPTED, BookingEvent.GENIE_NOW, false);
         log.info("Booking {} (Genie Now) accepted by Genie {} for {}", booking.getBookingRef(), o.genieId(), o.customerId());
         return booking;
+    }
+
+    /**
+     * The customer drops one of several services (Phase 3.5C) until the Genie sets off. The booking gets the remaining
+     * lines' price and commission, a shorter slot (same start) and the coupon's discount on what is left (given back
+     * when it no longer applies). The last service can't be removed: cancel instead.
+     */
+    @Transactional
+    public BookingDetailDto removeService(UUID customerId, UUID bookingId, long itemId) {
+        Booking b = support.lockForCustomer(bookingId, customerId);
+        if (b.getQuoteId() != null || Booking.KIND_INSPECTION.equals(b.getKind())) {
+            throw ApiException.unprocessable("SERVICES_LOCKED", "A quoted job or an inspection visit can't be changed. Cancel it instead");
+        }
+        if (b.getStatus() != BookingStatus.REQUESTED && b.getStatus() != BookingStatus.ACCEPTED) {
+            throw ApiException.unprocessable("SERVICES_LOCKED", "Services can only be changed until the Genie sets off");
+        }
+        List<BookingItems.Item> current = items.list(bookingId);
+        BookingItems.Item removed = current.stream().filter(i -> i.id() == itemId).findFirst()
+            .orElseThrow(() -> ApiException.notFound("BOOKING_ITEM_NOT_FOUND", "That service is not on this booking"));
+        if (current.size() == 1) {
+            throw ApiException.unprocessable("LAST_SERVICE", "A booking needs at least one service. Cancel the booking instead");
+        }
+        List<BookingItems.Item> left = current.stream().filter(i -> i.id() != itemId).toList();
+        BigDecimal amount = left.stream().map(BookingItems.Item::amount).reduce(BigDecimal.ZERO, BigDecimal::add);
+        BigDecimal commission = left.stream().map(BookingItems.Item::commissionAmount).reduce(BigDecimal.ZERO, BigDecimal::add);
+        int minutes = left.stream().mapToInt(BookingItems.Item::minutes).sum();
+        Long couponId = b.getCouponId();
+        BigDecimal discount = BigDecimal.ZERO;
+        List<BigDecimal> shares = left.stream().map(i -> BigDecimal.ZERO).toList();
+        if (couponId != null) {
+            List<CouponLine> lines = left.stream().map(i -> new CouponLine(i.serviceId(), i.amount())).toList();
+            Optional<AppliedCoupon> repriced = coupons.reprice(couponId, bookingId, lines, b.getCityId());
+            if (repriced.isPresent()) {
+                discount = repriced.get().discount();
+                shares = PriceCalculator.spread(discount, left.stream().map(BookingItems.Item::amount).toList(),
+                    left.stream().map(i -> repriced.get().coveredServiceIds().contains(i.serviceId())).toList());
+            } else {
+                couponId = null;
+            }
+        }
+        items.remove(bookingId, itemId);
+        items.updateDiscounts(left, shares);
+        String label = BookingItems.labelOf(left);
+        b.changeServices(left.getFirst().serviceId(), label, amount, commission,
+            b.getSlotStart().plus(Duration.ofMinutes(minutes)), couponId, discount);
+        String reason = "Removed " + BookingItems.labelOf(List.of(removed)) + ". Now: " + label;
+        support.transitioned(b, b.getStatus(), customerId, "CUSTOMER", BookingEvent.Type.SERVICES_CHANGED,
+            reason.length() > 300 ? reason.substring(0, 299) + "\u2026" : reason, false);
+        return queries.detail(bookingId, Viewer.CUSTOMER, customerId);
+    }
+
+    private static List<CouponLine> couponLines(List<PriceLine> lines) {
+        return lines.stream().map(l -> new CouponLine(l.serviceId(), l.amount())).toList();
+    }
+
+    /** Each line's share of the booking's coupon discount (0 for lines the coupon doesn't cover). */
+    private static List<BigDecimal> discountShares(List<PriceLine> lines, AppliedCoupon coupon, BigDecimal discount) {
+        if (coupon == null) {
+            List<BigDecimal> none = new ArrayList<>();
+            lines.forEach(l -> none.add(BigDecimal.ZERO));
+            return none;
+        }
+        return PriceCalculator.spread(discount, lines.stream().map(PriceLine::amount).toList(),
+            lines.stream().map(l -> coupon.coveredServiceIds().contains(l.serviceId())).toList());
     }
 
     /** Free until the Genie accepts and until 2 h before the slot; later cancellations owe the late fee. */

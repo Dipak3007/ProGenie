@@ -11,7 +11,11 @@ import java.util.Set;
 import java.util.UUID;
 
 import com.progenie.booking.BookingEvent;
+import com.progenie.booking.QuoteEvent;
 import com.progenie.booking.BookingReminderDue;
+import com.progenie.booking.ContactOnTheWay;
+import com.progenie.catalog.ServiceAreaOpened;
+import com.progenie.demand.LaunchAlerts;
 import com.progenie.identity.OtpRequested;
 import com.progenie.identity.PasswordChanged;
 import com.progenie.messaging.delivery.Channel;
@@ -51,8 +55,10 @@ class MessageListeners {
     private final JdbcClient jdbc;
     private final ZoneId zone;
     private final long requestMinutes;
+    private final LaunchAlerts launchAlerts;
 
-    MessageListeners(Messenger messenger, JdbcClient jdbc, AppProperties props) {
+    MessageListeners(Messenger messenger, JdbcClient jdbc, AppProperties props, LaunchAlerts launchAlerts) {
+        this.launchAlerts = launchAlerts;
         this.messenger = messenger;
         this.jdbc = jdbc;
         this.zone = ZoneId.of(props.timezone());
@@ -87,6 +93,23 @@ class MessageListeners {
 
     // ------------------------------------------------------------------ bookings
 
+    /** Phase 3.5D: the customer hears when their quote is ready (and when it is revised). */
+    @EventListener
+    public void onQuote(QuoteEvent e) {
+        if (e.type() != QuoteEvent.Type.SENT) {
+            return;
+        }
+        safely(() -> {
+            BookingInfo b = booking(e.inspectionBookingId());
+            if (b == null) {
+                return;
+            }
+            messenger.toUser(e.customerId(), MessageTemplate.QUOTE_READY, Set.of(Channel.WHATSAPP),
+                with(params(b, null), "amount", e.totalAmount().toPlainString(), "link", "/account/bookings/" + e.inspectionBookingId()),
+                "quote:" + e.quoteId() + ":v" + e.version());
+        });
+    }
+
     @EventListener
     public void onBooking(BookingEvent e) {
         safely(() -> {
@@ -120,10 +143,53 @@ class MessageListeners {
                 }
                 case ON_THE_WAY -> messenger.toUser(e.customerId(), MessageTemplate.BOOKING_ON_THE_WAY,
                     Set.of(Channel.WHATSAPP), with(p, "link", customerLink, "linkLabel", "Track your Genie"), key);
-                case STARTED -> {
+                case STARTED, SERVICES_CHANGED -> {
                 }
             }
         });
+    }
+
+    /**
+     * Booked for someone else (Phase 3.5A): the person at the address hears that the Genie is on the way, with a
+     * tracking link and their own start code. Not an account, so straight to the number; the text is redacted from
+     * the outbox once sent (it holds the code).
+     */
+    @EventListener
+    public void onContactOnTheWay(ContactOnTheWay e) {
+        safely(() -> {
+            BookingInfo b = booking(e.bookingId());
+            if (b == null) {
+                return;
+            }
+            Map<String, String> p = with(params(b, null), "code", e.startCode(), "customer", firstName(b.customer()),
+                "link", "/track/" + e.trackToken());
+            String key = "booking:" + e.bookingId() + ":CONTACT_ON_THE_WAY:" + e.trackToken().substring(0, 8);
+            for (Channel channel : Set.of(Channel.SMS, Channel.WHATSAPP)) {
+                messenger.toDestination(null, e.contactName(), channel, e.contactPhone(),
+                    MessageTemplate.BOOKING_ON_THE_WAY_CONTACT, p, key);
+            }
+        });
+    }
+
+    /** Phase 3.5B: an area opened, so the people who asked to be told get one message (their alert is deleted). */
+    @EventListener
+    public void onServiceAreaOpened(ServiceAreaOpened e) {
+        safely(() -> {
+            for (LaunchAlerts.OpenedAlert a : launchAlerts.claimOpened(e.cityId())) {
+                Map<String, String> p = Map.of("place", a.place(), "link", "/");
+                String key = "launch:" + e.cityId() + ":" + (a.pincode() == null ? "point" : a.pincode());
+                if (a.phone() != null) {
+                    messenger.toDestination(null, null, Channel.SMS, a.phone(), MessageTemplate.LAUNCH_ALERT, p, key);
+                    messenger.toDestination(null, null, Channel.WHATSAPP, a.phone(), MessageTemplate.LAUNCH_ALERT, p, key);
+                } else {
+                    messenger.toDestination(null, null, Channel.EMAIL, a.email(), MessageTemplate.LAUNCH_ALERT, p, key);
+                }
+            }
+        });
+    }
+
+    private static String firstName(String fullName) {
+        return fullName == null || fullName.isBlank() ? "" : fullName.trim().split("\\s+")[0];
     }
 
     private void cancelled(BookingEvent e, BookingInfo b, Map<String, String> p, String key, String reasonText,

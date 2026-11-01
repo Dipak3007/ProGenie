@@ -11,7 +11,10 @@ import { DaySlotsDto } from '../../models/day-slots-dto';
 
 export interface BookingSlots$Params {
   genieId: string;
-  serviceId: number;
+  serviceId?: number;
+  items?: string;
+  quoteId?: string;
+  minutes?: number;
   date: string;
 }
 
@@ -20,6 +23,9 @@ export function bookingSlots(http: HttpClient, rootUrl: string, params: BookingS
   if (params) {
     rb.path('genieId', params.genieId, {});
     rb.query('serviceId', params.serviceId, {});
+    rb.query('items', params.items, {});
+    rb.query('quoteId', params.quoteId, {});
+    rb.query('minutes', params.minutes, {});
     rb.query('date', params.date, {});
   }
 

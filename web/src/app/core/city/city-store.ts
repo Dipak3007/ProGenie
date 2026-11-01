@@ -3,7 +3,7 @@ import { HttpClient, httpResource } from '@angular/common/http';
 import { Observable, tap } from 'rxjs';
 
 import { API } from '../api/api';
-import { City, LocationCheck, PincodeAt, PincodeCheck, PincodeLocation } from '../api/models';
+import { City, LaunchAlert, LaunchAlertRequest, LocationCheck, PincodeAt, PincodeCheck, PincodeLocation } from '../api/models';
 
 const STORAGE_KEY = 'pg.city';
 
@@ -61,6 +61,11 @@ export class CityStore {
         if (switchCity && r.serviceable && r.citySlug) this.select(r.citySlug);
       }),
     );
+  }
+
+  /** "Notify me when ProGenie arrives" for a PIN code we don't serve, or a map point outside our cities (Phase 3.5B). */
+  notifyMe(body: LaunchAlertRequest): Observable<LaunchAlert> {
+    return this.http.post<LaunchAlert>(`${API}/launch-alerts`, body);
   }
 
   /** Is this map pin in India, and inside a live city? */

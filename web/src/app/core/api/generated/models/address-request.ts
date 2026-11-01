@@ -3,6 +3,8 @@
 
 export interface AddressRequest {
   area?: (string | null);
+  contactName?: (string | null);
+  contactPhone?: (string | null);
   isDefault: boolean;
   label: string;
   landmark?: (string | null);

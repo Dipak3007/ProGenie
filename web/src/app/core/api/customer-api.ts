@@ -4,6 +4,7 @@ import { Observable } from 'rxjs';
 
 import { API } from './api';
 import {
+  ReviewPhoto,
   Address,
   AddressRequest,
   BookingDetail,
@@ -18,7 +19,9 @@ import {
   PaymentMethod,
   Tracking,
   User,
+  AcceptQuoteRequest,
 } from './models';
+import { parseItems } from '../../shared/service-lines';
 
 /** Customer commands: profile, addresses, favourites, bookings and payments. */
 @Injectable({ providedIn: 'root' })
@@ -68,15 +71,31 @@ export class CustomerApi {
   // --- coupons (Phase 3B)
   /** Public coupons for this checkout, each with its discount or why it can't be used. */
   /** Public coupons for an order. `genieId` null = Genie Now (the service's base price is used). */
-  coupons(genieId: string | null, serviceId: number, addressId: string): Observable<CouponOffer[]> {
-    const params: Record<string, string | number> = { serviceId, addressId };
+  /** {@code items}: `12:2,15:1` (service id : quantity), or one service id. */
+  coupons(genieId: string | null, items: string, addressId: string): Observable<CouponOffer[]> {
+    const params: Record<string, string | number> = { items, addressId };
     if (genieId) params['genieId'] = genieId;
     return this.http.get<CouponOffer[]>(`${API}/coupons`, { params });
   }
 
   /** A typed code: the offer, or 404 COUPON_NOT_FOUND / 422 COUPON_* with the reason. */
-  checkCoupon(code: string, genieId: string | null, serviceId: number, addressId: string): Observable<CouponOffer> {
-    return this.http.post<CouponOffer>(`${API}/coupons/check`, { code, genieId, serviceId, addressId });
+  checkCoupon(code: string, genieId: string | null, items: string, addressId: string): Observable<CouponOffer> {
+    return this.http.post<CouponOffer>(`${API}/coupons/check`, { code, genieId, items: parseItems(items), addressId });
+  }
+
+  /** Phase 3.5D: book the quoted job at a time (returns the new booking). */
+  acceptQuote(quoteId: string, body: AcceptQuoteRequest): Observable<BookingDetail> {
+    return this.http.post<BookingDetail>(`${API}/quotes/${quoteId}/accept`, body);
+  }
+
+  /** Returns the inspection booking with the declined quote. */
+  declineQuote(quoteId: string, reason: string | null): Observable<BookingDetail> {
+    return this.http.post<BookingDetail>(`${API}/quotes/${quoteId}/decline`, { reason });
+  }
+
+  /** Phase 3.5C: drop one of several services until the Genie sets off. */
+  removeService(bookingId: string, itemId: number): Observable<BookingDetail> {
+    return this.http.delete<BookingDetail>(`${API}/bookings/${bookingId}/items/${itemId}`);
   }
 
   createBooking(body: CreateBookingRequest, idempotencyKey: string): Observable<BookingDetail> {
@@ -130,6 +149,13 @@ export class CustomerApi {
 
   review(id: string, body: { rating: number; comment: string | null }): Observable<Review> {
     return this.http.post<Review>(`${API}/bookings/${id}/review`, body);
+  }
+
+  /** Phase 3.5A: a photo of the finished work for the review (after posting it; up to 3). */
+  addReviewPhoto(bookingId: string, file: File): Observable<ReviewPhoto> {
+    const form = new FormData();
+    form.append('file', file);
+    return this.http.post<ReviewPhoto>(`${API}/bookings/${bookingId}/review/photos`, form);
   }
 
   // --- payments

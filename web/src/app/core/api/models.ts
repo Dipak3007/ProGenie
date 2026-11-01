@@ -4,6 +4,26 @@
 // Only frontend-only types (unions, generics, form models) are still written by hand here.
 import type {
   AddressDto,
+  AcceptQuoteRequest as AcceptQuoteRequestDto,
+  QuoteDto,
+  QuoteLineDto,
+  QuoteLineRequest as QuoteLineRequestDto,
+  QuoteRequest as QuoteRequestDto,
+  BookingItemDto,
+  PriceLine as PriceLineDto,
+  ServiceLine as ServiceLineDto,
+  TicketItemDto,
+  AdminHelpArticleDto,
+  HelpArticleDto,
+  HelpArticleRequest,
+  LaunchAlertDto,
+  LaunchAlertRequest,
+  AdminReviewPhotoDto,
+  ContactTrackingDto,
+  CustomerRatingDto,
+  CustomerRatingRequest,
+  CustomerRatingView,
+  ReviewPhotoDto,
   AddressRequest,
   AddressView,
   AdminCategoryDto,
@@ -161,6 +181,30 @@ export type GenieService = GenieServiceDto;
 
 export type Review = ReviewDto;
 
+/** Phase 3.5B: the help centre. */
+export type HelpArticle = HelpArticleDto;
+export type AdminHelpArticle = AdminHelpArticleDto;
+export type { HelpArticleRequest };
+export type HelpCategory = HelpArticleRequest['category'];
+
+/** Phase 3.5B: "Notify me when ProGenie arrives". */
+export type LaunchAlert = LaunchAlertDto;
+export type { LaunchAlertRequest };
+
+/** Phase 3.5A: a photo in a review; {@code url} is a stable API link that redirects to the file. */
+export type ReviewPhoto = ReviewPhotoDto;
+
+export type AdminReviewPhoto = AdminReviewPhotoDto;
+
+/** Phase 3.5A: what the person at the address sees through their tracking link. */
+export type ContactTracking = ContactTrackingDto;
+
+/** Phase 3.5A: Genies rate customers (never shown to the customer). */
+export type CustomerRating = CustomerRatingDto;
+export type CustomerRatingGiven = CustomerRatingView;
+export type { CustomerRatingRequest };
+export type CustomerRatingTag = NonNullable<CustomerRatingRequest['tags']>[number];
+
 export type GenieDetail = GenieDetailDto;
 
 
@@ -195,7 +239,11 @@ export type BookingAction =
   | 'COMPLETE'
   | 'START_TRAVEL'
   | 'SHARE_LOCATION'
-  | 'TRACK';
+  | 'TRACK'
+  | 'REMOVE_SERVICE'
+  | 'SEND_QUOTE'
+  | 'ACCEPT_QUOTE'
+  | 'DECLINE_QUOTE';
 
 export type Party = PartyDto;
 
@@ -203,6 +251,17 @@ export type Party = PartyDto;
 export type HistoryItem = HistoryDto;
 
 export type BookingDetail = BookingDetailDto;
+/** Several services in one booking (Phase 3.5C): a service on a booking, in a quote, in a request, in a complaint. */
+export type BookingItem = BookingItemDto;
+export type PriceLine = PriceLineDto;
+export type ServiceLine = ServiceLineDto;
+export type TicketItem = TicketItemDto;
+/** Inspection visit + quote (Phase 3.5D). */
+export type Quote = QuoteDto;
+export type QuoteLine = QuoteLineDto;
+export type QuoteRequest = QuoteRequestDto;
+export type QuoteLineRequest = QuoteLineRequestDto;
+export type AcceptQuoteRequest = AcceptQuoteRequestDto;
 /** Genie Now (Phase 3C-9): price range before searching, the search itself, and an offer as a Genie sees it. */
 export type InstantQuote = InstantQuoteDto;
 export type InstantRequest = InstantRequestDto;
@@ -283,7 +342,7 @@ export type AdminCity = AdminCityDto;
 export type AdminPincode = AdminPincodeDto;
 
 
-export type PricingRequest = Pick<AdminCity, 'commissionRate' | 'travelFreeKm' | 'travelBaseFee' | 'travelPerKm' | 'travelFeeCap' | 'instantFee'>;
+export type PricingRequest = Pick<AdminCity, 'commissionRate' | 'travelFreeKm' | 'travelBaseFee' | 'travelPerKm' | 'travelFeeCap' | 'instantFee' | 'inspectionFee'>;
 
 export type ContactMessage = ContactMessageDto;
 

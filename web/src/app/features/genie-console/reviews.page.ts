@@ -7,7 +7,7 @@ import { LucideDynamicIcon, LucideMessageSquare as MessageSquare, LucideStar as 
 import { API, errorMessage, query } from '../../core/api/api';
 import { GenieApi } from '../../core/api/genie-api';
 import { Page, Review } from '../../core/api/models';
-import { ToastService } from '../../core/ui/feedback';
+import { ConfirmService, ToastService } from '../../core/ui/feedback';
 import { EmptyState, PageHead, Pager, Skeleton, Spinner } from '../../shared/ui/kit';
 import { GenieStore } from './genie-store';
 
@@ -39,6 +39,22 @@ import { GenieStore } from './genie-store';
               </div>
               @if (r.comment) {
                 <p class="mt-2 text-sm text-ink/80">{{ r.comment }}</p>
+              }
+              @if (r.photos.length) {
+                <ul class="mt-3 flex flex-wrap gap-3" aria-label="Customer's photos">
+                  @for (p of r.photos; track p.id) {
+                    <li class="flex flex-col items-center gap-1">
+                      <a [href]="p.url" target="_blank" rel="noopener" class="block overflow-hidden rounded-xl ring-1 ring-line hover:ring-brand">
+                        <img [src]="p.url" [alt]="'Customer photo ' + ($index + 1)" class="size-20 object-cover" loading="lazy" />
+                      </a>
+                      @if (p.reported) {
+                        <span class="text-xs text-amber-700">Reported</span>
+                      } @else {
+                        <button type="button" class="text-xs font-semibold text-muted underline hover:text-rose-700" (click)="reportPhoto(r, p.id)">Report</button>
+                      }
+                    </li>
+                  }
+                </ul>
               }
               @if (r.genieReply) {
                 <div class="mt-3 rounded-xl bg-surface px-4 py-3 text-sm">
@@ -80,12 +96,32 @@ export default class GenieReviewsPage {
   protected readonly store = inject(GenieStore);
   private readonly api = inject(GenieApi);
   private readonly toast = inject(ToastService);
+  private readonly confirm = inject(ConfirmService);
 
   protected readonly page$ = signal(0);
   protected readonly list = httpResource<Page<Review>>(() => `${API}/genie/reviews${query({ page: this.page$(), size: 10 })}`);
   protected readonly replyingTo = signal<string | null>(null);
   protected readonly sending = signal(false);
   protected reply = '';
+
+  /** Phase 3.5A: a photo that isn't your work or shows something it shouldn't goes to ProGenie to decide. */
+  protected async reportPhoto(r: Review, photoId: string): Promise<void> {
+    const { confirmed, value } = await this.confirm.ask({
+      title: 'Report this photo?',
+      message: 'ProGenie checks it and hides it if it breaks the rules (not your work, people or private things in view).',
+      confirmLabel: 'Report photo',
+      tone: 'danger',
+      input: { label: 'What is wrong with it? (optional)', placeholder: 'This is not my work' },
+    });
+    if (!confirmed || !r.id) return;
+    this.api.reportReviewPhoto(r.id, photoId, value.trim() || null).subscribe({
+      next: () => {
+        this.toast.success('Thanks, we will take a look.');
+        this.list.reload();
+      },
+      error: (err) => this.toast.error(errorMessage(err)),
+    });
+  }
 
   protected startReply(r: Review): void {
     this.reply = '';

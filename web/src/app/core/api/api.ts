@@ -36,22 +36,27 @@ export class ApiClient {
     return this.http.get<Page<Review>>(`${API}/genies/${encodeURIComponent(id)}/reviews`, { params: { page, size } });
   }
 
-  estimate(genieId: string, serviceId: number, lat: number, lng: number, tip = 0): Observable<PriceBreakdown> {
+  /** {@code items}: `12:2,15:1` (service id : quantity), or one service id (Phase 3.5C). */
+  estimate(genieId: string, items: string, lat: number, lng: number, tip = 0): Observable<PriceBreakdown> {
     const params = new HttpParams()
       .set('genieId', genieId)
-      .set('serviceId', serviceId)
+      .set('items', items)
       .set('lat', lat)
       .set('lng', lng)
       .set('tip', tip);
     return this.http.get<PriceBreakdown>(`${API}/pricing/estimate`, { params });
   }
 
-  slotDays(genieId: string, serviceId: number, days = 14): Observable<DayCount[]> {
-    return this.http.get<DayCount[]>(`${API}/genies/${encodeURIComponent(genieId)}/slot-days`, { params: { serviceId, days } });
+  /**
+   * Free-slot counts for a slot as long as all of `items` (`12:2,15:1`, or one service id), a quoted job (`quoteId`,
+   * Phase 3.5D) or a given length (`minutes`, moving a booking).
+   */
+  slotDays(genieId: string, what: SlotQuery, days = 14): Observable<DayCount[]> {
+    return this.http.get<DayCount[]>(`${API}/genies/${encodeURIComponent(genieId)}/slot-days`, { params: { ...slotParams(what), days } });
   }
 
-  slots(genieId: string, serviceId: number, date: string): Observable<DaySlots> {
-    return this.http.get<DaySlots>(`${API}/genies/${encodeURIComponent(genieId)}/slots`, { params: { serviceId, date } });
+  slots(genieId: string, what: SlotQuery, date: string): Observable<DaySlots> {
+    return this.http.get<DaySlots>(`${API}/genies/${encodeURIComponent(genieId)}/slots`, { params: { ...slotParams(what), date } });
   }
 
   search(q: string, limit = 8): Observable<SearchHit[]> {
@@ -61,6 +66,19 @@ export class ApiClient {
   sendContact(body: ContactRequest): Observable<void> {
     return this.http.post<void>(`${API}/contact`, body);
   }
+}
+
+/** What a slot is for: services (`items`), a quoted job (`quoteId`) or just a length in minutes. */
+export interface SlotQuery {
+  items?: string | null;
+  quoteId?: string | null;
+  minutes?: number | null;
+}
+
+function slotParams(q: SlotQuery): Record<string, string | number> {
+  if (q.minutes) return { minutes: q.minutes };
+  if (q.quoteId) return { quoteId: q.quoteId };
+  return { items: q.items ?? '' };
 }
 
 /** Genie list URL. city is a slug (e.g. 'ahmedabad'): only Genies working there are listed. */

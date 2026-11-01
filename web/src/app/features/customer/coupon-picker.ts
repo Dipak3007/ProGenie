@@ -91,7 +91,8 @@ import { Spinner } from '../../shared/ui/kit';
 export class CouponPicker {
   /** null for Genie Now: the Genie isn't known yet, so the service's base price is used. */
   readonly genieId = input<string | null>(null);
-  readonly serviceId = input<number | null>(null);
+  /** The services: `12:2,15:1` or one service id (Phase 3.5C). */
+  readonly items = input<string | null>(null);
   readonly addressId = input<string | null>(null);
   /** The coupon applied to the booking (two-way). */
   readonly applied = model<CouponOffer | null>(null);
@@ -103,22 +104,22 @@ export class CouponPicker {
 
   private readonly context = computed(
     () => {
-      const serviceId = this.serviceId();
+      const items = this.items();
       const addressId = this.addressId();
-      return serviceId && addressId ? { genieId: this.genieId(), serviceId, addressId } : null;
+      return items && addressId ? { genieId: this.genieId(), items, addressId } : null;
     },
-    { equal: (a, b) => a?.genieId === b?.genieId && a?.serviceId === b?.serviceId && a?.addressId === b?.addressId },
+    { equal: (a, b) => a?.genieId === b?.genieId && a?.items === b?.items && a?.addressId === b?.addressId },
   );
 
   protected readonly offers = toSignal(
     toObservable(this.context).pipe(
-      switchMap((c) => (c ? this.api.coupons(c.genieId, c.serviceId, c.addressId).pipe(catchError(() => of([]))) : of([]))),
+      switchMap((c) => (c ? this.api.coupons(c.genieId, c.items, c.addressId).pipe(catchError(() => of([]))) : of([]))),
     ),
     { initialValue: [] as CouponOffer[] },
   );
 
   constructor() {
-    // A different service or address can change the discount or make the coupon invalid: check it again.
+    // Different services or address can change the discount or make the coupon invalid: check it again.
     effect(() => {
       const c = this.context();
       untracked(() => {
@@ -128,7 +129,7 @@ export class CouponPicker {
           this.applied.set(null);
           return;
         }
-        this.api.checkCoupon(current.code, c.genieId, c.serviceId, c.addressId).subscribe({
+        this.api.checkCoupon(current.code, c.genieId, c.items, c.addressId).subscribe({
           next: (fresh) => this.applied.set(fresh),
           error: (err) => {
             this.applied.set(null);
@@ -166,7 +167,7 @@ export class CouponPicker {
     }
     this.busy.set(true);
     this.message.set(null);
-    this.api.checkCoupon(code, c.genieId, c.serviceId, c.addressId).subscribe({
+    this.api.checkCoupon(code, c.genieId, c.items, c.addressId).subscribe({
       next: (offer) => {
         this.busy.set(false);
         this.code = '';

@@ -17,10 +17,15 @@ import com.progenie.booking.SlotService.DayCountDto;
 import com.progenie.booking.SlotService.DaySlotsDto;
 import com.progenie.shared.error.ApiException;
 import com.progenie.shared.security.CurrentUser;
+import com.progenie.shared.util.ServiceLines;
 import com.progenie.shared.web.PageResponse;
 import jakarta.validation.Valid;
+import jakarta.validation.constraints.Max;
+import jakarta.validation.constraints.Min;
+import org.jspecify.annotations.Nullable;
 import org.springframework.format.annotation.DateTimeFormat;
 import org.springframework.http.HttpStatus;
+import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
@@ -39,27 +44,52 @@ public class BookingController {
     private final BookingQueryService queries;
     private final SlotService slots;
     private final BookingTracking tracking;
+    private final Quotes quotes;
 
     public BookingController(BookingService bookings, BookingQueryService queries, SlotService slots,
-                             BookingTracking tracking) {
+                             BookingTracking tracking, Quotes quotes) {
+        this.quotes = quotes;
         this.tracking = tracking;
         this.bookings = bookings;
         this.queries = queries;
         this.slots = slots;
     }
 
-    /** Free slots for one day. Example: GET /api/v1/genies/{id}/slots?serviceId=3&date=2026-10-01 */
+    /**
+     * Free slots for one day. Example: GET /api/v1/genies/{id}/slots?serviceId=3&date=2026-10-01, or for several
+     * services (Phase 3.5C) {@code items=3:2,7:1} (service id : quantity) instead of {@code serviceId}.
+     */
     @GetMapping("/api/v1/genies/{genieId}/slots")
-    public DaySlotsDto slots(@PathVariable UUID genieId, @RequestParam long serviceId,
+    public DaySlotsDto slots(@PathVariable UUID genieId, @RequestParam(required = false) @Nullable Long serviceId,
+                             @RequestParam(required = false) @Nullable String items,
+                             @RequestParam(required = false) @Nullable UUID quoteId,
+                             @RequestParam(required = false) @Nullable @Min(15) @Max(480) Integer minutes,
                              @RequestParam @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate date) {
-        return slots.daySlots(genieId, serviceId, date);
+        if (minutes != null) {
+            // a slot of a given length: moving a booking keeps its length (quoted jobs, inspections)
+            return slots.daySlotsFor(genieId, minutes, date);
+        }
+        if (quoteId != null) {
+            // Phase 3.5D: times for a quoted job, as long as the Genie's estimate
+            return slots.daySlotsFor(genieId, quotes.durationMinutes(quoteId, genieId), date);
+        }
+        return slots.daySlots(genieId, ServiceLines.parse(serviceId, items), date);
     }
 
     /** Free-slot counts for the next days, to grey out full days in the date picker. */
     @GetMapping("/api/v1/genies/{genieId}/slot-days")
-    public List<DayCountDto> slotDays(@PathVariable UUID genieId, @RequestParam long serviceId,
+    public List<DayCountDto> slotDays(@PathVariable UUID genieId, @RequestParam(required = false) @Nullable Long serviceId,
+                                      @RequestParam(required = false) @Nullable String items,
+                                      @RequestParam(required = false) @Nullable UUID quoteId,
+                                      @RequestParam(required = false) @Nullable @Min(15) @Max(480) Integer minutes,
                                       @RequestParam(defaultValue = "7") int days) {
-        return slots.upcomingDays(genieId, serviceId, days);
+        if (minutes != null) {
+            return slots.upcomingDaysFor(genieId, minutes, days);
+        }
+        if (quoteId != null) {
+            return slots.upcomingDaysFor(genieId, quotes.durationMinutes(quoteId, genieId), days);
+        }
+        return slots.upcomingDays(genieId, ServiceLines.parse(serviceId, items), days);
     }
 
     /** Send an Idempotency-Key header (any unique string per attempt) so a retried request never double-books. */
@@ -95,6 +125,12 @@ public class BookingController {
     @PostMapping("/api/v1/bookings/{id}/cancel")
     public BookingDetailDto cancel(@PathVariable UUID id, @Valid @RequestBody(required = false) CancelRequest req) {
         return bookings.cancel(CurrentUser.id(), id, req == null ? null : req.reason());
+    }
+
+    /** Phase 3.5C: drop one of several services until the Genie sets off (price, coupon and slot length follow). */
+    @DeleteMapping("/api/v1/bookings/{id}/items/{itemId}")
+    public BookingDetailDto removeService(@PathVariable UUID id, @PathVariable long itemId) {
+        return bookings.removeService(CurrentUser.id(), id, itemId);
     }
 
     @PostMapping("/api/v1/bookings/{id}/reschedule")

@@ -3,6 +3,7 @@
 
 export interface GenieServiceDto {
   durationMinutes: number;
+  inspectionFirst: boolean;
   name: string;
   price: number;
   serviceId: number;

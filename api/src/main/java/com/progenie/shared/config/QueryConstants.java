@@ -46,6 +46,13 @@ public final class QueryConstants {
     public static final String GET_DEMAND_UNMET_SUMMARY = "get.demand.unmet-summary";
     public static final String GET_DEMAND_BOOKING_TIMES = "get.demand.booking-times";
     public static final String GET_DEMAND_UNMET_TIMES = "get.demand.unmet-times";
+    public static final String EXISTS_LAUNCH_ALERT_PINCODE_SERVED = "exists.launch-alert.pincode-served";
+    public static final String EXISTS_LAUNCH_ALERT_POINT_SERVED = "exists.launch-alert.point-served";
+    public static final String INSERT_LAUNCH_ALERT = "insert.launch-alert";
+    public static final String DELETE_LAUNCH_ALERT_OPENED = "delete.launch-alert.opened";
+    public static final String GET_LAUNCH_ALERT_WAITING = "get.launch-alert.waiting";
+    public static final String COUNT_LAUNCH_ALERT = "count.launch-alert";
+    public static final String DELETE_LAUNCH_ALERT_EXPIRED = "delete.launch-alert.expired";
 
     // ------------------------------------------------------------------ Bookings
 
@@ -109,6 +116,32 @@ public final class QueryConstants {
     public static final String GET_INSTANT_GENIE_OPEN_OFFERS = "get.instant.genie-open-offers";
     public static final String FRAGMENT_INSTANT_POOL = "fragment.instant.pool";
     public static final String GET_INSTANT_FUNNEL = "get.instant.funnel";
+    public static final String GET_BOOKING_CONTACT = "get.booking.contact";
+    public static final String GET_BOOKING_CONTACT_TRACK = "get.booking.contact-track";
+    public static final String GET_BOOKING_RATABLE_BY_GENIE = "get.booking.ratable-by-genie";
+    public static final String INSERT_BOOKING_ITEM = "insert.booking-item";
+    public static final String INSERT_BOOKING_ITEMS_COPY_FREE = "insert.booking-items.copy-free";
+    public static final String GET_BOOKING_ITEMS = "get.booking-items";
+    public static final String DELETE_BOOKING_ITEM = "delete.booking-item";
+    public static final String UPDATE_BOOKING_ITEMS_RENUMBER = "update.booking-items.renumber";
+    public static final String UPDATE_BOOKING_ITEM_DISCOUNT = "update.booking-item.discount";
+    public static final String GET_QUOTE_INSPECTION = "get.quote.inspection";
+    public static final String FRAGMENT_QUOTE_SELECT = "fragment.quote.select";
+    public static final String GET_QUOTE_BY_INSPECTION = "get.quote.by-inspection";
+    public static final String GET_QUOTE_BY_ID = "get.quote.by-id";
+    public static final String LOCK_QUOTE_BY_INSPECTION = "lock.quote.by-inspection";
+    public static final String LOCK_QUOTE_BY_ID = "lock.quote.by-id";
+    public static final String INSERT_QUOTE = "insert.quote";
+    public static final String UPDATE_QUOTE_REVISE = "update.quote.revise";
+    public static final String DELETE_QUOTE_LINES = "delete.quote.lines";
+    public static final String INSERT_QUOTE_LINE = "insert.quote.line";
+    public static final String GET_QUOTE_LINES = "get.quote.lines";
+    public static final String GET_QUOTE_OFFERED_SERVICES = "get.quote.offered-services";
+    public static final String GET_QUOTE_LINE_SERVICE_MINUTES = "get.quote.line-service-minutes";
+    public static final String UPDATE_QUOTE_ACCEPTED = "update.quote.accepted";
+    public static final String UPDATE_QUOTE_DECLINED = "update.quote.declined";
+    public static final String UPDATE_QUOTE_EXPIRED = "update.quote.expired";
+    public static final String GET_QUOTE_DURATION = "get.quote.duration";
 
     // ------------------------------------------------------------------ Catalog and city pricing
 
@@ -250,6 +283,9 @@ public final class QueryConstants {
     public static final String UPDATE_USER_PASSWORD_LOCKED_UNTIL = "update.user.password-locked-until";
     public static final String GET_DELETION_BOOKING_PHOTO_KEYS = "get.deletion.booking-photo-keys";
     public static final String DELETE_DELETION_BOOKING_PHOTOS = "delete.deletion.booking-photos";
+    public static final String GET_DELETION_REVIEW_PHOTO_KEYS = "get.deletion.review-photo-keys";
+    public static final String DELETE_DELETION_REVIEW_PHOTOS = "delete.deletion.review-photos";
+    public static final String DELETE_DELETION_LAUNCH_ALERTS = "delete.deletion.launch-alerts";
 
     // ------------------------------------------------------------------ Legal documents and consents
 
@@ -362,6 +398,7 @@ public final class QueryConstants {
     public static final String GET_STATEMENT_JOBS = "get.statement.jobs";
     public static final String GET_STATEMENT_PAYOUTS = "get.statement.payouts";
     public static final String GET_STATEMENT_ENTRIES = "get.statement.entries";
+    public static final String GET_RECEIPT_ITEMS = "get.receipt.items";
 
     // ------------------------------------------------------------------ Coupons (promotion)
 
@@ -370,7 +407,6 @@ public final class QueryConstants {
     public static final String GET_COUPON_BY_CODE = "get.coupon.by-code";
     public static final String GET_COUPON_PUBLIC_ACTIVE = "get.coupon.public-active";
     public static final String GET_COUPON_CONTEXT = "get.coupon.context";
-    public static final String GET_COUPON_SERVICE_CATEGORY = "get.coupon.service-category";
     public static final String GET_COUPON_ADMIN_LIST = "get.coupon.admin-list";
     public static final String GET_COUPON_ADMIN_BY_ID = "get.coupon.admin-by-id";
     public static final String GET_COUPON_REDEMPTIONS = "get.coupon.redemptions";
@@ -389,11 +425,16 @@ public final class QueryConstants {
     public static final String UPDATE_COUPON_STATUS = "update.coupon.status";
     public static final String UPDATE_COUPON_RELEASE = "update.coupon.release";
     public static final String GET_COUPON_CONTEXT_SERVICE = "get.coupon.context-service";
+    public static final String GET_COUPON_SERVICE_CATEGORIES = "get.coupon.service-categories";
+    public static final String GET_COUPON_BY_ID = "get.coupon.by-id";
+    public static final String UPDATE_COUPON_REDEMPTION_AMOUNT = "update.coupon.redemption-amount";
 
     // ------------------------------------------------------------------ Pricing
 
     public static final String GET_PRICING_ESTIMATE = "get.pricing.estimate";
     public static final String GET_PRICING_INSTANT_FEE = "get.pricing.instant-fee";
+    public static final String GET_PRICING_SERVICE_PRICES = "get.pricing.service-prices";
+    public static final String GET_PRICING_TRAVEL_INPUTS = "get.pricing.travel-inputs";
 
     // ------------------------------------------------------------------ Genies: directory, profile, documents, verification
 
@@ -465,6 +506,7 @@ public final class QueryConstants {
     public static final String GET_GENIE_PROFILE_BADGES = "get.genie-profile.badges";
     public static final String UPDATE_GENIE_PROFILE_LIVE_SEEN = "update.genie-profile.live-seen";
     public static final String UPDATE_GENIE_PROFILE_OFFLINE_UNSEEN = "update.genie-profile.offline-unseen";
+    public static final String GET_GENIE_DETAIL_REVIEW_PHOTOS = "get.genie.detail-review-photos";
 
     // ------------------------------------------------------------------ Reviews
 
@@ -474,6 +516,21 @@ public final class QueryConstants {
     public static final String EXISTS_REVIEW_OWNED = "exists.review.owned";
     public static final String INSERT_REVIEW_CREATE = "insert.review.create";
     public static final String UPDATE_REVIEW_REPLY = "update.review.reply";
+    public static final String FRAGMENT_CUSTOMER_RATING_STATS = "fragment.customer-rating.stats";
+    public static final String INSERT_CUSTOMER_RATING = "insert.customer-rating";
+    public static final String GET_CUSTOMER_RATING_STATS = "get.customer-rating.stats";
+    public static final String COUNT_REVIEW_PHOTOS = "count.review-photos";
+    public static final String INSERT_REVIEW_PHOTO = "insert.review-photo";
+    public static final String DELETE_REVIEW_PHOTO_OWNED = "delete.review-photo.owned";
+    public static final String UPDATE_REVIEW_PHOTO_REPORT = "update.review-photo.report";
+    public static final String GET_REVIEW_PHOTOS_FOR_REVIEWS = "get.review-photos.for-reviews";
+    public static final String FRAGMENT_REVIEW_PHOTO_ADMIN_WHERE = "fragment.review-photo.admin-where";
+    public static final String GET_REVIEW_PHOTO_ADMIN = "get.review-photo.admin";
+    public static final String COUNT_REVIEW_PHOTO_ADMIN = "count.review-photo.admin";
+    public static final String UPDATE_REVIEW_PHOTO_HIDE = "update.review-photo.hide";
+    public static final String UPDATE_REVIEW_PHOTO_KEEP = "update.review-photo.keep";
+    public static final String GET_REVIEW_OWNED_BY_BOOKING = "get.review.owned-by-booking";
+    public static final String GET_REVIEW_PHOTO_VISIBLE = "get.review-photo.visible";
 
     // ------------------------------------------------------------------ Complaints (tickets) and the contact inbox
 
@@ -511,6 +568,20 @@ public final class QueryConstants {
     public static final String UPDATE_TICKET_STATUS = "update.ticket.status";
     public static final String UPDATE_TICKET_TOUCH = "update.ticket.touch";
     public static final String EXISTS_USER_ACTIVE_ADMIN = "exists.user.active-admin";
+    public static final String FRAGMENT_HELP_PUBLIC_SELECT = "fragment.help.public-select";
+    public static final String FRAGMENT_HELP_ORDER = "fragment.help.order";
+    public static final String GET_HELP_PUBLISHED = "get.help.published";
+    public static final String GET_HELP_SUGGESTIONS = "get.help.suggestions";
+    public static final String UPDATE_HELP_VOTE = "update.help.vote";
+    public static final String FRAGMENT_HELP_ADMIN_SELECT = "fragment.help.admin-select";
+    public static final String GET_HELP_ALL = "get.help.all";
+    public static final String GET_HELP_ARTICLE = "get.help.article";
+    public static final String INSERT_HELP_ARTICLE = "insert.help.article";
+    public static final String UPDATE_HELP_ARTICLE = "update.help.article";
+    public static final String DELETE_HELP_ARTICLE = "delete.help.article";
+    public static final String COUNT_TICKET_BOOKING_ITEMS = "count.ticket.booking-items";
+    public static final String INSERT_TICKET_BOOKING_ITEM = "insert.ticket.booking-item";
+    public static final String GET_TICKET_ITEMS = "get.ticket.items";
 
     // ------------------------------------------------------------------ JPQL for Spring Data repositories (@Query(name = ...)): entity names, not tables
 

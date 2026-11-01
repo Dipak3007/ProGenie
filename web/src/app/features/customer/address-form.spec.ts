@@ -115,4 +115,63 @@ describe('AddressForm: PIN code and map pin stay in step', () => {
     expect(pinInput().value).toBe('380054');
     expect(map().lat()).toBe(23.04);
   });
+
+  const area = () => fixture.nativeElement.querySelector('#a-area') as HTMLInputElement;
+
+  it('shows the area disabled: it cannot be selected or typed', async () => {
+    expect(area().disabled).toBe(true);
+    expect(area().placeholder).toBe('From your PIN code');
+  });
+
+  it('when editing, the area follows the PIN code, typed or found from the map', async () => {
+    fixture.componentRef.setInput('address', {
+      id: 'a1', label: 'Home', line1: '1 Main St', line2: null, landmark: null, area: 'My old name', cityId: 1,
+      cityName: 'Ahmedabad', pincode: '380009', lat: 23.035, lng: 72.561, isDefault: true,
+    });
+    fixture.detectChanges();
+    http.expectOne((r) => r.url === '/api/v1/serviceability' && r.params.get('pincode') === '380009').flush(served('380009', 'Navrangpura'));
+    await render();
+    expect(area().value).toBe('Navrangpura');
+
+    await type('380015');
+    expect(area().value).toBe('');
+    http.expectOne((r) => r.url === '/api/v1/serviceability' && r.params.get('pincode') === '380015').flush(served('380015', 'Satellite, Vastrapur'));
+    http.expectOne('/api/v1/geo/pincodes/380015').flush({ pincode: '380015', found: true, lat: 23.03, lng: 72.52, area: 'Satellite', source: 'SERVED' });
+    await render();
+    expect(area().value).toBe('Satellite');
+
+    map().moved.emit({ lat: 23.04, lng: 72.505 });
+    await settle();
+    http.expectOne((r) => r.url === '/api/v1/geo/pincode-at').flush({ lat: 23.04, lng: 72.505, inIndia: true, pincode: '380054', area: 'Bodakdev', source: 'GEOCODER' });
+    http.expectOne((r) => r.url === '/api/v1/serviceability' && r.params.get('pincode') === '380054').flush(served('380054', 'Bodakdev'));
+    await render();
+    expect(pinInput().value).toBe('380054');
+    expect(area().value).toBe('Bodakdev');
+
+    await type('110001');
+    http.expectOne((r) => r.url === '/api/v1/serviceability').flush({ ...served('110001', ''), serviceable: false, cityId: null, area: null, lat: null, lng: null });
+    http.expectOne('/api/v1/geo/pincodes/110001').flush({ pincode: '110001', found: false, lat: null, lng: null, area: null, source: null });
+    await render();
+    expect(area().value).toBe('');
+  });
+
+  it('asks for both the contact name and phone (booking for someone else), and sends them', async () => {
+    const name = fixture.nativeElement.querySelector('#a-contact-name') as HTMLInputElement;
+    const phone = fixture.nativeElement.querySelector('#a-contact-phone') as HTMLInputElement;
+    name.value = 'Asha Shah';
+    name.dispatchEvent(new Event('input'));
+    fixture.detectChanges();
+    await fixture.whenStable();
+    fixture.detectChanges();
+    expect(fixture.nativeElement.textContent).toContain('Add both their name and mobile number');
+    expect(phone.required).toBe(true);
+    phone.value = '98250 12345';
+    phone.dispatchEvent(new Event('input'));
+    fixture.detectChanges();
+    await fixture.whenStable();
+    fixture.detectChanges();
+    expect(fixture.nativeElement.textContent).not.toContain('Add both their name and mobile number');
+    expect(phone.validity.patternMismatch).toBe(false);
+  });
 });
+

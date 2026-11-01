@@ -23,11 +23,11 @@ describe('CouponPicker', () => {
     fixture = TestBed.createComponent(CouponPicker);
     http = TestBed.inject(HttpTestingController);
     fixture.componentRef.setInput('genieId', 'g1');
-    fixture.componentRef.setInput('serviceId', 7);
+    fixture.componentRef.setInput('items', '7:2,9:1');
     fixture.componentRef.setInput('addressId', 'a1');
     fixture.detectChanges();
     await settle();
-    http.expectOne((r) => r.url === '/api/v1/coupons' && r.params.get('serviceId') === '7')
+    http.expectOne((r) => r.url === '/api/v1/coupons' && r.params.get('items') === '7:2,9:1')
       .flush([offer('SAVE50', true), offer('BIG100', false)]);
     fixture.detectChanges();
     await settle();
@@ -44,7 +44,9 @@ describe('CouponPicker', () => {
 
   it('applies a coupon after the server confirms it, and removes it again', async () => {
     el().querySelector<HTMLButtonElement>('ul button')!.click();
-    http.expectOne('/api/v1/coupons/check').flush(offer('SAVE50', true));
+    const check = http.expectOne('/api/v1/coupons/check');
+    expect(check.request.body.items).toEqual([{ serviceId: 7, quantity: 2 }, { serviceId: 9, quantity: 1 }]);
+    check.flush(offer('SAVE50', true));
     fixture.detectChanges();
     expect(fixture.componentInstance.applied()?.code).toBe('SAVE50');
     expect(el().textContent).toContain('SAVE50 applied');

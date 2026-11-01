@@ -4,9 +4,11 @@ import java.math.BigDecimal;
 import java.time.Instant;
 import java.time.OffsetDateTime;
 import java.time.ZoneOffset;
+import java.util.List;
 
 import com.progenie.promotion.CouponRules.Coupon;
 import com.progenie.promotion.CouponRules.Order;
+import com.progenie.promotion.CouponRules.OrderLine;
 import com.progenie.promotion.CouponRules.Usage;
 import org.junit.jupiter.api.Test;
 
@@ -16,7 +18,7 @@ class CouponRulesTest {
 
     private static final Instant NOW = Instant.parse("2026-11-01T10:00:00Z");
     private static final OffsetDateTime YESTERDAY = NOW.minusSeconds(86_400).atOffset(ZoneOffset.UTC);
-    private static final Order FAN = new Order(1, 1, 1, new BigDecimal("349.00"));
+    private static final Order FAN = Order.of(1, 1, 1, new BigDecimal("349.00"));
     private static final Usage FRESH = new Usage(0, 0, false);
 
     private static Coupon percent(String value, String cap) {
@@ -65,7 +67,7 @@ class CouponRulesTest {
         assertThat(CouponRules.check(thisService, FAN, FRESH, NOW)).isNull();
 
         Coupon big = coupon("FLAT", "50", null, "399", null, 1, false, "ALL", null, null, null, "ACTIVE", null);
-        assertThat(CouponRules.check(big, FAN, FRESH, NOW).message()).isEqualTo("This coupon needs a service of at least ₹399");
+        assertThat(CouponRules.check(big, FAN, FRESH, NOW).message()).isEqualTo("This coupon needs an order of at least ₹399");
 
         Coupon limited = coupon("FLAT", "50", null, "0", 100, 2, false, "ALL", null, null, null, "ACTIVE", null);
         assertThat(CouponRules.check(limited, FAN, new Usage(100, 0, false), NOW).code()).isEqualTo("COUPON_USED_UP");
@@ -74,6 +76,22 @@ class CouponRulesTest {
 
         Coupon welcome = coupon("FLAT", "50", null, "0", null, 1, true, "ALL", null, null, null, "ACTIVE", null);
         assertThat(CouponRules.check(welcome, FAN, new Usage(0, 0, true), NOW).code()).isEqualTo("COUPON_FIRST_BOOKING_ONLY");
+    }
+
+    @Test
+    void onSeveralServicesItWorksOnTheOnesItCovers() {
+        Order mixed = new Order(1, List.of(new OrderLine(1, 1, new BigDecimal("349.00")),     // fan, electrical
+            new OrderLine(9, 2, new BigDecimal("300.00"))));                                   // tap, plumbing
+        Coupon plumbing = coupon("PERCENT", "50", null, "250", null, 1, false, "CATEGORY", 2L, null, null, "ACTIVE", null);
+        assertThat(CouponRules.check(plumbing, mixed, FRESH, NOW)).isNull();
+        assertThat(CouponRules.eligibleAmount(plumbing, mixed)).isEqualByComparingTo("300.00");
+        assertThat(CouponRules.discount(plumbing, mixed)).isEqualByComparingTo("150.00");      // half of the tap only
+        Coupon plumbingMin = coupon("FLAT", "50", null, "400", null, 1, false, "CATEGORY", 2L, null, null, "ACTIVE", null);
+        assertThat(CouponRules.check(plumbingMin, mixed, FRESH, NOW).code()).isEqualTo("COUPON_MIN_ORDER");
+        Coupon all = percent("10", null);
+        assertThat(CouponRules.discount(all, mixed)).isEqualByComparingTo("64.90");
+        Coupon carpentry = coupon("FLAT", "50", null, "0", null, 1, false, "CATEGORY", 7L, null, null, "ACTIVE", null);
+        assertThat(CouponRules.check(carpentry, mixed, FRESH, NOW).message()).contains("booking's services");
     }
 
     @Test

@@ -3,6 +3,7 @@
 
 export interface PricingRequest {
   commissionRate: number;
+  inspectionFee?: (number | null);
   instantFee?: (number | null);
   travelBaseFee: number;
   travelFeeCap: number;

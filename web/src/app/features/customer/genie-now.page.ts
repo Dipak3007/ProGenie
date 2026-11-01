@@ -199,7 +199,7 @@ export const SEARCH_POLL_MS = 4_000;
             <label class="label mt-6" for="now-notes">Note for the Genie <span class="font-normal text-muted">(optional)</span></label>
             <textarea id="now-notes" class="field min-h-20" maxlength="500" placeholder="e.g. Ceiling fan in the bedroom, ladder available." [(ngModel)]="notes"></textarea>
             <p class="label mt-6">Coupon <span class="font-normal text-muted">(optional)</span></p>
-            <pg-coupon-picker class="block" [serviceId]="serviceIdNum()" [addressId]="addressId()" [(applied)]="coupon" />
+            <pg-coupon-picker class="block" [items]="serviceIdNum() ? '' + serviceIdNum() : null" [addressId]="addressId()" [(applied)]="coupon" />
           </section>
 
           @if (error()) {

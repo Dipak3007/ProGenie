@@ -4,7 +4,10 @@
 export interface UserRowDto {
   bookingCount: number;
   createdAt: string;
+  customerRating: (number | null);
+  customerRatingCount: number;
   email: (string | null);
+  flagReason: (string | null);
   fullName: string;
   id: string;
   phone: string;

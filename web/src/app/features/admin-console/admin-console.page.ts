@@ -16,6 +16,8 @@ import {
   LucideUser as User,
   LucideUserX as UserX,
   LucideUsers as Users,
+  LucideCamera as ImageIcon,
+  LucideCircleHelp as CircleHelp,
   LucideMap as MapIcon,
 } from '@lucide/angular';
 
@@ -73,11 +75,13 @@ export default class AdminConsolePage {
     { path: '/admin/demand', label: 'Demand map', icon: MapIcon },
     { path: '/admin/tickets', label: 'Complaints', icon: LifeBuoy, badge: this.counts.tickets() },
     { path: '/admin/users', label: 'Users', icon: Users },
+    { path: '/admin/review-photos', label: 'Review photos', icon: ImageIcon },
     { path: '/admin/catalog', label: 'Catalog & pricing', icon: Store },
     { path: '/admin/finance', label: 'Finance', icon: Banknote },
     { path: '/admin/coupons', label: 'Coupons', icon: BadgePercent },
     { path: '/admin/inbox', label: 'Inbox', icon: InboxIcon, badge: this.counts.messages() },
     { path: '/admin/messages', label: 'Messages', icon: Send, badge: this.counts.failed() },
+    { path: '/admin/help', label: 'Help centre', icon: CircleHelp },
     { path: '/admin/legal', label: 'Policies', icon: FileText },
     { path: '/admin/deletions', label: 'Deletions', icon: UserX },
     { path: '/admin/account', label: 'Account', icon: User },
